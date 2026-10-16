@@ -47,7 +47,8 @@ def create() -> Path:
     if data.exists():
         with zipfile.ZipFile(out / f"qlbm-{stamp}-data.zip", "w", zipfile.ZIP_DEFLATED) as z:
             for p in data.rglob("*"):
-                if p.is_file():
+                # the master key never travels with the encrypted settings it protects
+                if p.is_file() and p.name not in ("master.key", "google_token.json"):
                     z.write(p, p.relative_to(data))
     print(f"Đã sao lưu: {dump}")
     return dump

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from wg_core import jobs, registry
 from wg_core.config import settings
+from wg_core.runtime_config import get as cfg
 from wg_core.db import session_scope
 from wg_core.integrations.errors import Conflict, NotAvailable, NotConfigured, Permanent, Transient
 from wg_core.models import Job, JobLog, Nick, PdfDocument, RootDomain
@@ -29,6 +30,10 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Quản Lí BM API", version="0.1", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings().cors_origins.split(","), allow_methods=["*"], allow_headers=["*"])
+
+from app.settings_api import router as settings_router  # noqa: E402
+
+app.include_router(settings_router)
 
 
 def db():
@@ -234,7 +239,7 @@ def ai_read(doc_id: int, s: Session = Depends(db)):
     d = s.get(PdfDocument, doc_id)
     if not d:
         raise HTTPException(404)
-    if not settings().anthropic_api_key:
+    if not cfg("ANTHROPIC_API_KEY"):
         raise NotConfigured("AI (Anthropic)", ["ANTHROPIC_API_KEY"])
     job, _ = pdf.request_ai_read(s, d)
     return job_out(job)

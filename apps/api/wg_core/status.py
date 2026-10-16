@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import env_secret, settings
+from .runtime_config import get as cfg
 from .models import Nick
 
 
@@ -13,14 +14,15 @@ def integration_status(s: Session) -> dict:
     from .integrations.google import auth_mode
 
     mode = auth_mode()
-    auth_missing = [] if mode else ["OAuth Google (GOOGLE_OAUTH_CLIENT_FILE + scripts/google_auth.py)"]
-    drive_ok = mode == "oauth" or (mode == "service_account" and bool(st.drive_folder_id))
+    auth_missing = [] if mode else ["Kết nối Google (Cài đặt API → OAuth client + Kết nối)"]
+    drive_ok = mode == "oauth" or (mode == "service_account" and bool(cfg("DRIVE_FOLDER_ID")))
     google = {
         "mode": mode,
-        "sheets": {"configured": bool(mode) and bool(st.sheet_id), "missing": auth_missing + ([] if st.sheet_id else ["SHEET_ID"])},
+        "sheets": {"configured": bool(mode) and bool(cfg("SHEET_ID")), "missing": auth_missing + ([] if cfg("SHEET_ID") else ["SHEET_ID"])},
         "drive": {"configured": drive_ok, "missing": auth_missing + ([] if drive_ok or not mode else ["DRIVE_FOLDER_ID (Shared Drive) hoặc OAuth"])},
     }
-    ai = {"configured": bool(st.anthropic_api_key), "model": st.ai_model, "missing": [] if st.anthropic_api_key else ["ANTHROPIC_API_KEY"]}
+    key = cfg("ANTHROPIC_API_KEY")
+    ai = {"configured": bool(key), "model": cfg("AI_MODEL", st.ai_model), "missing": [] if key else ["ANTHROPIC_API_KEY"]}
     nicks = []
     for n in s.scalars(select(Nick).order_by(Nick.id)):
         k = n.id.upper()

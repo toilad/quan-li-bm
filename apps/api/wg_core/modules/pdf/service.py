@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...config import settings
+from ...runtime_config import get as cfg
 from ...integrations import ai
 from ...integrations.errors import Conflict, Permanent
 from ...integrations.google import Drive, Sheets, hyperlink_formula
@@ -50,7 +51,7 @@ def ingest(s: Session, name: str, data: bytes) -> tuple[PdfDocument, bool]:
     s.add(doc)
     s.flush()
     extract_into(doc, data)
-    if doc.status == "needs_ai" and settings().anthropic_api_key:
+    if doc.status == "needs_ai" and cfg("ANTHROPIC_API_KEY"):
         request_ai_read(s, doc)  # scans are read (and classified) by AI as soon as it is configured
     return doc, True
 
@@ -169,7 +170,7 @@ def _save(ctx: JobContext):
         values = row_values(doc)
         row = sheets.append_row(values)
         doc.sheet_row = row
-        s.add(SheetWrite(tab=sheets.s.sheet_tab, range=f"A{row}:K{row}", old_value=None, new_value=" | ".join(values), job_id=ctx.job.id))
+        s.add(SheetWrite(tab=sheets.tab, range=f"A{row}:K{row}", old_value=None, new_value=" | ".join(values), job_id=ctx.job.id))
         ctx.checkpoint(sheet_row=row)
         ctx.log(f"Đã ghi dòng {row}: A, D–J · B, C trống", "ok")
 
@@ -178,7 +179,7 @@ def _save(ctx: JobContext):
         sheets = Sheets()
         formula = hyperlink_formula(doc.drive_link)
         sheets.write_cell(f"K{doc.sheet_row}", formula, user_entered=True)
-        s.add(SheetWrite(tab=sheets.s.sheet_tab, range=f"K{doc.sheet_row}", old_value=doc.drive_link, new_value=formula, job_id=ctx.job.id))
+        s.add(SheetWrite(tab=sheets.tab, range=f"K{doc.sheet_row}", old_value=doc.drive_link, new_value=formula, job_id=ctx.job.id))
         ctx.checkpoint(k_link=True)
         ctx.log(f"K{doc.sheet_row} = “Xem phôi” → PDF gốc trên Drive", "ok")
     doc.status, doc.error = "saved", None

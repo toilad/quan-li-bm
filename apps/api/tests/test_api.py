@@ -27,7 +27,7 @@ def test_status_reports_configuration(client):
 
 
 def test_sheet_not_configured_returns_503_not_fake_data(client, monkeypatch):
-    monkeypatch.setattr(settings(), "sheet_id", "")
+    monkeypatch.setenv("SHEET_ID", "")
     r = client.get("/api/domains/rows")
     assert r.status_code == 503 and r.json()["status"] == "not_configured" and "SHEET_ID" in r.json()["missing"]
     r = client.get("/api/websites/rows")

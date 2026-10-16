@@ -50,5 +50,7 @@ def _read_env_file(name: str) -> str:
 
 
 def env_secret(name: str) -> str:
-    """Per-nick secret (INET_API_KEY_N1, CPANEL_USER_N1, CPANEL_TOKEN_N1…) from env or .env. Never logged."""
-    return os.environ.get(name) or _read_env_file(name)
+    """Per-nick secret (INET_API_KEY_N1, CPANEL_USER_N1, CPANEL_TOKEN_N1…): owner setting, else env / .env. Never logged."""
+    from .runtime_config import get
+
+    return get(name)

@@ -10,13 +10,18 @@ import json
 import anthropic
 
 from ..config import settings
+from ..runtime_config import get as cfg
 from .errors import NotConfigured, Permanent, Transient
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
+def model_id() -> str:
+    return cfg("AI_MODEL", settings().ai_model)
+
+
 def _client() -> anthropic.Anthropic:
-    key = settings().anthropic_api_key
+    key = cfg("ANTHROPIC_API_KEY")
     if not key:
         raise NotConfigured("AI (Anthropic)", ["ANTHROPIC_API_KEY"])
     return anthropic.Anthropic(api_key=key, max_retries=2, timeout=300)
@@ -26,7 +31,7 @@ def _json_call(content: list, schema: dict, system: str, effort: str, max_tokens
     client = _client()
     try:
         resp = client.beta.messages.create(
-            model=settings().ai_model,
+            model=model_id(),
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": content}],
@@ -40,7 +45,7 @@ def _json_call(content: list, schema: dict, system: str, effort: str, max_tokens
     except anthropic.AuthenticationError as e:
         raise NotConfigured("AI (Anthropic)", ["ANTHROPIC_API_KEY hợp lệ"]) from e
     except anthropic.PermissionDeniedError as e:
-        raise NotConfigured("AI (Anthropic)", ["quyền dùng model " + settings().ai_model]) from e
+        raise NotConfigured("AI (Anthropic)", ["quyền dùng model " + model_id()]) from e
     except anthropic.BadRequestError as e:
         raise Permanent(f"AI: yêu cầu không hợp lệ — {e.message}") from e
     except anthropic.APIStatusError as e:
@@ -154,9 +159,9 @@ def check_model() -> dict:
     """Ask the Models API whether the configured model exists for this key (no tokens spent)."""
     client = _client()
     try:
-        m = client.models.retrieve(settings().ai_model)
+        m = client.models.retrieve(model_id())
     except anthropic.NotFoundError as e:
-        raise Permanent(f"Model {settings().ai_model} không có với khoá này") from e
+        raise Permanent(f"Model {model_id()} không có với khoá này") from e
     except anthropic.AuthenticationError as e:
         raise NotConfigured("AI (Anthropic)", ["ANTHROPIC_API_KEY hợp lệ"]) from e
     except anthropic.APIConnectionError as e:

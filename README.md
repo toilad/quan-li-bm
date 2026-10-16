@@ -34,7 +34,7 @@ docs/                Kiến trúc, trạng thái, tài liệu API, phân tích a
 cd apps/api
 python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 cp .env.example .env            # điền khoá; để trống → app báo "Chưa cấu hình"
-.venv/Scripts/python -m uvicorn app.main:app --port 8000   # PostgreSQL nhúng tự chạy trong .pgdata
+.venv/Scripts/python -m uvicorn app.main:app --port 8000 --no-access-log   # PostgreSQL nhúng tự chạy trong .pgdata
 .venv/Scripts/python -m worker.main                        # cửa sổ khác
 .venv/Scripts/python -m pytest                             # kiểm thử
 .venv/Scripts/python -m scripts.backup create              # sao lưu

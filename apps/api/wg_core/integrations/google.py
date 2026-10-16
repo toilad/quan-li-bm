@@ -25,6 +25,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 from ..config import settings
+from ..runtime_config import get as cfg
 from .errors import NotConfigured, Permanent, Transient
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -63,10 +64,39 @@ def token_file() -> Path:
     return settings().data_dir / "google_token.json"
 
 
+def oauth_client() -> dict | None:
+    """OAuth client config: pasted on the settings page (stored encrypted) or GOOGLE_OAUTH_CLIENT_FILE."""
+    raw = cfg("GOOGLE_OAUTH_CLIENT_JSON")
+    if not raw:
+        f = settings().google_oauth_client_file
+        raw = Path(f).read_text(encoding="utf-8") if f and Path(f).exists() else ""
+    if not raw:
+        return None
+    data = json.loads(raw)
+    return data.get("web") or data.get("installed") or data
+
+
+def refresh_token() -> str | None:
+    raw = cfg("GOOGLE_TOKEN")
+    if raw:
+        return json.loads(raw)["refresh_token"] if raw.lstrip().startswith("{") else raw
+    if token_file().exists():
+        return json.loads(token_file().read_text(encoding="utf-8")).get("refresh_token")
+    return None
+
+
+def sheet_id() -> str:
+    return cfg("SHEET_ID")
+
+
+def sheet_tab() -> str:
+    return cfg("SHEET_TAB", "Phoi US")
+
+
 def auth_mode() -> str | None:
     """'oauth' when the owner authorised the app, 'service_account' when only a SA file is set, else None."""
     s = settings()
-    if s.google_oauth_client_file and Path(s.google_oauth_client_file).exists() and token_file().exists():
+    if oauth_client() and refresh_token():
         return "oauth"
     if s.google_service_account_file and Path(s.google_service_account_file).exists():
         return "service_account"
@@ -78,27 +108,21 @@ def require_google(need_sheet=True, need_drive=False):
     missing = []
     if not mode:
         missing.append("OAuth Google của chủ tài khoản (GOOGLE_OAUTH_CLIENT_FILE + chạy scripts/google_auth.py)")
-    if need_sheet and not s.sheet_id:
+    if need_sheet and not sheet_id():
         missing.append("SHEET_ID")
-    if need_drive and mode == "service_account" and not s.drive_folder_id:
+    if need_drive and mode == "service_account" and not cfg("DRIVE_FOLDER_ID"):
         missing.append("DRIVE_FOLDER_ID trong Shared Drive (service account không upload được vào Drive cá nhân) — hoặc dùng OAuth")
     if missing:
         raise NotConfigured("Google", missing)
-
-
-def _oauth_client() -> dict:
-    data = json.loads(Path(settings().google_oauth_client_file).read_text(encoding="utf-8"))
-    return data.get("installed") or data.get("web") or data
 
 
 def _oauth_token(client: httpx.Client) -> str:
     cached = _token_cache.get("oauth")
     if cached and cached[1] > time.time() + 60:
         return cached[0]
-    cfg = _oauth_client()
-    tok = json.loads(token_file().read_text(encoding="utf-8"))
-    data = _check(client.post(TOKEN_URL, data={"grant_type": "refresh_token", "refresh_token": tok["refresh_token"],
-                                               "client_id": cfg["client_id"], "client_secret": cfg["client_secret"]}), "Google token")
+    oc = oauth_client()
+    data = _check(client.post(TOKEN_URL, data={"grant_type": "refresh_token", "refresh_token": refresh_token(),
+                                               "client_id": oc["client_id"], "client_secret": oc.get("client_secret", "")}), "Google token")
     _token_cache["oauth"] = (data["access_token"], time.time() + int(data.get("expires_in", 3600)))
     return data["access_token"]
 
@@ -149,11 +173,11 @@ class SheetRow:
 class Sheets:
     def __init__(self):
         require_google(need_sheet=True)
-        self.s = settings()
+        self.id, self.tab = sheet_id(), sheet_tab()
 
     def read_rows(self) -> list[SheetRow]:
         with _client() as c:
-            data = _check(c.get(f"{SHEETS}/{self.s.sheet_id}/values/{_a1(self.s.sheet_tab, f'A{FIRST_DATA_ROW}:L')}",
+            data = _check(c.get(f"{SHEETS}/{self.id}/values/{_a1(self.tab, f'A{FIRST_DATA_ROW}:L')}",
                                 headers=_auth(c), params={"valueRenderOption": "FORMATTED_VALUE"}), "Sheets đọc")
         rows = []
         for i, vals in enumerate(data.get("values", [])):
@@ -163,21 +187,21 @@ class Sheets:
 
     def read_cell(self, cell: str) -> str:
         with _client() as c:
-            data = _check(c.get(f"{SHEETS}/{self.s.sheet_id}/values/{_a1(self.s.sheet_tab, cell)}", headers=_auth(c)), "Sheets đọc ô")
+            data = _check(c.get(f"{SHEETS}/{self.id}/values/{_a1(self.tab, cell)}", headers=_auth(c)), "Sheets đọc ô")
         vals = data.get("values") or [[""]]
         return str(vals[0][0]) if vals and vals[0] else ""
 
     def write_cell(self, cell: str, value: str, user_entered: bool = False) -> dict:
         """RAW by default (text stays text). USER_ENTERED only for formulas the app builds itself (K = HYPERLINK)."""
         with _client() as c:
-            return _check(c.put(f"{SHEETS}/{self.s.sheet_id}/values/{_a1(self.s.sheet_tab, cell)}", headers=_auth(c),
+            return _check(c.put(f"{SHEETS}/{self.id}/values/{_a1(self.tab, cell)}", headers=_auth(c),
                                 params={"valueInputOption": "USER_ENTERED" if user_entered else "RAW"},
                                 json={"values": [[value]]}), "Sheets ghi ô")
 
     def append_row(self, values: list[str]) -> int:
         """Append A..K (L untouched). Returns the sheet row number written."""
         with _client() as c:
-            data = _check(c.post(f"{SHEETS}/{self.s.sheet_id}/values/{_a1(self.s.sheet_tab, f'A{FIRST_DATA_ROW}:K')}:append",
+            data = _check(c.post(f"{SHEETS}/{self.id}/values/{_a1(self.tab, f'A{FIRST_DATA_ROW}:K')}:append",
                                  headers=_auth(c), params={"valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"},
                                  json={"values": [values]}), "Sheets thêm dòng")
         rng = data.get("updates", {}).get("updatedRange", "")
@@ -194,12 +218,12 @@ def hyperlink_formula(url: str, label: str = "Xem phôi") -> str:
 class Drive:
     def __init__(self):
         require_google(need_sheet=False, need_drive=True)
-        self.s = settings()
+        self.configured_folder = cfg("DRIVE_FOLDER_ID")
 
     def folder_id(self) -> str:
         """DRIVE_FOLDER_ID if set; otherwise the app's own folder (created once, remembered in the database)."""
-        if self.s.drive_folder_id:
-            return self.s.drive_folder_id
+        if self.configured_folder:
+            return self.configured_folder
         from ..db import session_scope
         from ..models import AppSetting
 

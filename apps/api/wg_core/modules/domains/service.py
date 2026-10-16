@@ -138,7 +138,7 @@ def scan(s: Session) -> dict:
                     "J": c["J"], "K": c["K"], "flags": flags, "label": slug(c["A"])})
     existing_b = sorted({r.cells["B"].strip().lower() for r in rows if r.cells["B"].strip()})
     return {"total": len(rows), "with_b": len(existing_b), "rows": out, "excluded": excluded, "existing_b": existing_b,
-            "tab": settings().sheet_tab}
+            "tab": Sheets().tab}
 
 
 def enqueue_rows(s: Session, items: list[dict]) -> dict:
@@ -230,6 +230,6 @@ def _create(ctx: JobContext):
         ctx.checkpoint(outcome="conflict", orphan={"fqdn": fqdn, "found_b": live})
         raise Conflict(f"Ô {cell} đã có “{live}” khi ghi — không ghi đè. Miền {fqdn} đã tạo, lưu vào “Tài nguyên chưa gắn”")
     sheets.write_cell(cell, fqdn)
-    s.add(SheetWrite(tab=sheets.s.sheet_tab, range=cell, old_value="", new_value=fqdn, job_id=ctx.job.id))
+    s.add(SheetWrite(tab=sheets.tab, range=cell, old_value="", new_value=fqdn, job_id=ctx.job.id))
     ctx.checkpoint(written_b=fqdn)
     ctx.log(f"Ghi {cell} = {fqdn} · cột C giữ nguyên", "ok")

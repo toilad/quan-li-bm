@@ -178,6 +178,6 @@ def _build(ctx: JobContext):
         raise Conflict(f"Ô {cell} đã có “{live}” — không ghi đè. Website https://{domain} đang chạy, lưu để xử lý")
     url = f"https://{domain}"
     sheets.write_cell(cell, url)
-    s.add(SheetWrite(tab=sheets.s.sheet_tab, range=cell, old_value="", new_value=url, job_id=ctx.job.id))
+    s.add(SheetWrite(tab=sheets.tab, range=cell, old_value="", new_value=url, job_id=ctx.job.id))
     ctx.checkpoint(written_c=url)
     ctx.log(f"Ghi {cell} = {url} · cột B giữ nguyên", "ok")

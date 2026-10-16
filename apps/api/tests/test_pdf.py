@@ -161,7 +161,7 @@ def test_save_not_configured_is_blocked_not_success(monkeypatch):
         s.flush()
         job, _ = pdf.request_save(s, doc)
         job_id = job.id
-    monkeypatch.setattr(settings(), "sheet_id", "")
+    monkeypatch.setenv("SHEET_ID", "")
     drain()
     with session_scope() as s:
         j = s.get(Job, job_id)
@@ -258,7 +258,7 @@ def test_scan_without_ai_key_waits_for_configuration(monkeypatch):
 
     if not CA:
         pytest.skip("California sample not present")
-    monkeypatch.setattr(settings(), "anthropic_api_key", "")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     with session_scope() as s:
         doc, _ = pdf.ingest(s, "scan.pdf", open(CA[0], "rb").read())
         assert doc.status == "needs_ai"

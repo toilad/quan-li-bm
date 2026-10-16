@@ -52,8 +52,11 @@ def clean_db(_env):
     from wg_core.integrations import google
 
     google._token_cache.clear()
+    from wg_core import runtime_config
+
+    runtime_config._cache.clear()
     with engine().begin() as c:
-        c.execute(text("TRUNCATE job_logs, sheet_writes, jobs, pdf_documents, site_choices, app_settings RESTART IDENTITY CASCADE"))
+        c.execute(text("TRUNCATE job_logs, sheet_writes, jobs, pdf_documents, site_choices, app_settings, stored_settings RESTART IDENTITY CASCADE"))
         c.execute(text("UPDATE root_domains SET selected = false"))
     yield
 
