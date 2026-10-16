@@ -310,8 +310,8 @@ export function useDomainQueue() {
         return;
       case "checkNick":
         say("Đang kiểm tra hosting + iNET (chỉ đọc)…");
-        api.post<{ nick: string; cpanel: { ok: boolean; error?: string; on_hosting?: string[]; missing?: string[] }; inet: { ok: boolean; error?: string; note?: string } }>(`/api/domains/check/${a.id}`)
-          .then((r) => say(`${r.nick} · cPanel: ${r.cpanel.ok ? `${r.cpanel.on_hosting?.length ?? 0} miền gốc có trên hosting, ${r.cpanel.missing?.length ?? 0} chưa có` : r.cpanel.error} · iNET: ${r.inet.ok ? r.inet.note : r.inet.error}`))
+        api.post<{ nick: string; cpanel: { ok: boolean; error?: string; on_hosting?: string[]; missing?: string[]; version?: string }; inet: { ok: boolean; error?: string; note?: string } }>(`/api/domains/check/${a.id}`)
+          .then((r) => say(`${r.nick} · cPanel: ${r.cpanel.ok ? `${r.cpanel.version ? `bản ${r.cpanel.version}, ` : ""}${r.cpanel.on_hosting?.length ?? 0} miền gốc có trên hosting, ${r.cpanel.missing?.length ?? 0} chưa có` : r.cpanel.error} · iNET: ${r.inet.ok ? r.inet.note : r.inet.error}`))
           .catch((e) => say(errorText(e)))
           .finally(refresh);
         return;

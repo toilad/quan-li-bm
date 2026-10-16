@@ -20,7 +20,15 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
   - `PATCH /domain/{domainId}/record`: cập nhật bản ghi DNS.
   - `PATCH /domain/{domainId}/nameserver`.
   - Không có endpoint tạo hoặc xoá riêng.
-  - **Cấu trúc dữ liệu gửi lên của PATCH record chưa có trong tài liệu**: chưa biết tên trường, chưa biết có thay toàn bộ danh sách bản ghi hay không.
+  - ✔ **Cập nhật 2026-10-17: tài liệu đã mô tả đủ** (dữ liệu có cấu trúc trên trang api-reference, mở từng endpoint là thấy):
+    - `PATCH /domain/{domainId}/record` body `{recordList: [{domainId, name, type, data, ttl, action, id?}]}`.
+      Bắt buộc: `domainId, name, type, data, action`. `action` = `ACTION_ADD` (thêm, không cần id) hoặc `ACTION_DELETE` (xoá, cần id).
+      Sửa = 1 mục DELETE + 1 mục ADD. `ttl` kiểu chuỗi, tính bằng giây (vd "300"). Trả về `recordList` sau khi cập nhật.
+      Tức là gửi từng thao tác, không phải thay toàn bộ danh sách bản ghi.
+    - `GET /domain/{domainId}/record` → `{id, name, recordList: [{id, name, type, data, ttl, priority, createdDate}]}`.
+    - `GET /domain?name=&status=&page=&pageSize=` → `{content: [{id, name, status, …}], totalPages, totalElements, size, number}`.
+    - `GET /domain/{domainId}` → `{…, nsList: [{id, hostname}]}`, dùng để kiểm tra miền có dùng ns1/ns2.inet.vn không.
+  - Không có file OpenAPI/Postman công khai. `/api/gateway/v1/*` trả 401 khi chưa có khoá.
 - ✔ Hosting: `GET/POST /hosting/{hostingId}/addon`, `DELETE /hosting/{hostingId}/addon/{id}`, `POST /hosting/{hostingId}/addon/sync`.
   Tài liệu **không có** endpoint subdomain, SSL hay upload file cho hosting.
 - iNET còn có OnePanel (panel riêng). Cần xác nhận hosting thực tế là cPanel hay OnePanel.
@@ -46,12 +54,16 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
     Nguồn: https://api.docs.cpanel.net/specifications/cpanel.openapi/domain-information/domaininfo-single_domain_data.md
   - Không tìm thấy miền trên tài khoản → dừng, không upload, C giữ trống.
 - Giới hạn tốc độ của UAPI: chưa có trong tài liệu.
+- ✔ Phiên bản cPanel (chỉ đọc): `StatsBar::get_stats` với `display=cpanelversion` → mục `count` là phiên bản máy chủ.
+  Nút "Kiểm tra nick" gọi hàm này. Các trang tài liệu đã tra ứng với API bản 11.138; tài liệu không ghi các hàm trên có từ bản nào.
+  Vì vậy em chỉ hiện phiên bản để đối chiếu, không tự đặt ngưỡng tối thiểu.
+  Nguồn: https://api.docs.cpanel.net/openapi/cpanel/operation/get_stats
 
 ## Ảnh hưởng tới thiết kế
 
 | Bước | Khả năng |
 |---|---|
-| Bản ghi A | Nameserver ở host cPanel → `DNS::mass_edit_zone` ✔. Nameserver iNET → `PATCH /domain/{id}/record`. **Tạm chặn** tới khi có cấu trúc dữ liệu chính thức (bản Postman export hoặc hỏi iNET) |
+| Bản ghi A | Nameserver ở host cPanel → `DNS::mass_edit_zone` ✔. Nameserver iNET → `PATCH /domain/{id}/record` (ACTION_ADD). Tài liệu đã đủ (2026-10-17). Trong code **vẫn chặn**, chờ anh duyệt bật ghi DNS thật |
 | Miền phụ trên hosting | `SubDomain::addsubdomain` ✔ (cần token và vai trò Web Server) |
 | SSL | Gọi được bằng API. Cấp chứng chỉ được hay không tuỳ AutoSSL bật ở WHM và DNS đã trỏ đúng |
 | Upload | `Fileman::upload_files` hoặc FTPS |
@@ -64,5 +76,5 @@ Hàng đợi phải tôn trọng giới hạn iNET (60 yêu cầu/phút cho mỗ
 1. Nameserver của từng miền gốc: ns1/ns2.inet.vn hay của host cPanel?
 2. Hosting là cPanel (cổng 2083) hay iNET OnePanel? Mục "Manage API Tokens" có hiện không?
 3. AutoSSL có bật không, nhà cung cấp chứng chỉ nào? Có giới hạn số miền phụ không?
-4. Có tài khoản developers.inet.vn với khoá `write` không? Có lấy được cấu trúc dữ liệu đầy đủ của `PATCH /record` không?
+4. Có tài khoản developers.inet.vn với khoá `write` không? (Cấu trúc `PATCH /record` đã có trong tài liệu.)
 5. Có chấp nhận 1 bản ghi wildcard `*.miền-gốc` trỏ về host không? Nếu được thì bỏ hẳn bước tạo A cho từng công ty. Đây là phương án thiết kế em đề xuất, không lấy từ tài liệu.

@@ -138,11 +138,13 @@ def test_read_only_nick_check_marks_roots_on_hosting_and_keeps_inet_raw():
     with respx.mock(assert_all_called=False) as m:
         m.get(f"{CP}/DomainInfo/list_domains").mock(return_value=cp_ok({
             "main_domain": "levantoan.000web.com", "addon_domains": ["sustainlife.io.vn", "huxma.life"], "sub_domains": ["a.huxma.life"], "parked_domains": []}))
+        ver = m.get(f"{CP}/StatsBar/get_stats").mock(return_value=cp_ok([{"name": "cpanelversion", "id": "cpanelversion", "count": "11.130.0.15", "item": "cPanel Version"}]))
         inet = m.get("https://developers.inet.vn/api/gateway/v1/domain").mock(return_value=httpx.Response(200, json={"content": [{"x": 1}]}))
         with session_scope() as s:
             out = domains.check_nick(s, "n1")
     assert out["cpanel"]["ok"] and set(out["cpanel"]["on_hosting"]) == {"sustainlife.io.vn", "huxma.life"}
     assert "yhawt.press" in out["cpanel"]["missing"]
+    assert out["cpanel"]["version"] == "11.130.0.15" and ver.calls[0].request.url.params["display"] == "cpanelversion"
     assert out["inet"]["ok"] and out["inet"]["top_level"] == ["content"] and inet.calls[0].request.method == "GET"
     # a root not on the hosting can no longer be ticked; one on it can
     res = _tick("yhawt.press", "huxma.life")

@@ -83,6 +83,10 @@ def check_nick(s: Session, nick_id: str) -> dict:
         roots = [r.name for r in s.scalars(select(RootDomain).where(RootDomain.nick_id == nick.id))]
         out["cpanel"] = {"ok": True, "on_hosting": [r for r in roots if r in names], "missing": [r for r in roots if r not in names],
                          "subdomains": len(d.get("sub_domains") or [])}
+        try:
+            out["cpanel"]["version"] = CPanel(nick.id, nick.cpanel_host).version()
+        except IntegrationError as e:
+            out["cpanel"]["version"] = f"không đọc được ({e})"
     except IntegrationError as e:
         out["cpanel"] = {"ok": False, "error": str(e)}
     try:

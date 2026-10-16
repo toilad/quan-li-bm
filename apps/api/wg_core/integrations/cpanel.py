@@ -4,7 +4,8 @@ Auth:  Authorization: cpanel <user>:<token>   →  https://<host>:2083/execute/<
 Used (all documented, see docs/API-RESEARCH.md):
   SubDomain::addsubdomain, SubDomain::listsubdomains, DomainInfo::single_domain_data,
   Fileman::upload_files (POST multipart, file-0…), SSL::start_autossl_check,
-  SSL::is_autossl_check_in_progress, SSL::get_autossl_problems
+  SSL::is_autossl_check_in_progress, SSL::get_autossl_problems,
+  StatsBar::get_stats (display=cpanelversion, read-only; docs checked against API version 11.138)
 Responses: result.status 1 = ok, 0 = failed (errors in result.errors).
 """
 import re
@@ -44,6 +45,13 @@ class CPanel:
         if res.get("status") != 1:
             raise Permanent(f"cPanel {module}::{fn}: {'; '.join(res.get('errors') or ['lỗi không rõ'])}")
         return res.get("data")
+
+    def version(self) -> str:
+        """StatsBar::get_stats display=cpanelversion → item `count` = the server's cPanel version."""
+        for item in self._call("StatsBar", "get_stats", {"display": "cpanelversion"}) or []:
+            if item.get("name") == "cpanelversion" or item.get("id") == "cpanelversion":
+                return str(item.get("count") or item.get("value") or "")
+        return ""
 
     # ── domains ──
     def subdomain(self, fqdn: str) -> dict | None:
