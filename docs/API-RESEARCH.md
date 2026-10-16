@@ -39,6 +39,12 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
 - SSL: `SSL::start_autossl_check`, `SSL::is_autossl_check_in_progress`, `SSL::get_autossl_problems`, `SSL::installed_hosts`.
   AutoSSL do nhà cung cấp bật ở cấp WHM. Nguồn: https://docs.cpanel.net/whm/ssl-tls/manage-autossl/
 - Upload file: `Fileman::upload_files` (cần vai trò File Storage), hoặc FTP/FTPS.
+- ✔ Document root (đọc trước khi upload, không đoán đường dẫn):
+  - Miền phụ: `SubDomain::listsubdomains` (lọc bằng `regex`) → `dir` (đường dẫn tuyệt đối), `basedir` (tương đối thư mục home), `reldir`.
+    Nguồn: https://api.docs.cpanel.net/specifications/cpanel.openapi/subdomain/subdomain-listsubdomains.md
+  - Miền chính / addon: `DomainInfo::single_domain_data` (`domain` bắt buộc, không dùng alias) → `result.data.documentroot`, `result.data.type`.
+    Nguồn: https://api.docs.cpanel.net/specifications/cpanel.openapi/domain-information/domaininfo-single_domain_data.md
+  - Không tìm thấy miền trên tài khoản → dừng, không upload, C giữ trống.
 - Giới hạn tốc độ của UAPI: chưa có trong tài liệu.
 
 ## Ảnh hưởng tới thiết kế

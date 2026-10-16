@@ -2,7 +2,7 @@
 
 import { useEffect, useReducer } from "react";
 import { TEMPLATE_BY_ID } from "@/lib/templates";
-import { WEB_STEPS, initialWebRows, type LogLine, type WebRow } from "@/lib/web-mock";
+import { WEB_STEPS, demoDocRootFor, initialWebRows, type LogLine, type WebRow } from "@/lib/web-mock";
 
 export type AiProvider = "claude" | "openai";
 
@@ -66,28 +66,39 @@ function advance(r: WebRow, s: WebState): WebRow {
       if (r.outcome === "dnsMismatch")
         return fail(`DNS: ${r.domain} không trỏ về ${host.nick.ip} (hosting ${host.nick.name}) — dừng, không upload. Kiểm tra lại ô B.`);
       return next(`DNS ${r.domain} → ${host.nick.ip} (${host.nick.name}) đúng`);
-    case 1:
+    case 1: {
+      if (r.docRoot) return next(`Document root đã đọc: ~/${r.docRoot}`, {}, "info");
+      const isSub = r.domain !== host.root.name;
+      const api = isSub ? "SubDomain::listsubdomains" : "DomainInfo::single_domain_data";
+      if (r.outcome === "notOnCpanel")
+        return fail(`cPanel ${api}: không có ${r.domain} trên tài khoản hosting ${host.nick.name} — miền chưa được tạo trên hosting. Dừng, không upload, C giữ trống.`);
+      const docRoot = demoDocRootFor(r);
+      return next(`cPanel ${api}: document root ~/${docRoot}`, { docRoot, docRootApi: api });
+    }
+    case 2:
       if (r.contentReady) return next("Nội dung đã có từ lượt trước → bỏ qua, không gọi AI lại", {}, "info");
       return next(`${ai}: viết ${6} trang theo mẫu ${t.name} (ngành: ${r.detection.keyword ?? "chung"})`);
-    case 2:
+    case 3:
       if (r.contentReady) return next("Nội dung đã kiểm tra từ lượt trước", {}, "info");
       if (r.outcome === "aiRegenerate")
         return {
-          ...r, step: 1, progress: 0, outcome: undefined,
+          ...r, step: 2, progress: 0, outcome: undefined,
           log: [...r.log, line("Kiểm tra: AI thêm “15 năm kinh nghiệm” — không có trong Sheet → loại, tạo lại (lần 2/2)", "warn")],
         };
       return next("Không có giải thưởng / khách hàng / số liệu bịa · liên hệ khớp Sheet (A, D, F–I)", { contentReady: true });
-    case 3:
-      return next(`Dựng HTML: ${t.name} · 6 trang · bảng màu ${t.primary}`);
     case 4:
-      if (r.uploaded) return next("Đã upload từ lượt trước → bỏ qua", {}, "info");
-      return next(`cPanel ${host.nick.cpanelHost}: upload /public_html/${r.domain}`, { uploaded: true });
+      return next(`Dựng HTML bằng mẫu đã chọn: ${t.name} · 6 trang · bố cục ${t.hero}`, { builtTemplate: t.id });
     case 5:
+      if (r.uploaded) return next("Đã upload từ lượt trước → bỏ qua", {}, "info");
+      if (!r.docRoot) return fail("Chưa xác minh document root — không upload vào đường dẫn đoán trước.");
+      if (r.builtTemplate !== r.templateId) return fail("HTML không khớp mẫu đã chọn — dựng lại trước khi upload.");
+      return next(`cPanel ${host.nick.cpanelHost} Fileman::upload_files → ~/${r.docRoot}`, { uploaded: true });
+    case 6:
       if (r.sslIssued) return next("Chứng chỉ đã có", {}, "info");
       if (r.outcome === "sslPendingOnce")
         return { ...fail("AutoSSL chưa cấp chứng chỉ — DNS mới trỏ chưa đủ lâu. Website đã upload; C giữ trống. Thử lại sau."), outcome: undefined };
       return next(`AutoSSL: đã cấp chứng chỉ cho ${r.domain}`, { sslIssued: true });
-    case 6:
+    case 7:
       return next(`HTTPS https://${r.domain} → 200 · chứng chỉ hợp lệ · đúng tiêu đề “${r.company.A}”`);
     default: {
       const url = `https://${r.domain}`;
@@ -144,9 +155,9 @@ function reducer(s: WebState, a: Action): WebState {
     case "checkAll":
       return { ...s, rows: s.rows.map((r) => (a.rows.includes(r.row) ? { ...r, checked: a.on && r.status === "idle" && !webIssue(r) } : r)) };
     case "template":
-      return { ...s, rows: s.rows.map((r) => (a.rows.includes(r.row) && templateEditable(r) ? { ...r, templateId: a.id, templateSource: a.id === r.detection.template.id ? "auto" : "manual", contentReady: false } : r)) };
+      return { ...s, rows: s.rows.map((r) => (a.rows.includes(r.row) && templateEditable(r) ? { ...r, templateId: a.id, templateSource: a.id === r.detection.template.id ? "auto" : "manual", contentReady: false, builtTemplate: undefined } : r)) };
     case "resetTemplate":
-      return patch(a.row, (r) => (templateEditable(r) ? { ...r, templateId: r.detection.template.id, templateSource: "auto", contentReady: false } : r));
+      return patch(a.row, (r) => (templateEditable(r) ? { ...r, templateId: r.detection.template.id, templateSource: "auto", contentReady: false, builtTemplate: undefined } : r));
     case "batchLimit":
       return { ...s, batchLimit: a.n };
     case "provider":

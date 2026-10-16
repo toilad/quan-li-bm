@@ -8,7 +8,7 @@ Mỗi màn có nhãn "Bản thiết kế · dữ liệu giả"; nút/khối sẽ
 | Tổng quan | Giao diện, lọc, chọn dòng, phân trang | Đọc Google Sheet, số liệu, tiến trình module, nhật ký, sao lưu |
 | PDF Manager | Kéo thả / chọn PDF, **xem trước PDF thật trên máy** (không gửi đi), kiểm tra định dạng & số kiểm tra CNPJ, chống trùng trong danh sách | Nhận diện loại phôi, đọc lớp chữ / AI OCR, upload Drive + md5, ghi Sheet, lưu database |
 | Tạo miền iNET | 3 nick thật, **toàn bộ tên miền của từng nick, mỗi miền 1 ô tích** (chọn/bỏ chọn theo nick hoặc tất cả), lưu lựa chọn cho lần sau (bản thiết kế: trình duyệt), khoá bỏ chọn miền đang có tác vụ, chặn miền tạm ngưng / hết hạn / DNS ngoài iNET, cảnh báo sắp hết hạn, phân bổ công ty vào các miền đã tích (xoay vòng đan xen nick / tỷ trọng nick / dồn 1 miền), đổi miền gốc từng dòng trong các miền đã tích, không có miền nào được tích → không cho chạy, xem trước & sửa tên miền, 3 cách tạo tên, đánh dấu dòng thiếu K (không loại), giới hạn mỗi lượt tách khỏi hạn mức nick, chặn khi nick thiếu quyền API, lưu tài nguyên khi ô B xung đột, kiểm tra nhãn DNS (a–z, 0–9, -, ≤63), phát hiện trùng trong danh sách, chia nick, kiểm tra form nick | Đọc danh sách tên miền qua API iNET, lưu lựa chọn miền vào database, quét Sheet, tạo bản ghi A (iNET), tạo miền trên cPanel, xác minh DNS, đọc lại ô B rồi ghi, hạn mức nick, kiểm tra kết nối |
-| SSL + Tạo web | Lọc dòng B có miền + C trống, xác định hosting từ danh sách miền của nick, nhận diện ngành (hiện từ khoá khớp), 15 mẫu cũ — đổi từng dòng hoặc áp hàng loạt, xem trước website, hộp xác nhận trước khi chạy, không tự chạy khi mở trang, chọn AI (Claude / OpenAI + dự phòng), tiến trình 8 bước, thử lại từ bước lỗi không upload lại, chặn khi DNS của B không trỏ đúng IP, loại nội dung AI có số liệu bịa rồi tạo lại, chỉ ghi C khi HTTPS chạy thật và ô C còn trống, lưu “Website chưa gắn” khi ô C xung đột | Đọc Sheet, gọi AI, dựng HTML thật, upload (cPanel Fileman / FTPS), AutoSSL, kiểm tra HTTPS, ghi C |
+| SSL + Tạo web | Lọc dòng B có miền + C trống, xác định hosting từ danh sách miền của nick, nhận diện ngành (hiện từ khoá khớp), 15 mẫu cũ — đổi từng dòng hoặc áp hàng loạt, xem trước website, hộp xác nhận trước khi chạy, không tự chạy khi mở trang, chọn AI (Claude / OpenAI + dự phòng), tiến trình 9 bước, xác minh document root qua cPanel API trước khi upload (không đoán đường dẫn), xem trước toàn trang từng mẫu theo bố cục riêng, ghi lại mẫu thực sự dùng để dựng, thử lại từ bước lỗi không upload lại, chặn khi DNS của B không trỏ đúng IP, loại nội dung AI có số liệu bịa rồi tạo lại, chỉ ghi C khi HTTPS chạy thật và ô C còn trống, lưu “Website chưa gắn” khi ô C xung đột | Đọc Sheet, gọi AI, dựng HTML thật, upload (cPanel Fileman / FTPS), AutoSSL, kiểm tra HTTPS, ghi C |
 | Kho mẫu, Nhật ký, Cài đặt | — (trang giữ chỗ) | — |
 
 ## Quy tắc đã chốt
@@ -37,7 +37,7 @@ Mỗi màn có nhãn "Bản thiết kế · dữ liệu giả"; nút/khối sẽ
 
 1. Khoá AI API (Anthropic và/hoặc OpenAI) — nhập ở server; chọn model ở Cài đặt API.
 2. cPanel API token cho từng hosting (3 tài khoản trên 2 server); xác nhận AutoSSL đã bật ở WHM.
-3. Khôi phục renderer HTML 15 mẫu từ bytecode app cũ (đang là bản xem trước gần đúng).
+3. Khôi phục renderer HTML 15 mẫu từ bytecode app cũ. Bản xem trước hiện tại dựng lại gần đúng (tên, bảng màu, 6 kiểu bố cục, từ khoá ảnh lấy từ app cũ), chưa phải HTML gốc.
 4. Backend: hàng đợi chạy trên server, ghi Sheet qua Google Sheets API, database lưu tiến trình & “Website chưa gắn”.
 
 ## Chờ chủ dự án chốt (Tạo miền)

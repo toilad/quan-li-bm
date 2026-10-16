@@ -51,8 +51,14 @@ export function WebDetail({ state, dispatch }: { state: WebState; dispatch: WebD
           <dd>{r.host ? `${r.host.nick.name} · ${r.host.nick.ip}` : <span className="text-rose-300">Không rõ — miền B không thuộc nick nào</span>}</dd>
           <dt className="text-fg-subtle">cPanel</dt>
           <dd className="font-mono">{r.host?.nick.cpanelHost ?? "—"}</dd>
-          <dt className="text-fg-subtle">Thư mục</dt>
-          <dd className="truncate font-mono" title={`/public_html/${r.domain}`}>/public_html/{r.domain}</dd>
+          <dt className="text-fg-subtle">Document root</dt>
+          <dd className="min-w-0">
+            {r.docRoot
+              ? <><span className="block truncate font-mono" title={`~/${r.docRoot}`}>~/{r.docRoot}</span><span className="block text-[11px] text-fg-subtle">đọc từ cPanel: {r.docRootApi}</span></>
+              : <span className="text-fg-subtle">Chưa đọc — lấy từ cPanel API trước khi upload, không đoán đường dẫn</span>}
+          </dd>
+          <dt className="text-fg-subtle">Mẫu đã dựng</dt>
+          <dd>{r.builtTemplate ? TEMPLATE_BY_ID[r.builtTemplate].name : <span className="text-fg-subtle">chưa dựng</span>}</dd>
           <dt className="text-fg-subtle">SSL</dt>
           <dd className="flex items-center gap-1">{r.sslIssued ? <><ShieldCheck className="size-3.5 text-emerald-300" /> Đã cấp (AutoSSL)</> : "Chưa cấp — bật qua SSL::start_autossl_check"}</dd>
         </dl>

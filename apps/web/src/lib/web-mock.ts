@@ -37,6 +37,7 @@ export function detectWithReason(name: string): Detection {
 
 export const WEB_STEPS = [
   "Kiểm tra DNS của B trỏ đúng IP hosting",
+  "Xác minh document root trên cPanel (API)",
   "Tạo nội dung bằng AI API",
   "Kiểm tra nội dung (không bịa)",
   "Dựng HTML theo mẫu",
@@ -68,6 +69,15 @@ export type WebRow = {
   contentReady: boolean;
   uploaded: boolean;
   sslIssued: boolean;
+  /**
+   * Document root of B as cPanel reports it (relative to the account home) — read over the API before
+   * uploading, never assumed. Subdomain: SubDomain::listsubdomains → basedir; main/addon:
+   * DomainInfo::single_domain_data → documentroot. Unset until read.
+   */
+  docRoot?: string;
+  docRootApi?: string;
+  /** Template the HTML was actually built with — must equal templateId. */
+  builtTemplate?: string;
   error?: string;
   writtenC?: string;
   /** Live HTTPS site whose C cell was taken meanwhile — kept for the owner to resolve. */
@@ -75,8 +85,13 @@ export type WebRow = {
   log: LogLine[];
   checked: boolean;
   /** Demo only: scripted behaviour for this row. */
-  outcome?: "aiRegenerate" | "sslPendingOnce" | "dnsMismatch" | "conflictAtWrite";
+  outcome?: "aiRegenerate" | "sslPendingOnce" | "dnsMismatch" | "conflictAtWrite" | "notOnCpanel";
+  /** Demo only: the document root cPanel will report for this domain. */
+  demoDocRoot?: string;
 };
+
+/** What cPanel reports for B in the demo: most subdomains under public_html, some elsewhere. */
+export const demoDocRootFor = (r: WebRow) => r.demoDocRoot ?? `public_html/${r.domain}`;
 
 export const hostOf = (domain: string, nicks: Nick[] = NICKS) => {
   for (const nick of nicks)
@@ -109,14 +124,19 @@ export function initialWebRows(): WebRow[] {
     else if (c.stages.web === "error") base.outcome = "sslPendingOnce";
     else if (idx === 1) base.outcome = "aiRegenerate";
     else if (idx === 4) base.outcome = "conflictAtWrite";
+    else if (idx === 6) base.outcome = "notOnCpanel"; // B written by hand, never created on the hosting
+    // Created by hand outside public_html — the upload must follow what cPanel says, not a fixed path.
+    if (idx === 3) base.demoDocRoot = `sites/${c.B.split(".")[0]}`;
     // A past failure stays visible; nothing is queued or running on open.
     if (c.stages.web === "error")
       return {
-        ...base, status: "failed", step: 5, progress: 100, contentReady: true, uploaded: true, outcome: undefined, // already failed once; the retry succeeds
+        ...base, status: "failed", step: 6, progress: 100, contentReady: true, uploaded: true, outcome: undefined, // already failed once; the retry succeeds
+        docRoot: `public_html/${c.B}`, docRootApi: "SubDomain::listsubdomains", builtTemplate: base.templateId,
         error: "AutoSSL chưa cấp chứng chỉ — HTTPS chưa truy cập được. C giữ trống. Thử lại sau khi DNS ổn định (~40 phút).",
         log: [
           { t: "14:18:02", msg: "Nội dung AI đạt kiểm tra · đã dựng 6 trang", tone: "ok" },
-          { t: "14:18:40", msg: "Upload xong /public_html/" + c.B, tone: "ok" },
+          { t: "14:17:51", msg: "cPanel SubDomain::listsubdomains: document root ~/public_html/" + c.B, tone: "ok" },
+          { t: "14:18:40", msg: "Upload xong ~/public_html/" + c.B, tone: "ok" },
           { t: "14:22:15", msg: "AutoSSL: chưa cấp chứng chỉ → dừng, C giữ trống", tone: "err" },
         ],
       };

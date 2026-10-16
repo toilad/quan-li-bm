@@ -53,34 +53,7 @@ export function SitePreview({ r, onClose }: { r: WebRow; onClose: () => void }) 
           </nav>
 
           {page === "Trang chủ" ? (
-            <>
-              <section className="grid items-center gap-8 px-8 py-12 md:grid-cols-2" style={{ background: `linear-gradient(135deg, ${t.primary}14, ${t.accent}33)` }}>
-                <div>
-                  <div className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: t.primary }}>{t.group}</div>
-                  <h1 className="mt-2 text-[32px] font-bold leading-tight">{c.A}</h1>
-                  <p className="mt-3 italic text-slate-500">Đoạn giới thiệu ngắn do AI viết theo ngành — không có giải thưởng, khách hàng hay số liệu tự bịa.</p>
-                  <div className="mt-5 flex gap-3">
-                    <span className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white" style={{ background: t.primary }}>Liên hệ</span>
-                    <span className="rounded-lg border px-4 py-2 text-[13px] font-semibold" style={{ borderColor: t.primary, color: t.primary }}>Dịch vụ</span>
-                  </div>
-                </div>
-                <div className="grid aspect-[4/3] place-items-center rounded-2xl" style={{ background: `linear-gradient(135deg, ${t.primary}, ${t.accent})` }}>
-                  <div className="text-center text-white/90">
-                    <Icon className="mx-auto size-14" strokeWidth={1.4} />
-                    <div className="mt-2 text-[12px]">Ảnh: {t.photoKeywords.join(", ")}</div>
-                  </div>
-                </div>
-              </section>
-              <section className="grid gap-4 px-8 py-10 md:grid-cols-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="rounded-xl border border-slate-200 p-5">
-                    <div className="mb-3 size-8 rounded-lg" style={{ background: `${t.accent}88` }} />
-                    <div className="font-semibold">Dịch vụ {i}</div>
-                    <p className="mt-1 text-[13px] italic text-slate-500">Mô tả chung theo ngành, không hứa hẹn kết quả.</p>
-                  </div>
-                ))}
-              </section>
-            </>
+            <HomeLayout r={r} />
           ) : (
             <section className="px-8 py-12">
               <h1 className="text-[26px] font-bold" style={{ color: t.primary }}>{page}</h1>
@@ -106,4 +79,120 @@ export function SitePreview({ r, onClose }: { r: WebRow; onClose: () => void }) 
     </div>,
     document.body,
   );
+}
+
+const INTRO = "Đoạn giới thiệu ngắn do AI viết theo ngành — không có giải thưởng, khách hàng hay số liệu tự bịa.";
+const SERVICE = "Mô tả chung theo ngành, không hứa hẹn kết quả.";
+
+/** Home page per template: each of the 6 legacy hero layouts gets its own structure, in the template's palette. */
+function HomeLayout({ r }: { r: WebRow }) {
+  const t = TEMPLATE_BY_ID[r.templateId];
+  const Icon = TEMPLATE_ICONS[t.icon];
+  const name = r.company.A;
+  const photo = (cls = "aspect-[4/3] rounded-2xl") => (
+    <div className={clsx("grid place-items-center", cls)} style={{ background: `linear-gradient(135deg, ${t.primary}, ${t.accent})` }}>
+      <div className="text-center text-white/90">
+        <Icon className="mx-auto size-14" strokeWidth={1.4} />
+        <div className="mt-2 text-[12px]">Ảnh: {t.photoKeywords.join(", ")}</div>
+      </div>
+    </div>
+  );
+  const ctas = (
+    <div className="mt-5 flex gap-3">
+      <span className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white" style={{ background: t.primary }}>Liên hệ</span>
+      <span className="rounded-lg border px-4 py-2 text-[13px] font-semibold" style={{ borderColor: t.primary, color: t.primary }}>Dịch vụ</span>
+    </div>
+  );
+  const text = (
+    <div>
+      <div className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: t.primary }}>{t.group}</div>
+      <h1 className="mt-2 text-[32px] font-bold leading-tight">{name}</h1>
+      <p className="mt-3 italic text-slate-500">{INTRO}</p>
+      {ctas}
+    </div>
+  );
+  const cards = (variant: "boxed" | "list" | "accent") => (
+    <section className={clsx("px-8 py-10", variant === "list" ? "space-y-3" : "grid gap-4 md:grid-cols-3")}>
+      {[1, 2, 3].map((i) =>
+        variant === "list" ? (
+          <div key={i} className="flex items-start gap-4 border-b border-slate-200 pb-3">
+            <span className="font-mono text-[22px] font-bold" style={{ color: t.primary }}>0{i}</span>
+            <div><div className="font-semibold">Dịch vụ {i}</div><p className="text-[13px] italic text-slate-500">{SERVICE}</p></div>
+          </div>
+        ) : (
+          <div key={i} className="rounded-xl p-5" style={variant === "accent" ? { background: `${t.accent}33` } : { border: "1px solid #e2e8f0" }}>
+            <div className="mb-3 size-8 rounded-lg" style={{ background: variant === "accent" ? t.primary : `${t.accent}88` }} />
+            <div className="font-semibold">Dịch vụ {i}</div>
+            <p className="mt-1 text-[13px] italic text-slate-500">{SERVICE}</p>
+          </div>
+        ),
+      )}
+    </section>
+  );
+
+  switch (t.hero) {
+    case "centered":
+      return (
+        <>
+          <section className="px-8 py-16 text-center" style={{ background: `linear-gradient(180deg, ${t.primary}, ${t.accent})` }}>
+            <Icon className="mx-auto size-12 text-white/90" strokeWidth={1.4} />
+            <h1 className="mt-4 text-[36px] font-bold text-white">{name}</h1>
+            <p className="mx-auto mt-3 max-w-xl italic text-white/85">{INTRO}</p>
+            <span className="mt-6 inline-block rounded-full bg-white px-5 py-2 text-[13px] font-semibold" style={{ color: t.primary }}>Liên hệ</span>
+          </section>
+          {cards("accent")}
+        </>
+      );
+    case "split-right":
+      return (
+        <>
+          <section className="grid items-center gap-8 px-8 py-12 md:grid-cols-2">{photo()}{text}</section>
+          {cards("boxed")}
+        </>
+      );
+    case "minimal":
+      return (
+        <>
+          <section className="border-b border-slate-200 px-8 py-14">
+            <h1 className="max-w-3xl text-[40px] font-light leading-tight">{name}</h1>
+            <div className="mt-3 h-1 w-16 rounded-full" style={{ background: t.primary }} />
+            <p className="mt-4 max-w-2xl italic text-slate-500">{INTRO}</p>
+          </section>
+          {cards("list")}
+        </>
+      );
+    case "stacked-cards":
+      return (
+        <>
+          <section className="grid items-center gap-8 px-8 py-12 md:grid-cols-[1.1fr_1fr]" style={{ background: `${t.accent}22` }}>
+            {text}
+            <div className="relative">
+              <div className="absolute inset-0 translate-x-3 translate-y-3 rotate-3 rounded-2xl opacity-50" style={{ background: t.accent }} />
+              <div className="relative">{photo()}</div>
+            </div>
+          </section>
+          {cards("accent")}
+        </>
+      );
+    case "image-banner":
+      return (
+        <>
+          <section className="relative">
+            {photo("h-[300px] rounded-none")}
+            <div className="absolute inset-0 flex flex-col items-start justify-end bg-gradient-to-t from-black/60 to-transparent px-8 pb-8">
+              <h1 className="text-[34px] font-bold text-white">{name}</h1>
+              <p className="mt-2 max-w-xl italic text-white/85">{INTRO}</p>
+            </div>
+          </section>
+          {cards("boxed")}
+        </>
+      );
+    default: // split-left
+      return (
+        <>
+          <section className="grid items-center gap-8 px-8 py-12 md:grid-cols-2" style={{ background: `linear-gradient(135deg, ${t.primary}14, ${t.accent}33)` }}>{text}{photo()}</section>
+          {cards("boxed")}
+        </>
+      );
+  }
 }
