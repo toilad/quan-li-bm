@@ -1,0 +1,63 @@
+# Quản Lí BM — full stack.  cp apps/api/.env.example apps/api/.env  (fill in), then: docker compose up -d --build
+# Not yet run on this machine (no Docker installed here); local development uses the embedded PostgreSQL.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qlbm
+      POSTGRES_USER: qlbm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env next to this file}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qlbm -d qlbm"]
+      interval: 5s
+      retries: 20
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    env_file: ./apps/api/.env
+    environment:
+      DATABASE_URL: postgresql://qlbm:${POSTGRES_PASSWORD}@db:5432/qlbm
+      DATA_DIR: /data
+      GOOGLE_SERVICE_ACCOUNT_FILE: /secrets/google-service-account.json
+    volumes: [appdata:/data, ./secrets:/secrets:ro]
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["127.0.0.1:8000:8000"]
+
+  worker:
+    build: ./apps/api
+    restart: unless-stopped
+    command: ["python", "-m", "worker.main"]
+    env_file: ./apps/api/.env
+    environment:
+      DATABASE_URL: postgresql://qlbm:${POSTGRES_PASSWORD}@db:5432/qlbm
+      DATA_DIR: /data
+      GOOGLE_SERVICE_ACCOUNT_FILE: /secrets/google-service-account.json
+    volumes: [appdata:/data, ./secrets:/secrets:ro]
+    depends_on: { db: { condition: service_healthy } }
+
+  web:
+    build:
+      context: ./apps/web
+      args: { NEXT_PUBLIC_API_URL: "${PUBLIC_API_URL:-http://localhost:8000}" }
+    restart: unless-stopped
+    depends_on: [api]
+    ports: ["127.0.0.1:3000:3000"]
+
+  backup:
+    build: ./apps/api
+    restart: unless-stopped
+    # Daily pg_dump + data archive into the backups volume; copy off-site with restic (see docs/ARCHITECTURE.md).
+    command: ["sh", "-c", "while true; do python -m scripts.backup create; sleep 86400; done"]
+    environment:
+      DATABASE_URL: postgresql://qlbm:${POSTGRES_PASSWORD}@db:5432/qlbm
+      DATA_DIR: /data
+    volumes: [appdata:/data, backups:/app/backups]
+    depends_on: { db: { condition: service_healthy } }
+
+volumes:
+  pgdata:
+  appdata:
+  backups:

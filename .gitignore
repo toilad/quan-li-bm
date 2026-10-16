@@ -38,3 +38,11 @@ backups/
 Thumbs.db
 .vscode/
 .idea/
+
+# Backend local state (database, uploaded PDFs, built sites, backups) — never committed
+apps/api/.pgdata/
+apps/api/data/
+apps/api/backups/
+apps/api/config/nicks.json
+secrets/
+.pytest_cache/

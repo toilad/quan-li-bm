@@ -1,0 +1,17 @@
+{
+  "_note": "Non-secret data only. Copied read-only from portal.inet.vn on 2026-10-16. Secrets go in .env: INET_API_KEY_N1, CPANEL_USER_N1, CPANEL_TOKEN_N1 (…N2, N3). Nothing is ticked by default.",
+  "nicks": [
+    {"id": "n1", "name": "iNET-1", "ip": "103.75.187.26", "hosting": "levantoan.000web.com", "cpanel_host": "turboweb-022607.000nethost.com",
+     "roots": [["sustainlife.io.vn","inet","2027-04-03",true],["ganeshabrands.food","inet","2027-07-06",false],["huxma.life","inet","2027-07-06",false],
+               ["yhawtunga.diy","inet","2027-07-06",false],["yhawt.press","inet","2027-07-06",false],["ganeshabrands.space","inet","2027-06-30",false],
+               ["bmglobal.io.vn","inet","2027-06-29",false],["woryn.com.vn","inet","2027-06-25",false],["vnclick.cloud","inet","2027-05-27",false],
+               ["vnclick.food","inet","2027-05-27",false],["vietcart.site","unknown","2027-05-27",false,"suspended"]]},
+    {"id": "n2", "name": "iNET-2", "ip": "103.75.187.26", "hosting": "ntp88.com", "cpanel_host": "turboweb-022607.000nethost.com",
+     "roots": [["ntp88.com","inet","2027-04-20",true],["thanhnam88.com","inet","2027-07-21",true],["convnctnet.com","inet","2027-07-01",false]]},
+    {"id": "n3", "name": "iNET-3", "ip": "202.92.7.88", "hosting": "toandao.site", "cpanel_host": "turboweb-082302.000nethost.com",
+     "roots": [["groupany.id.vn","inet","2027-03-18",true],["zentrivo.my","inet","2027-03-12",true],["a66group.store","inet","2027-03-02",true],
+               ["a77group.website","inet","2026-12-25",true],["a45group.io.vn","inet","2026-12-09",true],["a69group.io.vn","inet","2026-12-02",true],
+               ["a66group.io.vn","inet","2026-11-15",true],["namecheapp.site","inet","2026-11-11",true],["toandao.site","inet","2026-11-08",true],
+               ["starstad.space","inet","2027-07-03",false],["167nailspa.com","other","2027-08-13",false]]}
+  ]
+}

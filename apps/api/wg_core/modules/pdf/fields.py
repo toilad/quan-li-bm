@@ -1,0 +1,74 @@
+"""Sheet field helpers: normalisation and validation shared by every document type.
+All codes stay TEXT (leading zeros, dots, dashes kept)."""
+import re
+import unicodedata
+
+FIELD_KEYS = ["A", "D", "E", "F", "G", "H", "I", "J"]
+CRITICAL = {"A", "J"}
+BR_UF = set("AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split())
+US_STATES = {"WYOMING": "WY", "CALIFORNIA": "CA"}
+
+
+def strip_accents(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+
+def short_name(a: str) -> str:
+    """Legacy column E: lowercase, keep the legal suffix, drop accents and symbols."""
+    return re.sub(r"[^a-z0-9]", "", strip_accents(a).lower())
+
+
+def field(value: str, source: str, note: str | None = None) -> dict:
+    """source: text (PDF text layer) | ai (read by AI from a scan) | auto (derived) | manual | missing"""
+    value = (value or "").strip()
+    f = {"value": value, "source": source if value else "missing"}
+    if note:
+        f["note"] = note
+    return f
+
+
+def cnpj_valid(cnpj: str) -> bool:
+    d = re.sub(r"\D", "", cnpj)
+    if len(d) != 14 or len(set(d)) == 1:
+        return False
+    def dv(digits: str, weights: list[int]) -> str:
+        s = sum(int(x) * w for x, w in zip(digits, weights)) % 11
+        return "0" if s < 2 else str(11 - s)
+    w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    w2 = [6] + w1
+    return d[12] == dv(d[:12], w1) and d[13] == dv(d[:13], w2)
+
+
+def validate(fields: dict, doc_type: str) -> dict[str, dict]:
+    """{key: {level: error|warn, kind: critical|format|missing, message}}. Errors block saving; warnings don't."""
+    issues: dict[str, dict] = {}
+    val = lambda k: (fields.get(k) or {}).get("value", "").strip()  # noqa: E731
+    for k in FIELD_KEYS:
+        if not val(k):
+            if k in CRITICAL:
+                issues[k] = {"level": "error", "kind": "critical", "message": "Bắt buộc — không được để trống"}
+            elif k != "E":
+                issues[k] = {"level": "error", "kind": "missing", "message": "Trống — xác nhận để trống trước khi lưu"}
+    j, h, i = val("J"), val("H"), val("I")
+    if doc_type == "br":
+        if j and not re.fullmatch(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", j):
+            issues["J"] = {"level": "error", "kind": "format", "message": "CNPJ phải dạng 00.000.000/0000-00"}
+        elif j and not cnpj_valid(j):
+            issues["J"] = {"level": "error", "kind": "format", "message": "Sai số kiểm tra CNPJ — đối chiếu lại phôi"}
+        if h and h not in BR_UF:
+            issues["H"] = {"level": "error", "kind": "format", "message": "UF không hợp lệ"}
+        if i and not re.fullmatch(r"\d{2}\.\d{3}-\d{3}", i):
+            issues["I"] = {"level": "error", "kind": "format", "message": "CEP phải dạng 00.000-000"}
+    elif doc_type in ("wy", "ca"):
+        if i and not re.fullmatch(r"\d{5}(-\d{4})?", i):
+            issues["I"] = {"level": "error", "kind": "format", "message": "ZIP phải 5 số (hoặc 5+4)"}
+        if h and not re.fullmatch(r"[A-Z]{2}", h):
+            issues["H"] = {"level": "error", "kind": "format", "message": "Bang phải là mã 2 chữ (vd CA)"}
+        if doc_type == "ca" and j and not re.fullmatch(r"\d{12}", j):
+            # Only one sample seen: warn, never block.
+            issues["J"] = {"level": "warn", "kind": "format", "message": "Mẫu đã thấy có 12 chữ số — kiểm tra lại (không chặn lưu)"}
+    return issues
+
+
+def blocking(issues: dict) -> dict:
+    return {k: v for k, v in issues.items() if v["level"] == "error"}
