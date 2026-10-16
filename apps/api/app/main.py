@@ -268,10 +268,12 @@ def roots(s: Session = Depends(db)):
     out = []
     for n in s.scalars(select(Nick).order_by(Nick.id)):
         rs = []
+        on_cp = domains.cpanel_domains(s, n.id)
         for r in s.scalars(select(RootDomain).where(RootDomain.nick_id == n.id).order_by(RootDomain.name)):
             rs.append({"name": r.name, "dns_host": r.dns_host, "expires": r.expires.isoformat() if r.expires else None,
                        "days_left": (r.expires - date.today()).days if r.expires else None, "apex_on_hosting": r.apex_on_hosting,
-                       "suspended": r.suspended, "selected": r.selected, "issue": domains.root_issue(r, n), "busy": domains.root_busy(s, r.name)})
+                       "suspended": r.suspended, "selected": r.selected, "issue": domains.root_issue(r, n), "busy": domains.root_busy(s, r.name),
+                       "on_cpanel": None if on_cp is None else r.name in on_cp})
         out.append({"id": n.id, "name": n.name, "ip": n.ip, "hosting": n.hosting, "cpanel_host": n.cpanel_host, "enabled": n.enabled, "roots": rs})
     return out
 
@@ -284,6 +286,12 @@ class SelectBody(BaseModel):
 @app.post("/api/domains/roots/select")
 def select_roots(body: SelectBody, s: Session = Depends(db)):
     return domains.set_selected(s, body.names, body.on)
+
+
+@app.post("/api/domains/check/{nick_id}")
+def check_nick(nick_id: str, s: Session = Depends(db)):
+    """Read-only check of one nick: cPanel domain list + raw iNET domain list."""
+    return domains.check_nick(s, nick_id)
 
 
 @app.get("/api/domains/rows")

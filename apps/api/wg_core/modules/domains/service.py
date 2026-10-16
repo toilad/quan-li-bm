@@ -18,7 +18,7 @@ from ...integrations.errors import Conflict, NotAvailable, Permanent, Transient
 from ...integrations.google import Sheets
 from ...integrations.inet import Inet
 from ...jobs import JobContext, enqueue, handler
-from ...models import Job, Nick, RootDomain, SheetWrite
+from ...models import AppSetting, Job, Nick, RootDomain, SheetWrite
 
 LABEL_RX = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 LEGAL = re.compile(r"\b(llc|inc|pllc|co|corp|ltd)\b\.?")
@@ -60,6 +60,41 @@ def root_busy(s: Session, root: str) -> bool:
     return False
 
 
+def cpanel_domains(s: Session, nick_id: str) -> set[str] | None:
+    """Domains that the last read-only check found on the nick's cPanel account; None = never checked."""
+    row = s.get(AppSetting, f"cpanel_domains:{nick_id}")
+    return set(row.value.get("domains", [])) if row else None
+
+
+def check_nick(s: Session, nick_id: str) -> dict:
+    """Read-only: which roots exist on the cPanel account, and the raw iNET domain list (shape undocumented)."""
+    from datetime import datetime, timezone
+
+    from ...integrations.errors import IntegrationError
+
+    nick = s.get(Nick, nick_id)
+    if not nick:
+        raise Permanent("Không có nick này")
+    out: dict = {"nick": nick.name}
+    try:
+        d = CPanel(nick.id, nick.cpanel_host).list_domains()
+        names = sorted({x.lower() for x in [d.get("main_domain") or ""] + (d.get("addon_domains") or []) + (d.get("parked_domains") or []) if x})
+        s.merge(AppSetting(key=f"cpanel_domains:{nick.id}", value={"domains": names, "at": datetime.now(timezone.utc).isoformat()}))
+        roots = [r.name for r in s.scalars(select(RootDomain).where(RootDomain.nick_id == nick.id))]
+        out["cpanel"] = {"ok": True, "on_hosting": [r for r in roots if r in names], "missing": [r for r in roots if r not in names],
+                         "subdomains": len(d.get("sub_domains") or [])}
+    except IntegrationError as e:
+        out["cpanel"] = {"ok": False, "error": str(e)}
+    try:
+        raw = Inet(nick.id).list_domains_raw()
+        s.merge(AppSetting(key=f"inet_raw:{nick.id}", value={"raw": raw, "at": datetime.now(timezone.utc).isoformat()}))
+        out["inet"] = {"ok": True, "note": "Đã lưu dữ liệu trả về để đối chiếu cấu trúc (tài liệu chưa mô tả) — chưa dùng để đổi danh sách miền",
+                       "top_level": sorted(raw.keys()) if isinstance(raw, dict) else f"list[{len(raw)}]"}
+    except IntegrationError as e:
+        out["inet"] = {"ok": False, "error": str(e)}
+    return out
+
+
 def set_selected(s: Session, names: list[str], on: bool) -> dict:
     changed, refused = [], {}
     for name in names:
@@ -69,6 +104,8 @@ def set_selected(s: Session, names: list[str], on: bool) -> dict:
             continue
         if on and (why := root_issue(r, s.get(Nick, r.nick_id))):
             refused[name] = why
+        elif on and (known := cpanel_domains(s, r.nick_id)) is not None and name not in known:
+            refused[name] = "Miền gốc chưa có trên tài khoản cPanel của nick (kiểm tra hosting gần nhất) — thêm vào hosting trước"
         elif not on and root_busy(s, name):
             refused[name] = "Đang có tác vụ trên miền này — bỏ chọn sau khi xong"
         else:

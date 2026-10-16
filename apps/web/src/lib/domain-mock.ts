@@ -19,6 +19,8 @@ export type RootDomain = {
   /** The root itself already points at this account's hosting IP. */
   apexOnHosting: boolean;
   suspended?: boolean;
+  /** From the last read-only cPanel check: true/false, undefined = not checked yet. */
+  onCpanel?: boolean | null;
 };
 
 export type Nick = {

@@ -36,7 +36,7 @@ export type DomainState = {
   message: string | null;
 };
 
-type ServerRoot = { name: string; dns_host: DnsHost; expires: string | null; apex_on_hosting: boolean; suspended: boolean; selected: boolean; busy: boolean };
+type ServerRoot = { name: string; dns_host: DnsHost; expires: string | null; apex_on_hosting: boolean; suspended: boolean; selected: boolean; busy: boolean; on_cpanel: boolean | null };
 type ServerNick = { id: string; name: string; ip: string; hosting: string | null; cpanel_host: string; enabled: boolean; roots: ServerRoot[] };
 type ScanRow = { row: number; A: string; D: string; E: string; F: string; G: string; H: string; I: string; J: string; K: string; flags: string[]; label: string };
 type Scan = { total: number; with_b: number; rows: ScanRow[]; excluded: { row: number }[]; existing_b: string[]; tab: string };
@@ -60,6 +60,7 @@ type Action =
   | { type: "retryAll" }
   | { type: "pickRoots"; roots: string[]; on: boolean }
   | { type: "sync" }
+  | { type: "checkNick"; id: string }
   | { type: "pause" }
   | { type: "resume" }
   | { type: "resolveOrphan"; row: number; note: string }
@@ -229,7 +230,7 @@ function toNicks(server: ServerNick[]): Nick[] {
     id: n.id, name: n.name, email: "", ip: n.ip, hosting: n.hosting ?? undefined, cpanelHost: n.cpanel_host, cpanelUser: "",
     enabled: n.enabled, status: "untested", usedToday: 0, dailyLimit: null, weight: 1, subdomains: 0, lastCheck: "—",
     api: { dns: { state: "untested", note: "tạo bản ghi A qua API iNET: chưa khả dụng" }, cpanel: { state: "untested" } },
-    roots: n.roots.map((r) => ({ name: r.name, dnsHost: r.dns_host, expires: r.expires ?? "2999-01-01", apexOnHosting: r.apex_on_hosting, suspended: r.suspended })),
+    roots: n.roots.map((r) => ({ name: r.name, dnsHost: r.dns_host, expires: r.expires ?? "2999-01-01", apexOnHosting: r.apex_on_hosting, suspended: r.suspended, onCpanel: r.on_cpanel })),
   }));
 }
 
@@ -306,6 +307,13 @@ export function useDomainQueue() {
         return;
       case "sync":
         refresh();
+        return;
+      case "checkNick":
+        say("Đang kiểm tra hosting + iNET (chỉ đọc)…");
+        api.post<{ nick: string; cpanel: { ok: boolean; error?: string; on_hosting?: string[]; missing?: string[] }; inet: { ok: boolean; error?: string; note?: string } }>(`/api/domains/check/${a.id}`)
+          .then((r) => say(`${r.nick} · cPanel: ${r.cpanel.ok ? `${r.cpanel.on_hosting?.length ?? 0} miền gốc có trên hosting, ${r.cpanel.missing?.length ?? 0} chưa có` : r.cpanel.error} · iNET: ${r.inet.ok ? r.inet.note : r.inet.error}`))
+          .catch((e) => say(errorText(e)))
+          .finally(refresh);
         return;
       case "pause":
       case "resume":

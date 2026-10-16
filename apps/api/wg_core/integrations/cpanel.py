@@ -61,6 +61,10 @@ class CPanel:
         except Permanent:
             return None
 
+    def list_domains(self) -> dict:
+        """DomainInfo::list_domains → {main_domain, addon_domains, sub_domains, parked_domains} (read-only)."""
+        return self._call("DomainInfo", "list_domains", {"hide_temporary_domains": 1}) or {}
+
     def add_subdomain(self, label: str, rootdomain: str, dir_: str) -> None:
         self._call("SubDomain", "addsubdomain", {"domain": label, "rootdomain": rootdomain, "dir": dir_})
 

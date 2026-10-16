@@ -102,6 +102,9 @@ function NickGroup({
           {!nick.enabled && <span className="text-amber-300">Nick đang tắt</span>}
         </div>
         <div className="flex gap-1.5">
+          <Btn small onClick={() => dispatch({ type: "checkNick", id: nick.id })} label={`Kiểm tra hosting của ${nick.name}`} title="Đọc danh sách miền trên cPanel + iNET, không thay đổi gì">
+            Kiểm tra hosting (chỉ đọc)
+          </Btn>
           <Btn small onClick={() => dispatch({ type: "pickRoots", roots: usable.map((r) => r.name), on: true })} label={`Chọn tất cả miền của ${nick.name}`}>
             Chọn tất cả
           </Btn>
@@ -193,6 +196,8 @@ function DnsCell({ r }: { r: RootDomain }) {
     <div>
       <div className={r.dnsHost === "inet" || r.dnsHost === "cpanel" ? "text-fg-muted" : "text-rose-300"}>{ns}</div>
       <div className="text-fg-subtle">{r.apexOnHosting ? "Miền gốc đã trỏ hosting" : "Miền gốc chưa trỏ (không ảnh hưởng miền phụ)"}</div>
+      {r.onCpanel === true && <div className="text-emerald-300/90">Có trên cPanel</div>}
+      {r.onCpanel === false && <div className="text-rose-300">Chưa có trên cPanel — không tạo được miền phụ</div>}
     </div>
   );
 }

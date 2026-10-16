@@ -130,3 +130,27 @@ def test_busy_root_cannot_be_unticked():
         domains.enqueue_rows(s, [{"row": ROW, "company": "Acme", "root": "huxma.life", "label": "acme"}])
         res = domains.set_selected(s, ["huxma.life"], False)
     assert res["refused"] == {"huxma.life": "Đang có tác vụ trên miền này — bỏ chọn sau khi xong"}
+
+
+def test_read_only_nick_check_marks_roots_on_hosting_and_keeps_inet_raw():
+    import httpx
+
+    with respx.mock(assert_all_called=False) as m:
+        m.get(f"{CP}/DomainInfo/list_domains").mock(return_value=cp_ok({
+            "main_domain": "levantoan.000web.com", "addon_domains": ["sustainlife.io.vn", "huxma.life"], "sub_domains": ["a.huxma.life"], "parked_domains": []}))
+        inet = m.get("https://developers.inet.vn/api/gateway/v1/domain").mock(return_value=httpx.Response(200, json={"content": [{"x": 1}]}))
+        with session_scope() as s:
+            out = domains.check_nick(s, "n1")
+    assert out["cpanel"]["ok"] and set(out["cpanel"]["on_hosting"]) == {"sustainlife.io.vn", "huxma.life"}
+    assert "yhawt.press" in out["cpanel"]["missing"]
+    assert out["inet"]["ok"] and out["inet"]["top_level"] == ["content"] and inet.calls[0].request.method == "GET"
+    # a root not on the hosting can no longer be ticked; one on it can
+    res = _tick("yhawt.press", "huxma.life")
+    assert res["changed"] == ["huxma.life"] and "cPanel" in res["refused"]["yhawt.press"]
+
+
+def test_nick_check_without_keys_reports_each_service():
+    with session_scope() as s:
+        out = domains.check_nick(s, "n2")  # no CPANEL_*_N2 / INET_API_KEY_N2 in the test env
+    assert not out["cpanel"]["ok"] and "CPANEL_TOKEN_N2" in out["cpanel"]["error"]
+    assert not out["inet"]["ok"] and "INET_API_KEY_N2" in out["inet"]["error"]
