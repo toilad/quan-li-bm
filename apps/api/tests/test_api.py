@@ -3,7 +3,8 @@ import glob
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import FIXTURES
+from tests.conftest import FIXTURES  # noqa: F401
+from tests.test_pdf import BR as BR_SAMPLES
 from wg_core.config import settings
 
 
@@ -46,9 +47,9 @@ def test_roots_listing_and_select(client):
     assert res["changed"] == ["huxma.life"] and "vietcart.site" in res["refused"]
 
 
-@pytest.mark.skipif(not glob.glob(str(FIXTURES / "*LTDA*.pdf")), reason="fixtures not present")
+@pytest.mark.skipif(not BR_SAMPLES, reason="fixtures not present")
 def test_pdf_upload_extract_edit_and_save_validation(client):
-    p = sorted(glob.glob(str(FIXTURES / "*LTDA*.pdf")))[0]
+    p = BR_SAMPLES[0]
     up = client.post("/api/pdf/upload", files=[("files", ("x.pdf", open(p, "rb").read(), "application/pdf"))]).json()[0]
     assert up["doc_type"] == "br" and up["status"] == "review" and up["fields"]["A"]["value"]
     again = client.post("/api/pdf/upload", files=[("files", ("y.pdf", open(p, "rb").read(), "application/pdf"))]).json()[0]

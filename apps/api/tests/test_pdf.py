@@ -1,4 +1,6 @@
 import glob
+import hashlib
+import json
 
 import pytest
 import respx
@@ -11,8 +13,19 @@ from wg_core.modules.pdf import service as pdf
 from wg_core.modules.pdf.extract import detect, extract_br, read_pdf
 from wg_core.modules.pdf.fields import cnpj_valid, validate
 
-BR = sorted(glob.glob(str(FIXTURES / "*.pdf")))
-CA = sorted(glob.glob(str(FIXTURES / "*.pdf")))
+# Real sample filings live only in test-fixtures/ (gitignored). They are sorted by what they are, not by file name,
+# and the expected values come from test-fixtures/expected.local.json (also gitignored), keyed by md5.
+def _classify():
+    br, scans = [], []
+    for p in sorted(glob.glob(str(FIXTURES / "*.pdf"))):
+        t = read_pdf(open(p, "rb").read())
+        (br if detect(t).doc_type == "br" else scans if not t.text.strip() else []).append(p)
+    return br, scans
+
+
+BR, CA = _classify()
+EXPECTED_FILE = FIXTURES.parent / "expected.local.json"
+EXPECTED = json.loads(EXPECTED_FILE.read_text(encoding="utf-8")) if EXPECTED_FILE.exists() else {}
 needs_fixtures = pytest.mark.skipif(not BR, reason="test-fixtures/pdf not present (kept out of Git)")
 
 
@@ -31,16 +44,21 @@ def test_brazil_detect_and_extract_all_samples():
         assert not {k for k, v in validate(f, "br").items() if v["level"] == "error"}
 
 
-@needs_fixtures
-def test_brazil_known_values_one_sample():
-    p = BR[0]
-    f, extra = extract_br(read_pdf(open(p, "rb").read()))
-    assert f["A"]["value"] == "<redacted sample name>"
-    assert f["J"]["value"] == "11.222.333/0001-81"
-    assert f["F"]["value"] == "<redacted sample address>"
-    assert (f["G"]["value"], f["H"]["value"], f["I"]["value"]) == ("<redacted>", "<redacted>", "<redacted>")
-    assert f["E"]["value"] == "<redacted>"
-    assert extra["cnae_principal"].startswith("95.11-8-00")
+@pytest.mark.skipif(not EXPECTED, reason="test-fixtures/expected.local.json not present (kept out of Git)")
+def test_brazil_exact_values_against_checked_expectations():
+    """Every Brazil sample: A, D–J and the main CNAE exactly as checked by eye against the printed comprovante."""
+    checked = 0
+    for p in BR:
+        data = open(p, "rb").read()
+        exp = EXPECTED.get(hashlib.md5(data).hexdigest())
+        if not exp or exp["doc_type"] != "br":
+            continue
+        f, extra = extract_br(read_pdf(data))
+        for k in "ADEFGHIJ":
+            assert f[k]["value"] == exp[k], (k, f[k]["value"], exp[k])
+        assert extra["cnae_principal"].startswith(exp["cnae_principal_code"])
+        checked += 1
+    assert checked == len(BR)
 
 
 @pytest.mark.skipif(not CA, reason="California sample not present")
@@ -51,7 +69,7 @@ def test_california_scan_is_not_guessed():
 
 
 def test_cnpj_checksum():
-    assert cnpj_valid("11.222.333/0001-81")
+    assert cnpj_valid("11.222.333/0001-81")  # public example number, not a real filing
     assert not cnpj_valid("11.222.333/0001-82")
 
 
