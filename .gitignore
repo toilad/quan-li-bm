@@ -1,0 +1,35 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+service_account*.json
+inet_accounts*.json
+.app_settings.json
+
+# Legacy binaries / extracted data (may contain plaintext credentials)
+*.exe
+legacy/extracted/
+
+# Dependencies & builds
+node_modules/
+.next/
+out/
+dist/
+build/
+__pycache__/
+*.pyc
+.venv/
+
+# Backups & dumps (stored off-site, not in git)
+*.dump
+*.sql.gz
+backups/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
