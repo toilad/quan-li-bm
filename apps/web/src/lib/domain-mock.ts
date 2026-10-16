@@ -11,55 +11,189 @@ import { COMPANIES, subdomainSlug, type Company } from "./mock-data";
 
 /* ───────── iNET accounts ───────── */
 
+/** A domain the account owns. The real list comes from the iNET API; here it is a static copy. */
+export type RootDomain = {
+  name: string;
+  dnsHost: DnsHost;
+  expires: string; // ISO date of the domain registration
+  /** The root itself already points at this account's hosting IP. */
+  apexOnHosting: boolean;
+  suspended?: boolean;
+};
+
 export type Nick = {
   id: string;
   name: string;
   email: string; // shown masked
-  root: string; // root domain already owned on this account
+  /** Every domain on the account — the owner ticks which ones subdomains may be created under. */
+  roots: RootDomain[];
   ip: string; // hosting IP the A record points to
+  /** Primary domain of the cPanel hosting plan. */
+  hosting?: string;
   cpanelHost: string;
+  /** Never in source control — entered on the server. */
   cpanelUser: string;
   enabled: boolean;
   status: "ok" | "slow" | "error" | "untested";
   usedToday: number;
-  dailyLimit: number;
+  /** Max new subdomains per day. null = not configured (no evidence yet) → not enforced, shown as a warning. */
+  dailyLimit: number | null;
+  /** Share used by the "theo tỷ trọng" allocation. */
+  weight: number;
   subdomains: number;
   lastCheck: string;
-  demoRoot?: boolean; // root is a placeholder, not from the legacy app
+  /** API access per capability. Everything runs over API — never browser automation. */
+  api: { dns: ApiCap; cpanel: ApiCap };
 };
 
-// Order matches the dashboard demo (row i uses nick i % 5). IPs are from the
-// TEST-NET-3 documentation range so they can never point at a real server.
+export type DnsHost = "inet" | "cpanel" | "other" | "unknown";
+
+export const DNS_HOST_LABEL: Record<DnsHost, string> = {
+  inet: "Nameserver iNET → API DNS iNET",
+  cpanel: "Nameserver của host cPanel → DNS API cPanel",
+  other: "Nameserver nhà khác (Cloudflare) → API iNET / cPanel không ghi được",
+  unknown: "Chưa xác định nameserver",
+};
+
+export type ApiCap = { state: "ok" | "blocked" | "untested"; note?: string };
+
+export const API_LABEL = { dns: "API DNS", cpanel: "cPanel API (token)" } as const;
+
+/** First nick-level capability that blocks it, if any — shown as "Bị chặn", never worked around. */
+export function apiBlock(n: Nick): string | null {
+  for (const k of ["dns", "cpanel"] as const) {
+    const c = n.api[k];
+    if (c.state === "blocked") return `${API_LABEL[k]}: ${c.note ?? "chưa có quyền"}`;
+  }
+  return null;
+}
+
+/** Days until a root domain's registration expires (negative = expired). */
+export function daysLeft(iso: string, today = new Date()): number {
+  const ms = new Date(`${iso}T00:00:00`).getTime() - new Date(today.toDateString()).getTime();
+  return Math.round(ms / 86_400_000);
+}
+
+/** Roots expiring within this many days are flagged — a subdomain dies with its root. */
+export const EXPIRY_WARN_DAYS = 60;
+
+/** Why subdomains can't be created under this root right now; null = usable. Blocked roots can't be ticked or run. */
+export function rootIssue(r: RootDomain, nick: Nick, today = new Date()): string | null {
+  if (r.suspended) return "Miền đang tạm ngưng";
+  if (daysLeft(r.expires, today) < 0) return "Miền đã hết hạn";
+  if (r.dnsHost === "other") return "DNS ở nhà cung cấp khác (Cloudflare) — API iNET không ghi được";
+  if (r.dnsHost === "unknown") return "Chưa xác định nameserver — không biết dùng API DNS nào";
+  if (!nick.enabled) return `Nick ${nick.name} đang tắt`;
+  const blocked = apiBlock(nick);
+  if (blocked) return `${nick.name}: ${blocked}`;
+  return null;
+}
+
+export type RootRef = { root: RootDomain; nick: Nick };
+
+/** Every root of every nick, in nick order. Root names are unique across accounts. */
+export const allRoots = (nicks: Nick[]): RootRef[] => nicks.flatMap((nick) => nick.roots.map((root) => ({ root, nick })));
+
+/** The root and its owning nick; null when the name is empty (row not assigned yet) or unknown. */
+export function findRoot(name: string, nicks: Nick[]): RootRef | null {
+  for (const nick of nicks) {
+    const root = nick.roots.find((r) => r.name === name);
+    if (root) return { root, nick };
+  }
+  return null;
+}
+
+/**
+ * Ticked, usable roots ordered so consecutive picks alternate between nicks
+ * (n1·a, n2·a, n3·a, n1·b, …) — spreads load over accounts and hosting servers.
+ */
+export function rootPool(nicks: Nick[], selected: string[], today = new Date()): RootRef[] {
+  const sel = new Set(selected);
+  const lanes = nicks.map((nick) => nick.roots.filter((r) => sel.has(r.name) && !rootIssue(r, nick, today)).map((root) => ({ root, nick })));
+  const out: RootRef[] = [];
+  for (let i = 0; lanes.some((l) => i < l.length); i++) for (const l of lanes) if (i < l.length) out.push(l[i]);
+  return out;
+}
+
+const inet = (name: string, expires: string, apexOnHosting = false): RootDomain => ({ name, dnsHost: "inet", expires, apexOnHosting });
+
+/*
+ * The owner's 3 real iNET accounts, copied from portal.inet.vn on 2026-10-16
+ * (domains, hosting, expiry) plus public DNS (nameservers, apex A). Read-only:
+ * nothing was changed on the accounts. In the real app this list is synced over
+ * the iNET API. No API key has been entered yet, so API access is "untested".
+ * cPanel usernames stay out of source control.
+ */
 export const NICKS: Nick[] = [
-  { id: "n1", name: "iNET-A", email: "nick-a@example.com", root: "th-ntp.com", ip: "203.0.113.21", cpanelHost: "cpanel.th-ntp.com", cpanelUser: "thntp", enabled: true, status: "ok", usedToday: 7, dailyLimit: 30, subdomains: 128, lastCheck: "2 phút trước" },
-  { id: "n2", name: "iNET-B", email: "nick-b@example.com", root: "nick2-demo.com", ip: "203.0.113.37", cpanelHost: "cpanel.nick2-demo.com", cpanelUser: "nick2", enabled: true, status: "ok", usedToday: 4, dailyLimit: 30, subdomains: 61, lastCheck: "2 phút trước", demoRoot: true },
-  { id: "n3", name: "iNET-C", email: "nick-c@example.com", root: "nick3-demo.com", ip: "203.0.113.52", cpanelHost: "cpanel.nick3-demo.com", cpanelUser: "nick3", enabled: true, status: "slow", usedToday: 12, dailyLimit: 30, subdomains: 77, lastCheck: "5 phút trước", demoRoot: true },
-  { id: "n4", name: "iNET-D", email: "nick-d@example.com", root: "nick4-demo.com", ip: "203.0.113.68", cpanelHost: "cpanel.nick4-demo.com", cpanelUser: "nick4", enabled: true, status: "ok", usedToday: 2, dailyLimit: 30, subdomains: 40, lastCheck: "2 phút trước", demoRoot: true },
-  { id: "n5", name: "iNET-E", email: "nick-e@example.com", root: "nick5-demo.com", ip: "203.0.113.84", cpanelHost: "cpanel.nick5-demo.com", cpanelUser: "nick5", enabled: true, status: "ok", usedToday: 29, dailyLimit: 30, subdomains: 93, lastCheck: "3 phút trước", demoRoot: true },
+  {
+    id: "n1", name: "iNET-1", email: "", ip: "103.75.187.26", hosting: "levantoan.000web.com",
+    cpanelHost: "turboweb-022607.000nethost.com", cpanelUser: "",
+    roots: [
+      inet("sustainlife.io.vn", "2027-04-03", true), inet("ganeshabrands.food", "2027-07-06"), inet("huxma.life", "2027-07-06"),
+      inet("yhawtunga.diy", "2027-07-06"), inet("yhawt.press", "2027-07-06"), inet("ganeshabrands.space", "2027-06-30"),
+      inet("bmglobal.io.vn", "2027-06-29"), inet("woryn.com.vn", "2027-06-25"), inet("vnclick.cloud", "2027-05-27"),
+      inet("vnclick.food", "2027-05-27"),
+      { name: "vietcart.site", dnsHost: "unknown", expires: "2027-05-27", apexOnHosting: false, suspended: true },
+    ],
+    enabled: true, status: "untested", usedToday: 0, dailyLimit: null, weight: 1, subdomains: 0, lastCheck: "chưa kiểm tra",
+    api: { dns: { state: "untested", note: "chưa nhập khoá API" }, cpanel: { state: "untested", note: "chưa nhập token" } },
+  },
+  {
+    id: "n2", name: "iNET-2", email: "", ip: "103.75.187.26", hosting: "ntp88.com",
+    cpanelHost: "turboweb-022607.000nethost.com", cpanelUser: "",
+    roots: [inet("ntp88.com", "2027-04-20", true), inet("thanhnam88.com", "2027-07-21", true), inet("convnctnet.com", "2027-07-01")],
+    enabled: true, status: "untested", usedToday: 0, dailyLimit: null, weight: 1, subdomains: 0, lastCheck: "chưa kiểm tra",
+    api: { dns: { state: "untested", note: "chưa nhập khoá API" }, cpanel: { state: "untested", note: "chưa nhập token" } },
+  },
+  {
+    id: "n3", name: "iNET-3", email: "", ip: "202.92.7.88", hosting: "toandao.site",
+    cpanelHost: "turboweb-082302.000nethost.com", cpanelUser: "",
+    roots: [
+      inet("groupany.id.vn", "2027-03-18", true), inet("zentrivo.my", "2027-03-12", true), inet("a66group.store", "2027-03-02", true),
+      inet("a77group.website", "2026-12-25", true), inet("a45group.io.vn", "2026-12-09", true), inet("a69group.io.vn", "2026-12-02", true),
+      inet("a66group.io.vn", "2026-11-15", true), inet("namecheapp.site", "2026-11-11", true), inet("toandao.site", "2026-11-08", true),
+      inet("starstad.space", "2027-07-03"),
+      { name: "167nailspa.com", dnsHost: "other", expires: "2027-08-13", apexOnHosting: false },
+    ],
+    enabled: true, status: "untested", usedToday: 0, dailyLimit: null, weight: 1, subdomains: 0, lastCheck: "chưa kiểm tra",
+    api: { dns: { state: "untested", note: "chưa nhập khoá API" }, cpanel: { state: "untested", note: "chưa nhập token" } },
+  },
 ];
 
-/** Records already present in each root's DNS zone (demo) — used for the duplicate check. */
-export const EXISTING_RECORDS: Record<string, string[]> = {
-  "th-ntp.com": ["www", "mail", "cpanel"],
-  "nick5-demo.com": ["www", "rockspringsdigital", "codycreekvineyard"],
-};
+
+export const quotaFull = (n: Nick) => n.dailyLimit !== null && n.usedToday >= n.dailyLimit;
+
+/**
+ * Records already present in each root's DNS zone — used for the duplicate check.
+ * The real zones are read over the iNET DNS API once a key is entered; until
+ * then only records created in this session are known.
+ */
+export const EXISTING_RECORDS: Record<string, string[]> = {};
 
 /* ───────── Subdomain naming (rule NOT confirmed yet) ───────── */
 
-export type SlugRule = "legacy" | "columnE";
+export type SlugRule = "columnE" | "legacy" | "short";
+
+const LEGAL = new Set(["llc", "inc", "pllc", "co", "corp", "ltd", "company", "the", "and", "of"]);
+
+/** First two meaningful words of the company name: "Global Freight Partners LLC" → globalfreight. */
+export function shortSlug(name: string): string {
+  const words = name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w && !LEGAL.has(w));
+  return words.slice(0, 2).join("");
+}
 
 export const SLUG_RULES: Record<SlugRule, { label: string; detail: string }> = {
-  legacy: {
-    label: "Tên công ty bỏ hậu tố pháp lý",
-    detail: "Theo hàm _slug_for_subdomain của app cũ: “N Triangle Ranch, Inc.” → ntriangleranch",
-  },
-  columnE: {
-    label: "Dùng nguyên cột E",
-    detail: "Giữ cả hậu tố như cột E: “13570 Tradition Street LLC” → 13570traditionstreetllc",
-  },
+  columnE: { label: "Dùng cột E", detail: "Lấy nguyên giá trị cột E: 13570traditionstreetllc" },
+  legacy: { label: "Bỏ hậu tố pháp lý", detail: "Như app cũ (_slug_for_subdomain): N Triangle Ranch, Inc. → ntriangleranch" },
+  short: { label: "Rút gọn theo tên công ty", detail: "2 từ đầu, bỏ hậu tố: Global Freight Partners LLC → globalfreight" },
 };
 
-export const slugFor = (c: Company, rule: SlugRule) => (rule === "legacy" ? subdomainSlug(c.A) : c.E.toLowerCase());
+/** Column E is only READ here — it is never rewritten. */
+export function slugFor(c: Company, rule: SlugRule): string {
+  if (rule === "columnE") return c.E.trim().toLowerCase();
+  if (rule === "short") return shortSlug(c.A);
+  return subdomainSlug(c.A);
+}
 
 /** DNS label rules (RFC 1035): a-z 0-9 -, 1–63 chars, no leading/trailing hyphen. */
 export function labelIssue(label: string): string | null {
@@ -74,7 +208,7 @@ export function labelIssue(label: string): string | null {
 
 export const DOMAIN_STEPS = [
   "Kiểm tra trùng (Sheet + DNS)",
-  "Tạo bản ghi A · iNET DNS",
+  "Tạo bản ghi A qua API DNS",
   "Tạo miền trên cPanel hosting",
   "Xác minh DNS trỏ đúng IP",
   "Đọc lại ô B → ghi B",
@@ -83,10 +217,15 @@ export const DOMAIN_STEPS = [
 export type RowStatus = "idle" | "queued" | "running" | "done" | "failed" | "conflict";
 export type LogLine = { t: string; msg: string; tone: "ok" | "err" | "info" | "warn" };
 
+/** Resources created for a row that could not be written to B — kept for follow-up. */
+export type Orphan = { fqdn: string; nick: string; ip: string; dns: boolean; host: boolean; foundB: string; at: string; resolved?: string };
+
 export type DomainRow = {
   row: number;
   company: Company;
-  nickId: string;
+  flags: string[]; // "cần kiểm tra" — shown, never auto-excluded
+  /** Root domain the subdomain goes under ("" = not assigned yet); the nick is the one that owns it. */
+  root: string;
   slugOverride?: string;
   status: RowStatus;
   step: number;
@@ -95,48 +234,51 @@ export type DomainRow = {
   hostCreated: boolean;
   error?: string;
   writtenB?: string;
+  orphan?: Orphan;
   log: LogLine[];
   checked: boolean;
   /** Demo only: scripted failure for this row. */
   outcome?: "cpanelTimeoutOnce" | "conflictAtWrite";
 };
 
-/** Rows with an empty B — split into eligible and excluded (with the reason). */
+/**
+ * Rows with an empty B. A row is usable when it has a company name; anything
+ * else missing (K, PDF still processing or in error, E) is a flag to check,
+ * not a reason to drop it. Clean rows come first.
+ */
 export function scanSheet() {
   const withB = COMPANIES.filter((c) => c.B.trim());
   const emptyB = COMPANIES.filter((c) => !c.B.trim());
-  const reason = (c: Company): string | null => {
-    if (c.stages.pdf === "error") return `PDF đang lỗi: ${c.note ?? "cần kiểm tra"}`;
-    if (c.stages.pdf !== "done" || !c.K) return "PDF chưa lưu xong (chưa có link cột K)";
-    if (!c.A.trim() || !c.E.trim()) return "Thiếu tên doanh nghiệp (A) hoặc tên rút gọn (E)";
-    return null;
+  const flagsOf = (c: Company) => {
+    const f: string[] = [];
+    if (!c.K.trim()) f.push(c.stages.pdf === "running" ? "Chưa có link K (PDF đang xử lý)" : "Chưa có link K");
+    if (c.stages.pdf === "error") f.push(`PDF đang lỗi: ${c.note ?? "cần kiểm tra"}`);
+    if (!c.E.trim()) f.push("Thiếu cột E");
+    return f;
   };
-  const eligible = emptyB.filter((c) => !reason(c));
-  const excluded = emptyB.filter((c) => reason(c)).map((c) => ({ company: c, reason: reason(c)! }));
-  return { total: COMPANIES.length, withB: withB.length, eligible, excluded };
+  const usable = emptyB.filter((c) => c.A.trim());
+  const excluded = emptyB.filter((c) => !c.A.trim()).map((c) => ({ company: c, reason: "Thiếu tên doanh nghiệp (A)" }));
+  const rows = usable.map((c) => ({ company: c, flags: flagsOf(c) })).sort((a, b) => a.flags.length - b.flags.length || a.company.row - b.company.row);
+  return { total: COMPANIES.length, withB: withB.length, rows, excluded };
 }
 
+/**
+ * Rows from the Sheet scan. Nothing is assigned or started on load: rows get a
+ * root only from the owner's ticked domains, and run only after the preview.
+ */
 export function initialRows(): DomainRow[] {
-  return scanSheet().eligible.map((c, idx): DomainRow => {
-    const i = c.row - 3;
+  return scanSheet().rows.map(({ company: c, flags }): DomainRow => {
     const base: DomainRow = {
-      row: c.row, company: c, nickId: NICKS[i % NICKS.length].id, status: "idle", step: 0, progress: 0,
+      row: c.row, company: c, flags, root: "", status: "idle", step: 0, progress: 0,
       dnsCreated: false, hostCreated: false, log: [], checked: false,
     };
     if (c.A.startsWith("Gillette")) base.outcome = "cpanelTimeoutOnce";
     if (c.A.startsWith("Douglas")) base.outcome = "conflictAtWrite";
     switch (c.stages.domain) {
-      case "running":
-        return {
-          ...base, status: "running", step: idx === 0 ? 2 : 1, progress: 30, dnsCreated: idx === 0,
-          log: [{ t: "14:31:02", msg: "Bắt đầu — nick đã chọn", tone: "info" }],
-        };
-      case "queued":
-        return { ...base, status: "queued", checked: true };
       case "error":
         return {
           ...base, status: "failed", step: 1, progress: 100,
-          error: "iNET từ chối: bản ghi đã tồn tại trên miền gốc và đang trỏ IP khác — không ghi đè. Đổi nick hoặc sửa tên rồi thử lại.",
+          error: "iNET từ chối: bản ghi đã tồn tại trên miền gốc và đang trỏ IP khác — không ghi đè. Đổi miền gốc hoặc sửa tên rồi thử lại.",
           log: [
             { t: "14:25:10", msg: "Kiểm tra trùng trên Sheet: không trùng", tone: "ok" },
             { t: "14:25:14", msg: "iNET DNS: bản ghi đã tồn tại → dừng, B giữ trống", tone: "err" },
@@ -148,4 +290,3 @@ export function initialRows(): DomainRow[] {
   });
 }
 
-export const nickOf = (id: string, nicks: Nick[]) => nicks.find((n) => n.id === id)!;

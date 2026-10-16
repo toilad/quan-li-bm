@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { Globe2, RotateCcw, PenLine, Lock, AlertCircle, Hourglass } from "lucide-react";
-import { DOMAIN_STEPS, nickOf, type RowStatus } from "@/lib/domain-mock";
+import { Globe2, RotateCcw, PenLine, Lock, AlertCircle, Hourglass, Flag } from "lucide-react";
+import { DOMAIN_STEPS, quotaFull, type RowStatus } from "@/lib/domain-mock";
 import { RowStatusChip, StepBar } from "./ui";
-import { labelOf, previewIssue, type DomainDispatch, type DomainState } from "./use-domain-queue";
+import { labelOf, nickOfRow, previewIssue, type DomainDispatch, type DomainState } from "./use-domain-queue";
+import { RootSelect } from "./root-select";
 
 const TABS: { key: string; label: string; match: RowStatus[] }[] = [
   { key: "all", label: "Tất cả", match: [] },
@@ -66,7 +67,7 @@ export function DomainTable({ state, dispatch }: { state: DomainState; dispatch:
                 />
               </th>
               <th className="py-3 font-medium">Doanh nghiệp</th>
-              <th className="py-3 font-medium">Nick iNET</th>
+              <th className="py-3 font-medium">Miền gốc · nick</th>
               <th className="py-3 font-medium">Tên miền dự kiến → cột B</th>
               <th className="py-3 font-medium">Tiến trình</th>
               <th className="w-24 py-3" />
@@ -75,9 +76,9 @@ export function DomainTable({ state, dispatch }: { state: DomainState; dispatch:
           <tbody>
             {rows.map((r) => {
               const issue = previewIssue(r, state);
-              const nick = nickOf(r.nickId, state.nicks);
+              const nick = nickOfRow(r, state.nicks);
               const locked = r.dnsCreated || !["idle", "failed"].includes(r.status);
-              const waitingQuota = r.status === "queued" && nick.usedToday >= nick.dailyLimit;
+              const waitingQuota = r.status === "queued" && !!nick && quotaFull(nick);
               return (
                 <tr
                   key={r.row}
@@ -100,25 +101,17 @@ export function DomainTable({ state, dispatch }: { state: DomainState; dispatch:
                   <td className="max-w-[210px] py-3 pr-3">
                     <div className="truncate font-medium">{r.company.A}</div>
                     <div className="mt-0.5 truncate text-[11.5px] text-fg-subtle">
-                      <span className="font-mono text-fg-muted">#{r.row}</span> · E: <span className="font-mono">{r.company.E}</span>
+                      <span className="font-mono text-fg-muted">#{r.row}</span> · E: <span className="font-mono">{r.company.E || "—"}</span>
                     </div>
+                    {r.flags.length > 0 && (
+                      <div className="mt-1 flex items-start gap-1 text-[11px] text-amber-200/85" title="Cần kiểm tra — vẫn tạo được miền">
+                        <Flag className="mt-px size-3 shrink-0" /> {r.flags.join(" · ")}
+                      </div>
+                    )}
                   </td>
                   <td className="py-3 pr-3" onClick={(e) => e.stopPropagation()}>
-                    <select
-                      value={r.nickId}
-                      disabled={locked}
-                      onChange={(e) => dispatch({ type: "nick", row: r.row, nickId: e.target.value })}
-                      title={r.dnsCreated ? "Đã tạo DNS trên nick này — không đổi được" : undefined}
-                      className="h-8 rounded-lg border border-line bg-ink-850 px-2 text-[12.5px] outline-none focus:border-brand/60 disabled:opacity-60"
-                      aria-label={`Nick cho dòng ${r.row}`}
-                    >
-                      {state.nicks.map((x) => (
-                        <option key={x.id} value={x.id} disabled={!x.enabled}>
-                          {x.name} · {x.root}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="mt-1 font-mono text-[11px] text-fg-subtle">→ {nick.ip}</div>
+                    <RootSelect r={r} state={state} dispatch={dispatch} disabled={locked} />
+                    <div className="mt-1 text-[11px] text-fg-subtle">{nick ? <>{nick.name} · <span className="font-mono">A → {nick.ip}</span></> : "Chưa gán miền gốc"}</div>
                   </td>
                   <td className="max-w-[290px] py-3 pr-3" onClick={(e) => e.stopPropagation()}>
                     {editing === r.row ? (
@@ -134,13 +127,13 @@ export function DomainTable({ state, dispatch }: { state: DomainState; dispatch:
                           className="h-8 w-40 rounded-lg border border-brand/60 bg-ink-850 px-2 font-mono text-[12px] outline-none"
                           aria-label="Sửa tên miền phụ"
                         />
-                        <span className="font-mono text-[12px] text-fg-subtle">.{nick.root}</span>
+                        <span className="font-mono text-[12px] text-fg-subtle">.{r.root || "…"}</span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
                         <span className="truncate font-mono text-[12.5px]">
                           <span className={clsx(r.status === "done" ? "text-emerald-300" : "text-fg")}>{labelOf(r, state.rule)}</span>
-                          <span className="text-fg-subtle">.{nick.root}</span>
+                          <span className="text-fg-subtle">.{r.root || "…"}</span>
                         </span>
                         {locked ? (
                           r.dnsCreated && <Lock className="size-3 shrink-0 text-fg-subtle" aria-label="Đã tạo DNS" />
@@ -172,7 +165,7 @@ export function DomainTable({ state, dispatch }: { state: DomainState; dispatch:
                       {r.status === "running" || r.status === "failed"
                         ? `${r.step + 1}/${DOMAIN_STEPS.length} · ${DOMAIN_STEPS[r.step]}`
                         : waitingQuota
-                          ? <span className="inline-flex items-center gap-1"><Hourglass className="size-3" /> {nick.name} đã dùng {nick.usedToday}/{nick.dailyLimit} hôm nay</span>
+                          ? <span className="inline-flex items-center gap-1"><Hourglass className="size-3" /> {nick?.name} đã dùng {nick?.usedToday}/{nick?.dailyLimit} hôm nay</span>
                           : r.status === "done" ? r.writtenB : ""}
                     </div>
                     {r.error && <p className={clsx("mt-1 line-clamp-2 max-w-[260px] text-[11px]", r.status === "conflict" ? "text-amber-200/90" : "text-rose-300/90")}>{r.error}</p>}

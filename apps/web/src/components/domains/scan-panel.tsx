@@ -2,18 +2,19 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { FileSpreadsheet, RefreshCw, ChevronDown, ListFilter, CircleSlash, CheckCircle2, AlertTriangle } from "lucide-react";
+import { FileSpreadsheet, RefreshCw, ChevronDown, ListFilter, Flag, AlertTriangle, Lock } from "lucide-react";
 import { SLUG_RULES, scanSheet, type SlugRule } from "@/lib/domain-mock";
 import type { DomainDispatch, DomainState } from "./use-domain-queue";
 
 export function ScanPanel({ state, dispatch }: { state: DomainState; dispatch: DomainDispatch }) {
   const scan = scanSheet();
   const [open, setOpen] = useState(true);
+  const flagged = state.rows.filter((r) => r.flags.length);
   const stats = [
     { label: "Tổng dòng", value: scan.total, cls: "text-fg" },
     { label: "Đã có B · bỏ qua", value: scan.withB, cls: "text-fg-muted" },
-    { label: "Đủ điều kiện", value: scan.eligible.length, cls: "text-emerald-300" },
-    { label: "B trống · thiếu thông tin", value: scan.excluded.length, cls: "text-amber-300" },
+    { label: "B trống · tạo được", value: scan.rows.length, cls: "text-emerald-300" },
+    { label: "Trong đó cần kiểm tra", value: flagged.length, cls: "text-amber-300" },
   ];
 
   return (
@@ -26,7 +27,7 @@ export function ScanPanel({ state, dispatch }: { state: DomainState; dispatch: D
           <div>
             <h2 className="text-[16px] font-semibold">Quét Google Sheet</h2>
             <p className="text-[12.5px] text-fg-muted">
-              Tab <b className="text-fg">Phoi US</b> · đọc demo, đồng bộ 2 phút trước
+              Tab <b className="text-fg">Phoi US</b> · đọc demo qua Google Sheets API (mô phỏng), đồng bộ 2 phút trước
             </p>
           </div>
         </div>
@@ -47,19 +48,19 @@ export function ScanPanel({ state, dispatch }: { state: DomainState; dispatch: D
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-fg-subtle">
         <span className="inline-flex items-center gap-1"><ListFilter className="size-3.5" /> Điều kiện:</span>
         <span>Cột B trống</span>
-        <span>· PDF đã lưu (có link K)</span>
-        <span>· Có tên A và tên rút gọn E</span>
-        <span>· Cột C không bao giờ bị đụng tới</span>
+        <span>· Có tên doanh nghiệp (A)</span>
+        <span>· Thiếu K / PDF lỗi → đánh dấu kiểm tra, không loại</span>
+        <span>· Dòng đủ thông tin xếp trước</span>
       </div>
 
       <div className="mt-4 rounded-xl border border-line bg-ink-850/50 p-3.5">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-[12.5px] font-semibold">Quy tắc đặt tên miền phụ</span>
+          <span className="text-[12.5px] font-semibold">Cách tạo tên miền phụ</span>
           <span className="inline-flex items-center gap-1 rounded-md bg-amber-400/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-300">
-            <AlertTriangle className="size-3" /> Chưa chốt — anh xác nhận
+            <AlertTriangle className="size-3" /> Chưa chốt — anh chọn
           </span>
         </div>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
           {(Object.keys(SLUG_RULES) as SlugRule[]).map((k) => (
             <label
               key={k}
@@ -76,8 +77,8 @@ export function ScanPanel({ state, dispatch }: { state: DomainState; dispatch: D
             </label>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-fg-subtle">
-          Trùng tên: không tự đặt tên khác — dòng bị chặn để anh đổi nick hoặc sửa tay. Tên miền = <span className="font-mono">tên-phụ.miền-gốc-của-nick</span>.
+        <p className="mt-2 flex flex-wrap items-center gap-x-1 text-[11px] text-fg-subtle">
+          <Lock className="size-3" /> Cột E chỉ được đọc, không bao giờ bị sửa. Sửa tên từng dòng ở bảng hoặc màn xem trước. Trùng tên → dòng bị chặn, app không tự đổi tên.
         </p>
       </div>
 
@@ -86,23 +87,23 @@ export function ScanPanel({ state, dispatch }: { state: DomainState; dispatch: D
         className="mt-3 flex items-center justify-between rounded-lg px-1 py-1 text-[12.5px] text-fg-muted hover:text-fg"
       >
         <span className="inline-flex items-center gap-1.5">
-          <CircleSlash className="size-3.5 text-amber-300" /> {scan.excluded.length} dòng B trống nhưng chưa đủ thông tin
+          <Flag className="size-3.5 text-amber-300" /> {flagged.length} dòng cần kiểm tra (vẫn tạo được miền)
         </span>
         <ChevronDown className={clsx("size-4 transition", open && "rotate-180")} />
       </button>
       {open && (
         <ul className="mt-1 space-y-1.5">
-          {scan.excluded.map(({ company: c, reason }) => (
-            <li key={c.row} className="flex items-start justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 text-[12px]">
+          {flagged.map((r) => (
+            <li key={r.row} className="flex items-start justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 text-[12px]">
               <span className="min-w-0">
-                <span className="font-medium">{c.A}</span> <span className="font-mono text-fg-subtle">#{c.row}</span>
+                <span className="font-medium">{r.company.A}</span> <span className="font-mono text-fg-subtle">#{r.row}</span>
               </span>
-              <span className="shrink-0 text-right text-amber-200/80">{reason}</span>
+              <span className="shrink-0 text-right text-amber-200/80">{r.flags.join(" · ")}</span>
             </li>
           ))}
-          <li className="flex items-center gap-1.5 px-1 pt-1 text-[11px] text-fg-subtle">
-            <CheckCircle2 className="size-3.5" /> Các dòng này tự vào danh sách khi PDF Manager lưu xong.
-          </li>
+          {scan.excluded.length > 0 && (
+            <li className="px-1 pt-1 text-[11px] text-rose-300">{scan.excluded.length} dòng thiếu tên doanh nghiệp — không tạo được miền.</li>
+          )}
         </ul>
       )}
     </section>

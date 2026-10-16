@@ -2,24 +2,26 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { Zap, Play, Pause, RotateCcw, ListChecks, Shuffle } from "lucide-react";
+import { Zap, Play, Pause, RotateCcw, ListChecks, Shuffle, Eye, Layers } from "lucide-react";
 import { ROW_STATUS, SimTag } from "./ui";
-import { previewIssue, type DomainDispatch, type DomainState, type Strategy } from "./use-domain-queue";
+import { previewIssue, usablePool, type DomainDispatch, type DomainState, type Strategy } from "./use-domain-queue";
 import type { RowStatus } from "@/lib/domain-mock";
 
 const ORDER: RowStatus[] = ["queued", "running", "done", "failed", "conflict", "idle"];
-const MAX_PER_RUN = 30;
 
 const STRATEGIES: { key: Strategy; label: string }[] = [
-  { key: "roundRobin", label: "Xoay vòng đều các nick" },
-  { key: "random", label: "Ngẫu nhiên (như app cũ)" },
-  { key: "single", label: "Dồn vào 1 nick" },
+  { key: "roundRobin", label: "Xoay vòng các miền đã chọn (đan xen nick)" },
+  { key: "weighted", label: "Theo tỷ trọng nick, xoay vòng miền trong nick" },
+  { key: "single", label: "Dồn vào một miền" },
 ];
 
-export function RunPanel({ state, dispatch }: { state: DomainState; dispatch: DomainDispatch }) {
+export function RunPanel({ state, dispatch, onPreview }: { state: DomainState; dispatch: DomainDispatch; onPreview: () => void }) {
   const [n, setN] = useState(10);
+  const [skipFlagged, setSkipFlagged] = useState(true);
   const [strategy, setStrategy] = useState<Strategy>("roundRobin");
-  const [nickId, setNickId] = useState(state.nicks[0].id);
+  const pool = usablePool(state);
+  const [root, setRoot] = useState("");
+  const singleRoot = pool.some((p) => p.root.name === root) ? root : pool[0]?.root.name ?? "";
   const { rows } = state;
   const count = (s: RowStatus) => rows.filter((r) => r.status === s).length;
   const inRun = rows.filter((r) => r.status !== "idle");
@@ -69,30 +71,43 @@ export function RunPanel({ state, dispatch }: { state: DomainState; dispatch: Do
 
       <div className="mt-4 space-y-3 border-t border-line pt-4 text-[12.5px]">
         <div className="flex items-center gap-2">
-          <ListChecks className="size-4 text-fg-subtle" />
-          <span className="text-fg-muted">Số dòng</span>
+          <Layers className="size-4 text-fg-subtle" />
+          <span className="text-fg-muted">Giới hạn mỗi lượt</span>
           <input
             type="number"
             min={1}
-            max={MAX_PER_RUN}
+            max={200}
+            value={state.batchLimit}
+            onChange={(e) => dispatch({ type: "batchLimit", n: Math.max(1, Math.min(200, Number(e.target.value) || 1)) })}
+            className="h-8 w-16 rounded-lg border border-line bg-ink-850 px-2 text-center outline-none focus:border-brand/60"
+            aria-label="Giới hạn số dòng mỗi lượt"
+          />
+          <span className="text-[11px] text-fg-subtle">dòng · khác hạn mức từng nick/ngày</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <ListChecks className="size-4 text-fg-subtle" />
+          <span className="text-fg-muted">Chọn nhanh</span>
+          <input
+            type="number"
+            min={1}
+            max={state.batchLimit}
             value={n}
-            onChange={(e) => setN(Math.max(1, Math.min(MAX_PER_RUN, Number(e.target.value) || 1)))}
+            onChange={(e) => setN(Math.max(1, Math.min(state.batchLimit, Number(e.target.value) || 1)))}
             className="h-8 w-16 rounded-lg border border-line bg-ink-850 px-2 text-center outline-none focus:border-brand/60"
             aria-label="Số dòng muốn chọn"
           />
-          {[5, 10, 30].map((v) => (
-            <button key={v} onClick={() => setN(v)} className={clsx("rounded-md px-2 py-1 text-[11.5px]", n === v ? "bg-white/[0.1] text-fg" : "text-fg-subtle hover:text-fg")}>
-              {v}
-            </button>
-          ))}
           <button
-            onClick={() => dispatch({ type: "checkFirst", n })}
-            className="ml-auto rounded-lg bg-white/[0.07] px-2.5 py-1 font-medium hover:bg-white/[0.11]"
+            onClick={() => dispatch({ type: "checkFirst", n, skipFlagged })}
+            className="rounded-lg bg-white/[0.07] px-2.5 py-1 font-medium hover:bg-white/[0.11]"
           >
             Chọn {n} dòng
           </button>
+          <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[11.5px] text-fg-muted">
+            <input type="checkbox" checked={skipFlagged} onChange={(e) => setSkipFlagged(e.target.checked)} className="accent-[#4f7cff]" />
+            Bỏ qua dòng cần kiểm tra
+          </label>
         </div>
-        <p className="-mt-1 text-[11px] text-fg-subtle">Tối đa {MAX_PER_RUN} dòng/lượt như app cũ · chỉ chọn dòng chưa chạy, không vướng trùng.</p>
 
         <div className="flex flex-wrap items-center gap-2">
           <Shuffle className="size-4 text-fg-subtle" />
@@ -100,7 +115,7 @@ export function RunPanel({ state, dispatch }: { state: DomainState; dispatch: Do
             value={strategy}
             onChange={(e) => setStrategy(e.target.value as Strategy)}
             className="h-8 flex-1 rounded-lg border border-line bg-ink-850 px-2 outline-none focus:border-brand/60"
-            aria-label="Cách chia nick"
+            aria-label="Cách phân bổ nick"
           >
             {STRATEGIES.map((s) => (
               <option key={s.key} value={s.key}>{s.label}</option>
@@ -108,34 +123,35 @@ export function RunPanel({ state, dispatch }: { state: DomainState; dispatch: Do
           </select>
           {strategy === "single" && (
             <select
-              value={nickId}
-              onChange={(e) => setNickId(e.target.value)}
-              className="h-8 rounded-lg border border-line bg-ink-850 px-2 outline-none focus:border-brand/60"
-              aria-label="Nick nhận"
+              value={singleRoot}
+              onChange={(e) => setRoot(e.target.value)}
+              className="h-8 max-w-[180px] rounded-lg border border-line bg-ink-850 px-2 font-mono text-[12px] outline-none focus:border-brand/60"
+              aria-label="Miền gốc nhận"
             >
-              {state.nicks.filter((x) => x.enabled).map((x) => (
-                <option key={x.id} value={x.id}>{x.name}</option>
+              {pool.map((p) => (
+                <option key={p.root.name} value={p.root.name}>{p.root.name} · {p.nick.name}</option>
               ))}
             </select>
           )}
           <button
-            onClick={() => dispatch({ type: "strategy", strategy, nickId })}
-            disabled={!checked.length}
+            onClick={() => dispatch({ type: "strategy", strategy, root: singleRoot })}
+            disabled={!checked.length || !pool.length}
             className="rounded-lg border border-line px-2.5 py-1 font-medium text-fg-muted hover:border-line-strong hover:text-fg disabled:opacity-40"
           >
-            Chia cho {checked.length} dòng
+            Phân bổ {checked.length} dòng
           </button>
         </div>
+        <p className="-mt-1 text-[11px] text-fg-subtle">Chỉ phân bổ vào {pool.length} miền gốc đã tích chọn và dùng được (nick bật, đủ quyền API, còn hạn mức).</p>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
-          onClick={() => dispatch({ type: "start" })}
-          disabled={!startable}
+          onClick={onPreview}
+          disabled={!checked.length || !pool.length}
           className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-brand to-brand-2 px-3 py-2.5 text-[13px] font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Play className="size-4" /> Bắt đầu tạo {startable} miền
-          {checked.length > startable && <span className="font-normal opacity-80">· {checked.length - startable} dòng bị chặn</span>}
+          <Eye className="size-4" /> Xem trước & chạy {checked.length} dòng
+          {checked.length > startable && <span className="font-normal opacity-80">· {checked.length - startable} bị chặn</span>}
         </button>
         <button
           onClick={() => dispatch({ type: state.paused ? "resume" : "pause" })}

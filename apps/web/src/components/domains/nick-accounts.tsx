@@ -2,28 +2,29 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { Users, Plus, PlugZap, PenLine, KeyRound, X, Save, ShieldCheck } from "lucide-react";
-import type { Nick } from "@/lib/domain-mock";
+import { Users, Plus, PlugZap, PenLine, KeyRound, X, Save, ShieldCheck, Check, Ban, HelpCircle } from "lucide-react";
+import { API_LABEL, quotaFull, type ApiCap, type Nick } from "@/lib/domain-mock";
 import { SimTag, Toggle } from "./ui";
 import type { DomainDispatch, DomainState } from "./use-domain-queue";
 
 const STATUS = {
   ok: { text: "Kết nối tốt", cls: "text-emerald-300", dot: "bg-emerald-400" },
   slow: { text: "Phản hồi chậm", cls: "text-amber-300", dot: "bg-amber-300" },
-  error: { text: "Lỗi đăng nhập", cls: "text-rose-300", dot: "bg-rose-400" },
+  error: { text: "Lỗi xác thực API", cls: "text-rose-300", dot: "bg-rose-400" },
   untested: { text: "Chưa kiểm tra", cls: "text-fg-subtle", dot: "bg-fg-subtle" },
 } as const;
 
-const maskEmail = (e: string) => e.replace(/^(.{2}).*(@.*)$/, "$1•••$2");
-const DOMAIN_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.[a-z0-9-]{1,63})*\.[a-z]{2,}$/;
+const maskEmail = (e: string) => (e ? e.replace(/^(.{2}).*(@.*)$/, "$1•••$2") : "—");
 const IP_RE = /^((25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(25[0-5]|2[0-4]\d|1?\d?\d)$/;
 
 export function NickAccounts({ state, dispatch }: { state: DomainState; dispatch: DomainDispatch }) {
   const [editing, setEditing] = useState<Nick | null>(null);
   const blank: Nick = {
-    id: `n${Date.now()}`, name: "", email: "", root: "", ip: "", cpanelHost: "", cpanelUser: "", enabled: true,
-    status: "untested", usedToday: 0, dailyLimit: 30, subdomains: 0, lastCheck: "—",
+    id: `n${Date.now()}`, name: "", email: "", roots: [], ip: "", cpanelHost: "", cpanelUser: "", enabled: true,
+    status: "untested", usedToday: 0, dailyLimit: null, weight: 1, subdomains: 0, lastCheck: "—",
+    api: { dns: { state: "untested" }, cpanel: { state: "untested" } },
   };
+  const totalWeight = state.nicks.filter((n) => n.enabled).reduce((s, n) => s + n.weight, 0) || 1;
 
   return (
     <section className="panel p-5">
@@ -34,10 +35,10 @@ export function NickAccounts({ state, dispatch }: { state: DomainState; dispatch
           </span>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-[16px] font-semibold">Tài khoản iNET · miền gốc · IP</h2>
+              <h2 className="text-[16px] font-semibold">Tài khoản iNET & hosting</h2>
               <SimTag />
             </div>
-            <p className="text-[12.5px] text-fg-muted">Mỗi nick sở hữu sẵn 1 miền gốc; miền phụ tạo ra trỏ về IP hosting của nick đó.</p>
+            <p className="text-[12.5px] text-fg-muted">Mỗi nick: miền gốc đã sở hữu, IP hosting, cPanel và thông tin API riêng. Mọi bước chạy qua API.</p>
           </div>
         </div>
         <button
@@ -48,18 +49,27 @@ export function NickAccounts({ state, dispatch }: { state: DomainState; dispatch
         </button>
       </header>
 
-      {editing && <NickForm nick={editing} onCancel={() => setEditing(null)} onSave={(n) => { dispatch({ type: "saveNick", nick: n }); setEditing(null); }} />}
+      {editing && (
+        <NickForm
+          nick={editing}
+          onCancel={() => setEditing(null)}
+          onSave={(n) => {
+            dispatch({ type: "saveNick", nick: n });
+            setEditing(null);
+          }}
+        />
+      )}
 
       <div className="scroll-thin overflow-x-auto">
-        <table className="w-full min-w-[920px] text-left text-[13px]">
+        <table className="w-full min-w-[1040px] text-left text-[13px]">
           <thead>
             <tr className="border-b border-line text-[11.5px] uppercase tracking-wide text-fg-subtle">
               <th className="py-3 font-medium">Nick</th>
-              <th className="py-3 font-medium">Miền gốc (đã sở hữu)</th>
-              <th className="py-3 font-medium">IP hosting</th>
+              <th className="py-3 font-medium">Miền · IP hosting</th>
               <th className="py-3 font-medium">cPanel</th>
-              <th className="py-3 font-medium">Hôm nay</th>
-              <th className="py-3 font-medium">Miền phụ</th>
+              <th className="py-3 font-medium">Quyền API</th>
+              <th className="py-3 font-medium">Hôm nay / hạn mức</th>
+              <th className="py-3 font-medium">Tỷ trọng</th>
               <th className="py-3 font-medium">Trạng thái</th>
               <th className="py-3 font-medium">Bật</th>
               <th className="w-20 py-3" />
@@ -68,32 +78,49 @@ export function NickAccounts({ state, dispatch }: { state: DomainState; dispatch
           <tbody>
             {state.nicks.map((n) => {
               const st = STATUS[n.status];
-              const pct = Math.round((n.usedToday / n.dailyLimit) * 100);
+              const pct = n.dailyLimit ? Math.min(100, Math.round((n.usedToday / n.dailyLimit) * 100)) : 0;
               return (
-                <tr key={n.id} className={clsx("border-b border-line/60", !n.enabled && "opacity-50")}>
+                <tr key={n.id} className={clsx("border-b border-line/60 align-top", !n.enabled && "opacity-50")}>
                   <td className="py-3 pr-3">
                     <div className="font-semibold">{n.name}</div>
                     <div className="text-[11.5px] text-fg-subtle">{maskEmail(n.email)}</div>
                   </td>
-                  <td className="py-3 pr-3 font-mono text-[12.5px]">
-                    {n.root}
-                    {n.demoRoot && <span className="ml-1.5 rounded bg-white/[0.05] px-1 font-sans text-[10px] text-fg-subtle">demo</span>}
+                  <td className="py-3 pr-3">
+                    <div className="text-[12.5px]">{n.roots.filter((r) => state.selectedRoots.includes(r.name)).length}/{n.roots.length} miền đã chọn</div>
+                    <div className="mt-0.5 font-mono text-[11.5px] text-fg-muted">{n.ip}</div>
                   </td>
-                  <td className="py-3 pr-3 font-mono text-[12.5px] text-fg-muted">{n.ip}</td>
                   <td className="py-3 pr-3 text-[12px] text-fg-muted">
+                    {n.hosting && <div className="text-[11px] text-fg-subtle">Hosting <span className="font-mono text-fg-muted">{n.hosting}</span></div>}
                     <div className="font-mono">{n.cpanelHost}</div>
-                    <div className="text-[11px] text-fg-subtle">user {n.cpanelUser} · token •••• (server)</div>
+                    <div className="text-[11px] text-fg-subtle">{n.cpanelUser ? `user ${n.cpanelUser}` : "user: nhập ở server"} · token •••• (server)</div>
                   </td>
-                  <td className="w-36 py-3 pr-3">
-                    <div className="flex justify-between text-[11.5px]">
-                      <span className={pct >= 90 ? "text-amber-300" : "text-fg-muted"}>{n.usedToday}/{n.dailyLimit}</span>
-                      <span className="text-fg-subtle">{pct}%</span>
-                    </div>
-                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                      <div className={clsx("h-full rounded-full", pct >= 90 ? "bg-amber-400" : "bg-emerald-400")} style={{ width: `${pct}%` }} />
+                  <td className="py-3 pr-3">
+                    <div className="space-y-1">
+                      <Cap label={API_LABEL.dns} cap={n.api.dns} />
+                      <Cap label={API_LABEL.cpanel} cap={n.api.cpanel} />
                     </div>
                   </td>
-                  <td className="py-3 pr-3 text-fg-muted">{n.subdomains}</td>
+                  <td className="w-40 py-3 pr-3">
+                    {n.dailyLimit === null ? (
+                      <>
+                        <div className="text-[11.5px] text-fg-muted">{n.usedToday} miền hôm nay</div>
+                        <div className="mt-0.5 text-[11px] text-amber-300/90">Chưa đặt hạn mức</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-[11.5px]">
+                          <span className={quotaFull(n) ? "text-rose-300" : pct >= 80 ? "text-amber-300" : "text-fg-muted"}>{n.usedToday}/{n.dailyLimit}</span>
+                          <span className="text-fg-subtle">{quotaFull(n) ? "đã đủ" : `${pct}%`}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                          <div className={clsx("h-full rounded-full", quotaFull(n) ? "bg-rose-400" : pct >= 80 ? "bg-amber-400" : "bg-emerald-400")} style={{ width: `${pct}%` }} />
+                        </div>
+                      </>
+                    )}
+                  </td>
+                  <td className="py-3 pr-3 text-[12px] text-fg-muted">
+                    {n.weight} <span className="text-fg-subtle">({Math.round((n.weight / totalWeight) * 100)}%)</span>
+                  </td>
                   <td className="py-3 pr-3">
                     <span className={clsx("inline-flex items-center gap-1.5 text-[12px]", st.cls)}>
                       <span className={clsx("size-1.5 rounded-full", st.dot)} /> {st.text}
@@ -105,7 +132,7 @@ export function NickAccounts({ state, dispatch }: { state: DomainState; dispatch
                   </td>
                   <td className="py-3 pr-1">
                     <div className="flex justify-end gap-1">
-                      <IconBtn label="Kiểm tra kết nối (mô phỏng)" onClick={() => dispatch({ type: "testNick", id: n.id })}><PlugZap className="size-4" /></IconBtn>
+                      <IconBtn label="Kiểm tra API (mô phỏng)" onClick={() => dispatch({ type: "testNick", id: n.id })}><PlugZap className="size-4" /></IconBtn>
                       <IconBtn label="Sửa" onClick={() => setEditing(n)}><PenLine className="size-4" /></IconBtn>
                     </div>
                   </td>
@@ -115,11 +142,32 @@ export function NickAccounts({ state, dispatch }: { state: DomainState; dispatch
           </tbody>
         </table>
       </div>
-      <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-fg-subtle">
-        <ShieldCheck className="size-3.5 text-emerald-300" />
-        Mật khẩu / API token iNET và cPanel chỉ lưu phía server (mã hoá), giao diện không bao giờ hiện lại. Miền “demo” là tên giả — chỉ th-ntp.com có trong app cũ.
-      </p>
+      <div className="mt-3 space-y-1 text-[11.5px] text-fg-subtle">
+        <p className="flex items-center gap-1.5">
+          <ShieldCheck className="size-3.5 text-emerald-300" />
+          API key / token chỉ lưu phía server (mã hoá), giao diện không hiện lại. Không dùng điều khiển trình duyệt — nick thiếu quyền API sẽ bị chặn và báo rõ.
+        </p>
+        <p>Hạn mức/ngày để trống khi chưa có căn cứ (không mặc định). API iNET giới hạn chung 60 yêu cầu/phút · 1.000/giờ · 10.000/ngày cho mỗi khoá (tài liệu chính thức) — hàng đợi sẽ tự giãn nhịp.</p>
+        <p>3 nick đọc từ portal iNET ngày 16/10/2026 (chỉ đọc, không thay đổi gì trên tài khoản). Chọn miền gốc ở bảng “Miền gốc dùng để tạo miền phụ”. User cPanel không lưu trong mã nguồn.</p>
+      </div>
     </section>
+  );
+}
+
+function Cap({ label, cap }: { label: string; cap: ApiCap }) {
+  const m = {
+    ok: { icon: Check, cls: "text-emerald-300", text: "có quyền" },
+    blocked: { icon: Ban, cls: "text-rose-300", text: "bị chặn" },
+    untested: { icon: HelpCircle, cls: "text-fg-subtle", text: "chưa kiểm tra" },
+  }[cap.state];
+  return (
+    <div className={clsx("flex items-start gap-1 text-[11.5px]", m.cls)} title={cap.note}>
+      <m.icon className="mt-px size-3.5 shrink-0" />
+      <span>
+        {label}: {m.text}
+        {cap.note && <span className="block text-[10.5px] opacity-80">{cap.note}</span>}
+      </span>
+    </div>
   );
 }
 
@@ -133,55 +181,76 @@ function IconBtn({ children, label, onClick }: { children: React.ReactNode; labe
 
 function NickForm({ nick, onCancel, onSave }: { nick: Nick; onCancel: () => void; onSave: (n: Nick) => void }) {
   const [n, setN] = useState(nick);
-  const set = (k: keyof Nick) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setN({ ...n, [k]: k === "dailyLimit" ? Number(e.target.value) || 0 : e.target.value.trim() });
-  const errors = {
+  const [limit, setLimit] = useState(nick.dailyLimit === null ? "" : String(nick.dailyLimit));
+  const set = (k: "name" | "email" | "ip" | "cpanelHost" | "cpanelUser") => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setN({ ...n, [k]: e.target.value.trim() });
+  const errors: Record<string, string | false> = {
     name: !n.name && "Nhập tên nick",
-    root: !DOMAIN_RE.test(n.root) && "Miền gốc dạng example.com",
     ip: !IP_RE.test(n.ip) && "IPv4 dạng 203.0.113.10",
     cpanelHost: !n.cpanelHost && "Nhập địa chỉ cPanel",
+    limit: limit !== "" && !(Number(limit) > 0) && "Số dương hoặc để trống",
+    weight: !(n.weight > 0) && "Tỷ trọng > 0",
   };
   const ok = !Object.values(errors).some(Boolean);
 
-  const Field = ({ k, label, mono }: { k: keyof Nick; label: string; mono?: boolean }) => (
+  const field = (k: "name" | "email" | "ip" | "cpanelHost" | "cpanelUser", label: string, mono?: boolean) => (
     <label className="block text-[12px]">
       <span className="mb-1 block text-fg-muted">{label}</span>
       <input
-        value={String(n[k] ?? "")}
+        value={n[k]}
         onChange={set(k)}
-        className={clsx(
-          "h-9 w-full rounded-lg border bg-ink-850 px-3 outline-none focus:border-brand/60",
-          mono && "font-mono text-[12.5px]",
-          errors[k as keyof typeof errors] ? "border-rose-400/50" : "border-line",
-        )}
+        className={clsx("h-9 w-full rounded-lg border bg-ink-850 px-3 outline-none focus:border-brand/60", mono && "font-mono text-[12.5px]", errors[k] ? "border-rose-400/50" : "border-line")}
       />
-      {errors[k as keyof typeof errors] && <span className="mt-0.5 block text-[11px] text-rose-300">{errors[k as keyof typeof errors]}</span>}
+      {errors[k] && <span className="mt-0.5 block text-[11px] text-rose-300">{errors[k]}</span>}
+    </label>
+  );
+  const secret = (label: string) => (
+    <label className="block text-[12px]">
+      <span className="mb-1 flex items-center gap-1 text-fg-muted"><KeyRound className="size-3.5" /> {label}</span>
+      <input type="password" placeholder="Gửi thẳng lên server, không lưu ở trình duyệt" className="h-9 w-full rounded-lg border border-line bg-ink-850 px-3 outline-none focus:border-brand/60" />
     </label>
   );
 
   return (
     <div className="mb-4 rounded-xl border border-brand/30 bg-brand/[0.05] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <span className="text-[13px] font-semibold">{nick.name ? `Sửa ${nick.name}` : "Thêm nick iNET"}</span>
+        <span className="text-[13px] font-semibold">{nick.name ? `Sửa ${nick.name}` : "Thêm nick iNET / hosting"}</span>
         <button onClick={onCancel} aria-label="Đóng" className="text-fg-subtle hover:text-fg"><X className="size-4" /></button>
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-        {Field({ k: "name", label: "Tên nick" })}
-        {Field({ k: "email", label: "Email đăng nhập iNET" })}
-        {Field({ k: "root", label: "Miền gốc đã sở hữu", mono: true })}
-        {Field({ k: "ip", label: "IP hosting", mono: true })}
-        {Field({ k: "cpanelHost", label: "Địa chỉ cPanel", mono: true })}
-        {Field({ k: "cpanelUser", label: "User cPanel", mono: true })}
-        {Field({ k: "dailyLimit", label: "Giới hạn miền / ngày" })}
+        {field("name", "Tên nick")}
+        {field("email", "Email tài khoản iNET")}
+        {field("ip", "IP hosting", true)}
+        {field("cpanelHost", "Địa chỉ cPanel", true)}
+        {field("cpanelUser", "User cPanel", true)}
+        {secret("Khoá API iNET (developers.inet.vn)")}
+        {secret("API token cPanel")}
         <label className="block text-[12px]">
-          <span className="mb-1 flex items-center gap-1 text-fg-muted"><KeyRound className="size-3.5" /> Mật khẩu / API token</span>
-          <input type="password" placeholder="Gửi thẳng lên server, không lưu ở trình duyệt" className="h-9 w-full rounded-lg border border-line bg-ink-850 px-3 outline-none focus:border-brand/60" />
+          <span className="mb-1 block text-fg-muted">Hạn mức miền / ngày</span>
+          <input
+            value={limit}
+            onChange={(e) => setLimit(e.target.value.trim())}
+            placeholder="Để trống nếu chưa rõ"
+            className={clsx("h-9 w-full rounded-lg border bg-ink-850 px-3 outline-none focus:border-brand/60", errors.limit ? "border-rose-400/50" : "border-line")}
+          />
+          {errors.limit && <span className="mt-0.5 block text-[11px] text-rose-300">{errors.limit}</span>}
+        </label>
+        <label className="block text-[12px]">
+          <span className="mb-1 block text-fg-muted">Tỷ trọng phân bổ</span>
+          <input
+            type="number"
+            min={1}
+            value={n.weight}
+            onChange={(e) => setN({ ...n, weight: Number(e.target.value) || 0 })}
+            className={clsx("h-9 w-full rounded-lg border bg-ink-850 px-3 outline-none focus:border-brand/60", errors.weight ? "border-rose-400/50" : "border-line")}
+          />
         </label>
       </div>
+      <p className="mt-2 text-[11px] text-fg-subtle">Danh sách tên miền của nick được đọc qua API iNET sau khi lưu khoá — không nhập tay. Loại khoá API cụ thể sẽ chốt theo tài liệu chính thức trước khi làm backend.</p>
       <div className="mt-3 flex justify-end gap-2">
         <button onClick={onCancel} className="rounded-lg border border-line px-3 py-1.5 text-[12.5px] text-fg-muted hover:text-fg">Huỷ</button>
         <button
-          onClick={() => onSave(n)}
+          onClick={() => onSave({ ...n, dailyLimit: limit === "" ? null : Number(limit) })}
           disabled={!ok}
           className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand to-brand-2 px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-40"
         >

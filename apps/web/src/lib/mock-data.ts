@@ -29,8 +29,8 @@ const NAMES = [
 
 const CITIES = ["Cheyenne", "Casper", "Laramie", "Gillette", "Rock Springs", "Sheridan", "Jackson", "Riverton", "Cody", "Evanston"];
 const STREETS = ["Capitol Ave", "Warren Ave", "Grand Ave", "Lincolnway", "Pioneer Ave", "Yellowstone Rd", "Snow King Ave", "Main St"];
-// Parent domains of the five hosting accounts (only th-ntp.com is known from the legacy app; the rest are placeholders).
-const PARENTS = ["th-ntp.com", "nick2-demo.com", "nick3-demo.com", "nick4-demo.com", "nick5-demo.com"];
+// Default root domain of each of the owner's 3 iNET accounts (see NICKS in domain-mock.ts). Company rows are still demo data.
+const PARENTS = ["sustainlife.io.vn", "ntp88.com", "groupany.id.vn"];
 
 const LEGAL_SUFFIX = /\b(llc|inc|pllc|co|corp|ltd)\b\.?/g;
 

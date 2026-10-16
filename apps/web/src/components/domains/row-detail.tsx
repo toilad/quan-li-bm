@@ -1,15 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import clsx from "clsx";
-import { CheckCircle2, Circle, Loader2, XCircle, AlertTriangle, RotateCcw, Server, Info, FileText, Lock, ArrowRight } from "lucide-react";
-import { DOMAIN_STEPS, nickOf } from "@/lib/domain-mock";
+import { CheckCircle2, Circle, Loader2, XCircle, AlertTriangle, RotateCcw, Server, Info, FileText, Lock, ArrowRight, Boxes } from "lucide-react";
+import { DNS_HOST_LABEL, DOMAIN_STEPS, findRoot, type Orphan } from "@/lib/domain-mock";
 import { RowStatusChip, stepState } from "./ui";
 import { fqdnOf, labelOf, type DomainDispatch, type DomainState } from "./use-domain-queue";
 
 export function RowDetail({ state, dispatch }: { state: DomainState; dispatch: DomainDispatch }) {
   const r = state.rows.find((x) => x.row === state.selected) ?? state.rows.find((x) => x.status === "running") ?? state.rows[0];
   if (!r) return <section className="panel p-6 text-[13px] text-fg-subtle">Không có dòng nào.</section>;
-  const nick = nickOf(r.nickId, state.nicks);
+  const ref = findRoot(r.root, state.nicks);
   const label = labelOf(r, state.rule);
   const fqdn = fqdnOf(r, state);
 
@@ -32,23 +33,23 @@ export function RowDetail({ state, dispatch }: { state: DomainState; dispatch: D
           <div className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">Tên miền sẽ tạo</div>
           <div className="mt-1 break-all font-mono text-[17px] font-semibold">
             <span className="text-emerald-200">{label}</span>
-            <span className="text-fg-muted">.{nick.root}</span>
+            <span className="text-fg-muted">.{r.root || "…"}</span>
           </div>
           <div className="mt-2 flex items-start gap-1.5 text-[11.5px] text-fg-muted">
             <Info className="mt-px size-3.5 shrink-0 text-sky-300" />
             <span>
-              Miền phụ (subdomain) của <b className="text-fg">{nick.root}</b> — miền gốc đã có sẵn trên nick {nick.name}. Không đăng ký domain mới, không phát sinh phí đăng ký.
+              {ref ? <>Miền phụ (subdomain) của <b className="text-fg">{r.root}</b> — miền gốc đã có sẵn trên nick {ref.nick.name}. </> : "Chưa gán miền gốc — tích chọn miền ở bảng “Miền gốc dùng để tạo miền phụ”. "}Không đăng ký domain mới, không phát sinh phí đăng ký.
             </span>
           </div>
         </div>
 
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12px]">
           <dt className="text-fg-subtle">Nick iNET</dt>
-          <dd>{nick.name} · {nick.root}{nick.demoRoot && <span className="ml-1 text-[10.5px] text-fg-subtle">(miền demo)</span>}</dd>
+          <dd>{ref ? `${ref.nick.name} · miền gốc ${r.root}` : "—"}</dd>
           <dt className="text-fg-subtle">Bản ghi DNS</dt>
-          <dd className="font-mono">A {label} → {nick.ip}</dd>
+          <dd>{ref ? <><span className="font-mono">A {label} → {ref.nick.ip}</span><span className="block text-[11px] text-fg-subtle">{DNS_HOST_LABEL[ref.root.dnsHost]}</span></> : "—"}</dd>
           <dt className="text-fg-subtle">cPanel</dt>
-          <dd className="font-mono">{nick.cpanelHost}</dd>
+          <dd className="font-mono">{ref?.nick.cpanelHost ?? "—"}</dd>
           <dt className="text-fg-subtle">Thư mục web</dt>
           <dd className="truncate font-mono" title={`/public_html/${fqdn}`}>/public_html/{fqdn}</dd>
           <dt className="text-fg-subtle">Phôi</dt>
@@ -99,6 +100,8 @@ export function RowDetail({ state, dispatch }: { state: DomainState; dispatch: D
           </div>
         )}
 
+        {r.orphan && <OrphanCard row={r.row} orphan={r.orphan} dispatch={dispatch} />}
+
         <div className="rounded-xl border border-line bg-ink-850/50 p-4 text-[12px]">
           <div className="mb-2 flex items-center gap-2 font-semibold"><Server className="size-4 text-sky-300" /> Ghi Google Sheet</div>
           <div className="flex items-center gap-2">
@@ -128,5 +131,50 @@ export function RowDetail({ state, dispatch }: { state: DomainState; dispatch: D
         )}
       </div>
     </section>
+  );
+}
+
+/** Resources created for a row whose B cell was taken meanwhile — kept so nothing is lost or duplicated. */
+export function OrphanCard({ row, orphan, dispatch }: { row: number; orphan: Orphan; dispatch: DomainDispatch }) {
+  const [note, setNote] = useState("");
+  return (
+    <div className="rounded-xl border border-amber-400/30 bg-amber-400/[0.06] p-4 text-[12px]">
+      <div className="mb-2 flex items-center gap-2 font-semibold text-amber-100">
+        <Boxes className="size-4" /> Tài nguyên đã tạo nhưng chưa gắn vào Sheet
+      </div>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        <dt className="text-fg-subtle">Miền</dt>
+        <dd className="font-mono">{orphan.fqdn}</dd>
+        <dt className="text-fg-subtle">Nick / IP</dt>
+        <dd className="font-mono">{orphan.nick} · {orphan.ip}</dd>
+        <dt className="text-fg-subtle">Đã tạo</dt>
+        <dd>{orphan.dns && "Bản ghi A"}{orphan.dns && orphan.host && " · "}{orphan.host && "Miền trên cPanel"}</dd>
+        <dt className="text-fg-subtle">Ô B hiện có</dt>
+        <dd className="font-mono text-amber-200">{orphan.foundB}</dd>
+        <dt className="text-fg-subtle">Lúc</dt>
+        <dd>{orphan.at}</dd>
+      </dl>
+      <p className="mt-2 text-[11.5px] text-fg-muted">Lưu trong database. Không ghi đè B, không tự xoá — anh quyết định giữ, gắn lại hay gỡ.</p>
+      {orphan.resolved ? (
+        <p className="mt-2 flex items-center gap-1.5 text-emerald-300"><CheckCircle2 className="size-3.5" /> Đã xử lý: {orphan.resolved}</p>
+      ) : (
+        <div className="mt-2.5 flex gap-2">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ghi chú cách xử lý (bắt buộc)"
+            className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-ink-850 px-2.5 outline-none focus:border-brand/60"
+            aria-label={`Ghi chú xử lý dòng ${row}`}
+          />
+          <button
+            disabled={!note.trim()}
+            onClick={() => dispatch({ type: "resolveOrphan", row, note: note.trim() })}
+            className="rounded-lg bg-white/[0.08] px-2.5 font-medium hover:bg-white/[0.13] disabled:opacity-40"
+          >
+            Đánh dấu đã xử lý
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
