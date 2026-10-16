@@ -1,6 +1,6 @@
 # Trạng thái: chạy thật, mô phỏng hay còn thiếu
 
-Cập nhật 2026-10-16. Đã có backend thật (FastAPI + PostgreSQL + worker). Giao diện gọi backend thật;
+Cập nhật 2026-10-17. Đã có backend thật (FastAPI + PostgreSQL + worker). Giao diện gọi backend thật;
 dịch vụ nào chưa cấu hình / chưa khả dụng thì màn hình **ghi rõ**, không báo thành công giả.
 Chưa thao tác lên tài khoản thật nào (chưa có khoá). Mọi dịch vụ ngoài trong kiểm thử đều là mock.
 
@@ -8,56 +8,55 @@ Chưa thao tác lên tài khoản thật nào (chưa có khoá). Mọi dịch v�
 
 | Chức năng | Chạy thật (đã kiểm) | Có code, chờ cấu hình để chạy thật | Chưa khả dụng / còn thiếu |
 |---|---|---|---|
-| PDF Manager | Upload lên server, chống trùng md5, **nhận diện + trích xuất Brazil CNPJ từ lớp chữ** (đúng trên 3 phôi thật), xem PDF gốc, sửa ô, kiểm tra hợp lệ ở server. **Luồng lưu chạy xuyên suốt giao diện → API → worker → PostgreSQL** với Google giả lập: kiểm trùng (DB + Sheet) → Drive (tìm theo md5 trước, không upload 2 lần) → md5 → Drive ID → dòng A, D–J (B, C trống) → K = “Xem phôi”; Sheet lỗi → chỉ ghi lại Sheet; tạm dừng/tiếp tục | Ghi Google thật — cần OAuth của anh (`scripts/google_auth.py`); bản scan: AI tự nhận diện loại phôi + đọc ô — cần ANTHROPIC_API_KEY | Wyoming: **chưa có phôi thật để kiểm** (bộ đọc lớp chữ theo nhãn + AI cho bản scan) |
-| Tạo miền | 25 miền gốc của 3 nick, **tích chọn lưu trong database**, kiểm tra hosting chỉ đọc theo nick (cPanel `DomainInfo::list_domains` → miền gốc chưa có trên hosting thì không tích được; iNET `GET /domain` lưu nguyên dữ liệu để đối chiếu), chặn miền tạm ngưng / Cloudflare, khoá bỏ chọn miền đang có tác vụ, từ chối dòng gán miền chưa tích (kiểm lại ở server + trước mỗi bước tạo) | Quét Sheet (B trống) — cần Google; kiểm trùng cPanel + DNS, tạo miền phụ trên cPanel, xác minh DNS, đọc lại B rồi ghi — cần token cPanel | **Tạo bản ghi A qua API iNET**: tài liệu chưa có cấu trúc dữ liệu cho `PATCH /domain/{id}/record` → tác vụ dừng ở “Chưa khả dụng”. Đọc danh sách miền qua `GET /domain`: chưa biết cấu trúc trả về (đang dùng bản chép từ portal) |
-| SSL + Tạo web | **Mẫu web gốc của app cũ đã khôi phục** từ EXE (7 module, mọi hàm biên dịch lại khớp từng opcode với bản gốc) và dùng để dựng 6 trang + robots/sitemap; mẫu đã chọn quyết định ảnh minh hoạ; giao diện (màu, font, hero, thứ tự phần) chọn như app cũ nhưng cố định theo tên miền; xem trước trên giao diện = đúng HTML sẽ dựng | Quét Sheet (B có, C trống) — cần Google; DNS, **document root đọc từ cPanel**, nội dung AI + kiểm tra không bịa, upload `overwrite=0`, AutoSSL, kiểm HTTPS, đọc lại C rồi ghi — cần token cPanel + ANTHROPIC_API_KEY | Sheet **không có cột email** → web dùng email in trên phôi Brazil nếu có, nếu không để trống (chờ anh quyết định) |
+| PDF Manager | Upload lên server, chống trùng md5, **nhận diện + trích xuất Brazil CNPJ từ lớp chữ** (đúng trên 3 phôi thật, kiểm số kiểm tra CNPJ), xem PDF gốc, sửa ô, kiểm tra hợp lệ ở server. **Luồng lưu chạy xuyên suốt giao diện → API → worker → PostgreSQL** với Google giả lập: kiểm trùng (DB + Sheet) → Drive (tìm theo md5 trước, không upload 2 lần) → md5 → Drive ID → dòng A, D–J (B, C trống) → K = “Xem phôi”; Sheet lỗi → chỉ ghi lại Sheet; tạm dừng/tiếp tục. Ô tick **“email liên hệ chính thức (đã xác minh)”** trên thẻ CNPJ | Ghi Google thật — cần OAuth của anh; bản scan (California): AI nhận diện + đọc ô, **đối chiếu số hồ sơ và tên với bản in lại ở trang sau** (khác số → chặn lưu tới khi anh sửa tay) — cần ANTHROPIC_API_KEY | Wyoming: **chưa có phôi thật để kiểm** |
+| Tạo miền | 25 miền gốc của 3 nick, **tích chọn lưu trong database**, kiểm tra nick chỉ đọc (cPanel `DomainInfo::list_domains` + **phiên bản cPanel**; iNET `GET /domain`), chặn miền tạm ngưng / Cloudflare, khoá bỏ chọn miền đang có tác vụ, từ chối dòng gán miền chưa tích | Quét Sheet (B trống) — cần Google; kiểm trùng cPanel + DNS, tạo miền phụ trên cPanel, xác minh DNS, đọc lại B rồi ghi — cần token cPanel | **Tạo bản ghi A qua iNET**: tài liệu chính thức nay **đã có** cấu trúc `PATCH /domain/{id}/record` (ACTION_ADD). Code **vẫn chặn**, chờ anh duyệt bật ghi DNS thật |
+| SSL + Tạo web | **Mẫu web gốc của app cũ đã khôi phục** từ EXE và dùng để dựng 6 trang + robots/sitemap; xem trước = đúng HTML sẽ dựng. **Email chỉ hiện khi đã xác minh**; chưa xác minh/không có → không có link email, không có form gửi thư (thay bằng gọi điện/địa chỉ) | Quét Sheet (B có, C trống) — cần Google; document root đọc từ cPanel, nội dung AI + kiểm tra không bịa, upload `overwrite=0`, AutoSSL, kiểm HTTPS, đọc lại C rồi ghi — cần token cPanel + ANTHROPIC_API_KEY | — |
+| Cài đặt API | Trang **Cài đặt API**: Google, AI, máy chủ, iNET/cPanel × 3 nick. Khoá **mã hoá ở server** (Fernet, khoá chủ `data/master.key` hoặc `QLBM_MASTER_KEY`), không bao giờ trả về giao diện hay ghi log. Nút **Kết nối Google** (OAuth web, PKCE) + kiểm tra Google chỉ đọc | OAuth client loại *Web application* + redirect URI của server | — |
 | Tổng quan | Giao diện | — | Vẫn là **dữ liệu mẫu** (có nhãn “Dữ liệu mẫu”) |
-| Kho mẫu, Nhật ký, Cài đặt | — | — | Trang giữ chỗ. Khoá/token hiện đặt trong `apps/api/.env` |
-| Nền tảng | Hàng đợi PostgreSQL (khoá chống chạy trùng, một việc/nick, thử lại có giãn cách, chạy tiếp từ bước dở, **tạm dừng/tiếp tục theo loại việc**), nhật ký từng việc, bảng `sheet_writes`, sao lưu/khôi phục `pg_dump` (đã kiểm khôi phục ra DB riêng) | Docker Compose (db, api, worker, web, backup) — **chưa chạy thử** vì máy này chưa có Docker | Đăng nhập/phân quyền; đẩy bản sao lưu ra kho ngoài (restic); đồng bộ GitHub Private (chưa có remote, chưa có `gh`) |
+| Nền tảng | Hàng đợi PostgreSQL (chống chạy trùng, một việc/nick, thử lại có giãn cách, chạy tiếp từ bước dở, tạm dừng/tiếp tục), nhật ký từng việc, bảng `sheet_writes`, sao lưu/khôi phục `pg_dump`; **khởi động lại API + worker giữ nguyên dữ liệu và việc dở** | Docker Compose (db, api, worker, web, backup) — **chưa chạy thử** (máy này chưa có Docker) | **API chưa có đăng nhập/phân quyền** — không được mở ra Internet trước khi có; GitHub Private (chưa có remote) |
 
-Kiểm thử: `apps/api` 57 test (gồm 15 mẫu × 12 tên miền) (mọi API ngoài đều mock) · hàng đợi chạy thật trên worker + PostgreSQL (chống trùng, tạm dừng, thử lại, khởi động lại giữ dữ liệu) · E2E PDF xuyên suốt với Google giả lập 12/12, tạm dừng/tiếp tục từ giao diện 4/4, các màn khác 14/14.
+Kiểm thử: `apps/api` **67 test**, mọi API ngoài đều mock, gồm **1 test toàn tuyến** trên cùng một Sheet giả: lưu PDF → tạo miền (B) → dựng web (C).
+Trong test này chỉ bước ghi DNS iNET là hàm giả. E2E giao diện trên backend dev: các màn 14/14, Cài đặt 11/11, xác minh email 6/6, xem trước 15 mẫu 15/15.
 
 ## API
 
 | Dịch vụ | Đã dùng (theo tài liệu chính thức) | Thiếu |
 |---|---|---|
-| Google | OAuth 2.0 của chủ tài khoản (Desktop app, PKCE, quyền `spreadsheets` + `drive.file`) hoặc service account (chỉ Sheets / Shared Drive). Sheets v4 `values.get/update/append`, Drive v3 upload multipart + `appProperties` (tìm lại theo md5), tạo thư mục riêng của app | Tài khoản Gmail cá nhân: **service account không upload được vào Drive** (Google: “service accounts don't have storage quota”) → dùng OAuth |
-| cPanel UAPI | `SubDomain::addsubdomain/listsubdomains`, `DomainInfo::single_domain_data/list_domains`, `Fileman::upload_files`, `SSL::start_autossl_check/is_autossl_check_in_progress/get_autossl_problems` | `DNS::mass_edit_zone` chưa làm (không miền gốc nào dùng NS cPanel) |
-| iNET | `GET /domain` (gọi được, chưa parse) | Cấu trúc body `PATCH /domain/{id}/record`; cấu trúc trả về `GET /domain` |
-| AI | Anthropic Messages (SDK `anthropic` 1.15, `claude-opus-5-5`, JSON schema, khối `document` cho PDF scan, fallback khi từ chối); `/api/ai/check` hỏi Models API xem model có với khoá không trước khi dùng | — (cần khoá) |
+| Google | OAuth 2.0 của chủ tài khoản (web PKCE từ trang Cài đặt; script Desktop chỉ để phát triển), quyền `spreadsheets` + `drive.file`. Sheets v4 `values.get/update/append`, Drive v3 upload multipart + `appProperties` | Gmail cá nhân: service account không upload được vào Drive → dùng OAuth |
+| cPanel UAPI | `SubDomain::addsubdomain/listsubdomains`, `DomainInfo::single_domain_data/list_domains`, `Fileman::upload_files`, `SSL::start_autossl_check/is_autossl_check_in_progress/get_autossl_problems`, `StatsBar::get_stats` (cpanelversion) | `DNS::mass_edit_zone` chưa làm (không miền gốc nào dùng NS cPanel) |
+| iNET | `GET /domain` (đã có cấu trúc trả về trong tài liệu) | Ghi `PATCH /domain/{id}/record`: tài liệu đủ, **chờ anh duyệt** bật |
+| AI | Anthropic Messages (SDK `anthropic` 1.15, `claude-opus-5-5`, JSON schema, khối `document` cho PDF scan, fallback khi từ chối); `/api/ai/check` | — (cần khoá) |
 
 ## Tối thiểu để kiểm thử thật
 
-1. **Google** (Gmail cá nhân → OAuth): tạo OAuth client loại *Desktop app* trong Google Cloud (bật Sheets API + Drive API), tải file JSON,
-   đặt `GOOGLE_OAUTH_CLIENT_FILE`, rồi **anh tự chạy** `python -m scripts.google_auth` để đồng ý một lần; `SHEET_ID` của **bản sao Sheet để thử**.
-   `DRIVE_FOLDER_ID` để trống → app tự tạo thư mục “Quản Lí BM — Phôi PDF”.
-2. **AI**: `ANTHROPIC_API_KEY` (để đọc phôi scan và viết nội dung web).
-3. **cPanel**: user + API token cho 3 tài khoản (`CPANEL_USER_N1..3`, `CPANEL_TOKEN_N1..3`).
-4. **iNET**: khoá API quyền đọc (`INET_API_KEY_N1..3`) — để đọc cấu trúc `GET /domain`; tạo bản ghi A cần iNET cung cấp body của `PATCH /record`.
+1. **Google**: OAuth client loại **Web application** (bật Sheets API + Drive API), redirect URI = `PUBLIC_API_URL/api/google/oauth/callback`
+   (trang Cài đặt hiện sẵn). Dán JSON client ở trang Cài đặt → bấm **Kết nối Google**. `SHEET_ID` của **bản sao Sheet để thử**.
+2. **AI**: `ANTHROPIC_API_KEY`.
+3. **cPanel**: user + API token cho 3 tài khoản.
+4. **iNET**: khoá API — `read` để kiểm tra nick; `write` chỉ khi anh duyệt bật tạo bản ghi A.
 5. Mỗi lần thử thật đầu tiên trên một dịch vụ: em chỉ chạy **thao tác đọc** trước, anh duyệt rồi mới ghi.
 
 ## Quy tắc đã chốt
 
 - **Mọi chức năng tự động bằng API** (Google, iNET, cPanel, AI). Không Playwright/Selenium, không bắt đăng nhập từng nick.
-  Dịch vụ không có API phù hợp hoặc tài khoản thiếu quyền → báo "Chưa khả dụng"/"Chưa cấu hình", không thay bằng điều khiển trình duyệt.
   Endpoint chỉ lấy từ tài liệu chính thức — xem docs/API-RESEARCH.md.
 - PDF: Drive trước, lưu Drive ID, rồi ghi Sheet; Sheet lỗi → chỉ ghi lại Sheet. B, C trống; K = link PDF gốc.
 - A, J bắt buộc; trường do AI đọc phải đối chiếu; trường thiếu phải xác nhận để trống; không tự bịa.
-- Mã số (CNPJ, CEP, ZIP, Entity No., NÚMERO) giữ dạng văn bản (ghi Sheet bằng RAW), giữ số 0 đầu.
-- California Entity No.: chỉ kiểm tra cơ bản, cảnh báo, **không chặn lưu**.
+- Mã số (CNPJ, CEP, ZIP, Entity No.) giữ dạng văn bản (ghi Sheet bằng RAW), giữ số 0 đầu.
+- California: số hồ sơ 12 chữ số chỉ cảnh báo; **khác bản in lại ở trang sau → chặn lưu**; không thấy bản in lại → cảnh báo.
+- Email: Sheet **không thêm cột email**. Web chỉ dùng email trên phôi khi anh đã tick xác minh là email chính thức; không thì ẩn email và form.
 - Ngành nghề suy từ tên công ty = **gợi ý**; từ CNAE = đọc từ phôi.
 - Tự lưu PDF mặc định tắt. Dữ liệu thật (PDF, mã số thật) không vào Git — chỉ ở `test-fixtures/` (bị ignore).
 - Tạo miền = **tạo miền phụ trên miền gốc đã sở hữu**. B chỉ ghi khi đủ: bản ghi A + miền trên cPanel + DNS trỏ đúng IP + ô B vẫn trống lúc ghi.
-  Cột C không bao giờ bị ghi. Miền gốc phải có sẵn trên tài khoản cPanel (API `addsubdomain` yêu cầu).
-- Miền gốc: hiện toàn bộ miền của nick, chỉ dùng miền đã tích; không tích sẵn; không tích → không chạy; không bỏ tích miền đang có tác vụ.
-- Mẫu cũ, những phần **không xuất bản** vì là nội dung không căn cứ: lời chứng thực mẫu (5 sao, “Real feedback”), dải số liệu “100% / 24/7 / A+ / On-time”,
-  “Trusted by / Our customers”, hàng chữ giả logo khách hàng, thư viện ảnh kho ghi “A Look at Our Work”, 4 bước quy trình cố định; giờ làm việc
-  không để AI tự đặt (“Please contact us for current business hours.”). Mỗi chỗ vá có ghi chú `QLBM:` trong `legacy/templates/home.py`.
-- Website: chỉ dòng có miền ở B và C trống. B chỉ đọc. Document root đọc từ cPanel, upload không ghi đè file có sẵn.
+- Miền gốc: hiện toàn bộ miền của nick, chỉ dùng miền đã tích; không tích sẵn; không tích → không chạy.
+- Mẫu cũ, những phần **không xuất bản** (không có căn cứ): lời chứng thực mẫu, dải số liệu “100% / 24/7 / A+”, “Trusted by”, logo khách giả,
+  thư viện ảnh “A Look at Our Work”, quy trình cố định, giờ làm việc do AI đặt, email/form khi chưa xác minh. Mỗi chỗ vá có ghi chú `QLBM:`.
+- Website: chỉ dòng có miền ở B và C trống. Document root đọc từ cPanel, upload không ghi đè.
   C chỉ ghi khi https://B trả 200, chứng chỉ hợp lệ, đúng nội dung, và ô C vẫn trống lúc ghi.
 
 ## Chờ chủ dự án chốt
 
-1. Quy tắc tên miền phụ: bỏ hậu tố pháp lý (app cũ, đang dùng) hay dùng nguyên cột E / rút gọn 2 từ.
-2. `th-ntp.com` của app cũ thuộc nick nào.
-3. Hạn mức miền / ngày mỗi nick (hiện không giới hạn).
+1. **Duyệt bật ghi bản ghi A qua iNET** (theo `PATCH /record` ACTION_ADD, chỉ thêm, không sửa/xoá bản ghi có sẵn).
+2. Quy tắc tên miền phụ: bỏ hậu tố pháp lý (app cũ, đang dùng) hay dùng nguyên cột E / rút gọn 2 từ.
+3. `th-ntp.com` của app cũ thuộc nick nào.
+4. Hạn mức miền / ngày mỗi nick (hiện không giới hạn).
