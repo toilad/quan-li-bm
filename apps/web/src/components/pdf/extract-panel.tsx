@@ -311,7 +311,12 @@ function IndustryCard({
 }) {
   const ind = file.industry!;
   const tpl = templateFor(ind);
-  const source = { doc: "Đọc từ phôi (CNAE)", name: "Suy từ tên công ty — phôi không ghi ngành", manual: "Đã chọn tay" }[ind.source];
+  const source = { doc: "Đọc từ phôi (CNAE)", name: "Suy từ tên công ty", manual: "Đã chọn tay" }[ind.source];
+  const badge = {
+    doc: { text: "Đã xác minh trên phôi", cls: "bg-emerald-400/10 text-emerald-300" },
+    name: { text: "Gợi ý · chưa xác minh", cls: "bg-amber-400/15 text-amber-300" },
+    manual: { text: "Anh đã chọn", cls: "bg-sky-400/10 text-sky-300" },
+  }[ind.source];
   return (
     <div
       className="rounded-xl border border-line bg-ink-850/50 p-4"
@@ -321,9 +326,15 @@ function IndustryCard({
       <div className="mb-2.5 flex items-center justify-between gap-2">
         <span className="flex items-center gap-2 text-[13px] font-semibold">
           <Database className="size-4 text-violet-300" /> Ngành nghề
+          <span className={clsx("rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold", badge.cls)}>{badge.text}</span>
         </span>
         <span className="text-[10.5px] text-fg-subtle">Lưu database · không ghi Sheet</span>
       </div>
+      {ind.source === "name" && (
+        <p className="mb-2.5 text-[11.5px] text-amber-200/80">
+          Phôi không ghi ngành nghề — đây chỉ là gợi ý từ tên công ty. Chọn lại nếu chưa đúng; lưu kèm trạng thái “chưa xác minh”.
+        </p>
+      )}
       {ind.source === "doc" && (
         <div className="mb-2.5 rounded-lg bg-white/[0.03] px-3 py-2 text-[12px]">
           <span className="font-mono text-sky-200">{ind.code}</span> <span className="text-fg-muted">· {ind.raw}</span>
