@@ -42,7 +42,7 @@ type ScanRow = { row: number; A: string; D: string; E: string; F: string; G: str
 type Scan = { total: number; with_b: number; rows: ScanRow[]; excluded: { row: number }[]; existing_b: string[]; tab: string };
 
 type Action =
-  | { type: "server"; nicks?: Nick[]; selected?: string[]; scan?: Scan | null; jobs?: Job[]; error?: ApiError | null }
+  | { type: "server"; nicks?: Nick[]; selected?: string[]; scan?: Scan | null; jobs?: Job[]; error?: ApiError | null; paused?: boolean }
   | { type: "select"; row: number }
   | { type: "check"; row: number; on: boolean }
   | { type: "checkFirst"; n: number; skipFlagged: boolean }
@@ -137,6 +137,7 @@ function reducer(s: DomainState, a: Action): DomainState {
       if (a.nicks) next.nicks = a.nicks;
       if (a.selected) { next.selectedRoots = a.selected; next.selectionLoaded = true; }
       if (a.error !== undefined) next.loadError = a.error;
+      if (a.paused !== undefined) next.paused = a.paused;
       if (a.scan !== undefined || a.jobs) {
         const scan = a.scan === undefined ? null : a.scan;
         const prev = new Map(s.rows.map((r) => [r.row, r]));
@@ -249,6 +250,8 @@ export function useDomainQueue() {
       return;
     }
     const jobs = await api.get<Job[]>("/api/jobs?kind=domain_create").catch(() => [] as Job[]);
+    const q = await api.get<{ paused: string[] }>("/api/queue").catch(() => ({ paused: [] as string[] }));
+    dispatchLocal({ type: "server", paused: q.paused.includes("*") || q.paused.includes("domain_create") });
     try {
       const scan = await api.get<Scan>("/api/domains/rows");
       dispatchLocal({ type: "server", scan, jobs, error: null });
@@ -306,6 +309,10 @@ export function useDomainQueue() {
         return;
       case "pause":
       case "resume":
+        api.post("/api/queue/pause", { kind: "domain_create", on: a.type === "pause" })
+          .then(() => say(a.type === "pause" ? "Đã tạm dừng: bước đang chạy xong rồi dừng, các bước đã xong được giữ" : "Đã tiếp tục hàng đợi"))
+          .catch((e) => say(errorText(e))).finally(refresh);
+        return;
       case "resolveOrphan":
       case "toggleNick":
       case "saveNick":

@@ -74,6 +74,14 @@ def status(s: Session = Depends(db)):
     return integration_status(s)
 
 
+@app.get("/api/ai/check")
+def ai_check():
+    """Before any real AI call: confirm the configured model exists for this key (Models API, no tokens used)."""
+    from wg_core.integrations import ai
+
+    return ai.check_model()
+
+
 @app.get("/api/backups")
 def backups():
     """Real backup files (scripts/backup.py). Restore drills are not automated yet."""

@@ -10,10 +10,15 @@ from .models import Nick
 
 def integration_status(s: Session) -> dict:
     st = settings()
-    sa_ok = bool(st.google_service_account_file) and Path(st.google_service_account_file).exists()
+    from .integrations.google import auth_mode
+
+    mode = auth_mode()
+    auth_missing = [] if mode else ["OAuth Google (GOOGLE_OAUTH_CLIENT_FILE + scripts/google_auth.py)"]
+    drive_ok = mode == "oauth" or (mode == "service_account" and bool(st.drive_folder_id))
     google = {
-        "sheets": {"configured": sa_ok and bool(st.sheet_id), "missing": [m for m, ok in (("GOOGLE_SERVICE_ACCOUNT_FILE", sa_ok), ("SHEET_ID", bool(st.sheet_id))) if not ok]},
-        "drive": {"configured": sa_ok and bool(st.drive_folder_id), "missing": [m for m, ok in (("GOOGLE_SERVICE_ACCOUNT_FILE", sa_ok), ("DRIVE_FOLDER_ID", bool(st.drive_folder_id))) if not ok]},
+        "mode": mode,
+        "sheets": {"configured": bool(mode) and bool(st.sheet_id), "missing": auth_missing + ([] if st.sheet_id else ["SHEET_ID"])},
+        "drive": {"configured": drive_ok, "missing": auth_missing + ([] if drive_ok or not mode else ["DRIVE_FOLDER_ID (Shared Drive) hoặc OAuth"])},
     }
     ai = {"configured": bool(st.anthropic_api_key), "model": st.ai_model, "missing": [] if st.anthropic_api_key else ["ANTHROPIC_API_KEY"]}
     nicks = []

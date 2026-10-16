@@ -87,11 +87,12 @@ def test_save_flow_drive_then_sheet_and_resume_after_sheet_error():
         with session_scope() as s:
             job, doc = s.get(Job, job_id), s.get(PdfDocument, doc_id)
             assert job.status == "done" and doc.status == "saved" and doc.sheet_row == 4
-            assert s.query(SheetWrite).count() == 1
+            assert s.query(SheetWrite).count() == 2  # the row (A, D–K) + K as “Xem phôi” link
     assert len(drive_calls) == 1  # never uploaded twice
     row = sheet.appends[0]
     assert row[1] == "" and row[2] == ""  # B, C empty
-    assert row[10] == "https://drive.google.com/file/d/DRIVE123/view"  # K = link to the original PDF
+    assert row[10] == "https://drive.google.com/file/d/DRIVE123/view"  # K first written as the plain link…
+    assert sheet.writes[-1] == ("K4", '=HYPERLINK("https://drive.google.com/file/d/DRIVE123/view","Xem phôi")')  # …then “Xem phôi”
     assert len(row) == 11  # A..K, L untouched
     assert row[9] == doc.fields["J"]["value"]
 
@@ -175,3 +176,72 @@ def test_resave_after_stop_does_not_duplicate_or_flag_itself():
     with session_scope() as s:
         assert s.get(PdfDocument, doc_id).status == "saved"
     assert len(drive_calls) == 1 and len(sheet2.appends) == 1
+
+
+@needs_fixtures
+def test_k_is_xem_phoi_hyperlink_and_drive_file_is_reused_not_reuploaded():
+    data = open(BR[0], "rb").read()
+    import hashlib
+
+    md5 = hashlib.md5(data).hexdigest()
+    existing = {md5: {"id": "OLD1", "md5Checksum": md5, "webViewLink": "https://drive.google.com/file/d/OLD1/view"}}
+    sheet, calls = FakeSheet({}), []
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        install_drive(m, calls=calls, existing=existing)  # e.g. uploaded before a crash, ID never saved
+        with session_scope() as s:
+            doc, _ = pdf.ingest(s, "doc.pdf", data)
+            pdf.request_save(s, doc)
+            doc_id = doc.id
+        drain()
+    with session_scope() as s:
+        d = s.get(PdfDocument, doc_id)
+        assert d.status == "saved" and d.drive_file_id == "OLD1"
+    assert calls == []  # found by md5 → no second upload
+    row = d.sheet_row
+    assert sheet.writes == [(f"K{row}", '=HYPERLINK("https://drive.google.com/file/d/OLD1/view","Xem phôi")')]
+
+
+@pytest.mark.skipif(not CA, reason="California sample not present")
+def test_scan_is_classified_and_read_by_ai_then_needs_owner_check():
+    import json as _json
+
+    from tests.mocks import anthropic_json
+
+    ai_reply = {"doc_type": "ca", "evidence": "LLC-1, Secretary of State, State of California",
+                "A": {"value": "EXAMPLE SUPPLY CO., LLC", "found": True}, "D": {"value": "", "found": False},
+                "F": {"value": "100 EXAMPLE AVE.", "found": True}, "G": {"value": "LOS ANGELES", "found": True},
+                "H": {"value": "California", "found": True}, "I": {"value": "90000", "found": True},
+                "J": {"value": "202400000000", "found": True}}
+    with respx.mock(assert_all_called=False) as m:
+        route = m.post("https://api.anthropic.com/v1/messages").mock(return_value=anthropic_json(ai_reply))
+        with session_scope() as s:
+            doc, _ = pdf.ingest(s, "scan.pdf", open(CA[0], "rb").read())
+            assert doc.status == "needs_ai" and doc.doc_type == "unknown"
+            doc_id = doc.id
+        drain()
+    with session_scope() as s:
+        d = s.get(PdfDocument, doc_id)
+        assert d.doc_type == "ca" and d.status == "review" and "AI nhận diện" in d.detection_reason
+        assert d.fields["A"] == {"value": "EXAMPLE SUPPLY CO., LLC", "source": "ai"}
+        assert d.fields["H"]["value"] == "CA"  # normalised, noted
+        assert d.fields["E"]["value"] == "examplesupplycollc"
+        # scanned → A/J read by AI → cannot be saved until the owner ticks "đã đối chiếu"
+        assert any("đối chiếu" in r for r in pdf.save_check(d, confirm_missing=True, critical_checked=False))
+        assert not pdf.save_check(d, confirm_missing=True, critical_checked=True)
+    sent = _json.loads(route.calls[0].request.content)
+    assert sent["model"] == "claude-opus-5-5"
+    assert sent["messages"][0]["content"][0]["type"] == "document"
+    assert sent["output_config"]["format"]["type"] == "json_schema" and sent["fallbacks"] == "default"
+
+
+def test_scan_without_ai_key_waits_for_configuration(monkeypatch):
+    from wg_core.config import settings
+
+    if not CA:
+        pytest.skip("California sample not present")
+    monkeypatch.setattr(settings(), "anthropic_api_key", "")
+    with session_scope() as s:
+        doc, _ = pdf.ingest(s, "scan.pdf", open(CA[0], "rb").read())
+        assert doc.status == "needs_ai"
+    assert drain() == 0  # nothing queued without a key; the UI shows "Chưa cấu hình AI"

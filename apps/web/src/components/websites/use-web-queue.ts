@@ -33,7 +33,7 @@ type Scan = { total: number; no_b: number; has_c: number; rows: ServerRow[] };
 type ServerNick = { id: string; name: string; ip: string; hosting: string | null; cpanel_host: string; enabled: boolean; roots: { name: string; dns_host: Nick["roots"][number]["dnsHost"]; expires: string | null; apex_on_hosting: boolean; suspended: boolean }[] };
 
 type Action =
-  | { type: "server"; scan?: Scan | null; jobs?: Job[]; nicks?: Nick[]; error?: ApiError | null }
+  | { type: "server"; scan?: Scan | null; jobs?: Job[]; nicks?: Nick[]; error?: ApiError | null; paused?: boolean }
   | { type: "select"; row: number }
   | { type: "check"; row: number; on: boolean }
   | { type: "checkAll"; rows: number[]; on: boolean }
@@ -91,6 +91,7 @@ function reducer(s: WebState, a: Action): WebState {
     case "server": {
       const next = { ...s };
       if (a.error !== undefined) next.loadError = a.error;
+      if (a.paused !== undefined) next.paused = a.paused;
       if (a.scan !== undefined || a.jobs) {
         const prev = new Map(s.rows.map((r) => [r.row, r]));
         const latest = new Map<number, Job>();
@@ -168,6 +169,8 @@ export function useWebQueue() {
       api.get<ServerNick[]>("/api/domains/roots").then(toNicks).catch(() => undefined),
       api.get<Job[]>("/api/jobs?kind=web_build").catch(() => [] as Job[]),
     ]);
+    const q = await api.get<{ paused: string[] }>("/api/queue").catch(() => ({ paused: [] as string[] }));
+    local({ type: "server", paused: q.paused.includes("*") || q.paused.includes("web_build") });
     try {
       const scan = await api.get<Scan>("/api/websites/rows");
       local({ type: "server", scan, jobs, nicks, error: null });
@@ -219,6 +222,10 @@ export function useWebQueue() {
         return;
       case "pause":
       case "resume":
+        api.post("/api/queue/pause", { kind: "web_build", on: a.type === "pause" })
+          .then(() => say(a.type === "pause" ? "Đã tạm dừng: bước đang chạy xong rồi dừng, các bước đã xong được giữ" : "Đã tiếp tục hàng đợi"))
+          .catch((e) => say(errorText(e))).finally(refresh);
+        return;
       case "resolveLive":
         say("Chưa khả dụng trong bản này — thao tác này cần làm ở server");
         return;

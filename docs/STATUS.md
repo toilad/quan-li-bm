@@ -8,28 +8,29 @@ Chưa thao tác lên tài khoản thật nào (chưa có khoá). Mọi dịch v�
 
 | Chức năng | Chạy thật (đã kiểm) | Có code, chờ cấu hình để chạy thật | Chưa khả dụng / còn thiếu |
 |---|---|---|---|
-| PDF Manager | Upload PDF lên server, chống trùng md5, **nhận diện + trích xuất phôi Brazil CNPJ từ lớp chữ** (đúng trên 3 phôi thật, số kiểm tra CNPJ), xem PDF gốc, sửa ô, chọn loại phôi, kiểm tra hợp lệ phía server | Lưu: kiểm trùng (DB + Sheet) → Drive → md5 → Drive ID → ghi A, D–K (B, C trống, K = link) — cần Google; AI đọc bản scan California — cần ANTHROPIC_API_KEY | Wyoming: bộ đọc theo nhãn **chưa có phôi thật để kiểm** |
+| PDF Manager | Upload lên server, chống trùng md5, **nhận diện + trích xuất Brazil CNPJ từ lớp chữ** (đúng trên 3 phôi thật), xem PDF gốc, sửa ô, kiểm tra hợp lệ ở server. **Luồng lưu chạy xuyên suốt giao diện → API → worker → PostgreSQL** với Google giả lập: kiểm trùng (DB + Sheet) → Drive (tìm theo md5 trước, không upload 2 lần) → md5 → Drive ID → dòng A, D–J (B, C trống) → K = “Xem phôi”; Sheet lỗi → chỉ ghi lại Sheet; tạm dừng/tiếp tục | Ghi Google thật — cần OAuth của anh (`scripts/google_auth.py`); bản scan: AI tự nhận diện loại phôi + đọc ô — cần ANTHROPIC_API_KEY | Wyoming: **chưa có phôi thật để kiểm** (bộ đọc lớp chữ theo nhãn + AI cho bản scan) |
 | Tạo miền | 25 miền gốc của 3 nick, **tích chọn lưu trong database**, chặn miền tạm ngưng / Cloudflare, khoá bỏ chọn miền đang có tác vụ, từ chối dòng gán miền chưa tích (kiểm lại ở server + trước mỗi bước tạo) | Quét Sheet (B trống) — cần Google; kiểm trùng cPanel + DNS, tạo miền phụ trên cPanel, xác minh DNS, đọc lại B rồi ghi — cần token cPanel | **Tạo bản ghi A qua API iNET**: tài liệu chưa có cấu trúc dữ liệu cho `PATCH /domain/{id}/record` → tác vụ dừng ở “Chưa khả dụng”. Đọc danh sách miền qua `GET /domain`: chưa biết cấu trúc trả về (đang dùng bản chép từ portal) |
 | SSL + Tạo web | 15 mẫu, chọn mẫu tay lưu database, dựng HTML 6 trang theo **đúng mẫu đã chọn** (kiểm trong test) | Quét Sheet (B có, C trống) — cần Google; DNS, **document root đọc từ cPanel**, nội dung AI + kiểm tra không bịa, upload `overwrite=0`, AutoSSL, kiểm HTTPS, đọc lại C rồi ghi — cần token cPanel + ANTHROPIC_API_KEY | HTML gốc của 15 mẫu cũ chưa khôi phục (đang dựng lại từ tên, bảng màu, bố cục, từ khoá ảnh của app cũ) |
 | Tổng quan | Giao diện | — | Vẫn là **dữ liệu mẫu** (có nhãn “Dữ liệu mẫu”) |
 | Kho mẫu, Nhật ký, Cài đặt | — | — | Trang giữ chỗ. Khoá/token hiện đặt trong `apps/api/.env` |
-| Nền tảng | Hàng đợi PostgreSQL (khoá chống chạy trùng, một việc/nick, thử lại có giãn cách, chạy tiếp từ bước dở), nhật ký từng việc, bảng `sheet_writes`, sao lưu/khôi phục `pg_dump` (đã kiểm khôi phục ra DB riêng) | Docker Compose (db, api, worker, web, backup) — **chưa chạy thử** vì máy này chưa có Docker | Đăng nhập/phân quyền; tạm dừng hàng đợi; đẩy bản sao lưu ra kho ngoài (restic); đồng bộ GitHub Private (chưa có remote, chưa có `gh`) |
+| Nền tảng | Hàng đợi PostgreSQL (khoá chống chạy trùng, một việc/nick, thử lại có giãn cách, chạy tiếp từ bước dở, **tạm dừng/tiếp tục theo loại việc**), nhật ký từng việc, bảng `sheet_writes`, sao lưu/khôi phục `pg_dump` (đã kiểm khôi phục ra DB riêng) | Docker Compose (db, api, worker, web, backup) — **chưa chạy thử** vì máy này chưa có Docker | Đăng nhập/phân quyền; đẩy bản sao lưu ra kho ngoài (restic); đồng bộ GitHub Private (chưa có remote, chưa có `gh`) |
 
-Kiểm thử: `apps/api` 27 test (mọi API ngoài đều mock) · E2E giao diện ↔ backend thật: PDF 12/12, Tạo miền + SSL/Web 14/14.
+Kiểm thử: `apps/api` 37 test (mọi API ngoài đều mock) · hàng đợi chạy thật trên worker + PostgreSQL (chống trùng, tạm dừng, thử lại, khởi động lại giữ dữ liệu) · E2E PDF xuyên suốt với Google giả lập 12/12, tạm dừng/tiếp tục từ giao diện 4/4, các màn khác 14/14.
 
 ## API
 
 | Dịch vụ | Đã dùng (theo tài liệu chính thức) | Thiếu |
 |---|---|---|
-| Google | Sheets v4 `values.get/update/append` (RAW), Drive v3 upload multipart + `md5Checksum` | — (cần service account) |
+| Google | OAuth 2.0 của chủ tài khoản (Desktop app, PKCE, quyền `spreadsheets` + `drive.file`) hoặc service account (chỉ Sheets / Shared Drive). Sheets v4 `values.get/update/append`, Drive v3 upload multipart + `appProperties` (tìm lại theo md5), tạo thư mục riêng của app | Tài khoản Gmail cá nhân: **service account không upload được vào Drive** (Google: “service accounts don't have storage quota”) → dùng OAuth |
 | cPanel UAPI | `SubDomain::addsubdomain/listsubdomains`, `DomainInfo::single_domain_data`, `Fileman::upload_files`, `SSL::start_autossl_check/is_autossl_check_in_progress/get_autossl_problems` | `DNS::mass_edit_zone` chưa làm (không miền gốc nào dùng NS cPanel) |
 | iNET | `GET /domain` (gọi được, chưa parse) | Cấu trúc body `PATCH /domain/{id}/record`; cấu trúc trả về `GET /domain` |
-| AI | Anthropic Messages (SDK `anthropic`, `claude-opus-5-5`, JSON schema, fallback khi từ chối) | — (cần khoá) |
+| AI | Anthropic Messages (SDK `anthropic` 1.15, `claude-opus-5-5`, JSON schema, khối `document` cho PDF scan, fallback khi từ chối); `/api/ai/check` hỏi Models API xem model có với khoá không trước khi dùng | — (cần khoá) |
 
 ## Tối thiểu để kiểm thử thật
 
-1. **Google**: 1 service account (file JSON), chia sẻ Sheet + thư mục Drive cho email của nó; `SHEET_ID`, `DRIVE_FOLDER_ID`.
-   Nên dùng **bản sao Sheet để thử** trước khi chạy trên Sheet thật.
+1. **Google** (Gmail cá nhân → OAuth): tạo OAuth client loại *Desktop app* trong Google Cloud (bật Sheets API + Drive API), tải file JSON,
+   đặt `GOOGLE_OAUTH_CLIENT_FILE`, rồi **anh tự chạy** `python -m scripts.google_auth` để đồng ý một lần; `SHEET_ID` của **bản sao Sheet để thử**.
+   `DRIVE_FOLDER_ID` để trống → app tự tạo thư mục “Quản Lí BM — Phôi PDF”.
 2. **AI**: `ANTHROPIC_API_KEY` (để đọc phôi scan và viết nội dung web).
 3. **cPanel**: user + API token cho 3 tài khoản (`CPANEL_USER_N1..3`, `CPANEL_TOKEN_N1..3`).
 4. **iNET**: khoá API quyền đọc (`INET_API_KEY_N1..3`) — để đọc cấu trúc `GET /domain`; tạo bản ghi A cần iNET cung cấp body của `PATCH /record`.

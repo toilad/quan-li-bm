@@ -49,7 +49,13 @@ def validate(fields: dict, doc_type: str) -> dict[str, dict]:
                 issues[k] = {"level": "error", "kind": "critical", "message": "Bắt buộc — không được để trống"}
             elif k != "E":
                 issues[k] = {"level": "error", "kind": "missing", "message": "Trống — xác nhận để trống trước khi lưu"}
-    j, h, i = val("J"), val("H"), val("I")
+    j, h, i, d = val("J"), val("H"), val("I"), val("D")
+    if d:
+        parts = [re.sub(r"\D", "", x) for x in d.split("/")]
+        if any(len(x) not in (10, 11) for x in parts):
+            issues["D"] = {"level": "error", "kind": "format", "message": "Mỗi số điện thoại phải có 10–11 chữ số"}
+        elif len(parts) > 1:
+            issues["D"] = {"level": "warn", "kind": "format", "message": f"Phôi có {len(parts)} số — giữ nguyên như phôi"}
     if doc_type == "br":
         if j and not re.fullmatch(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", j):
             issues["J"] = {"level": "error", "kind": "format", "message": "CNPJ phải dạng 00.000.000/0000-00"}

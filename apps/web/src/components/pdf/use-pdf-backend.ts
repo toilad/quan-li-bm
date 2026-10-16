@@ -113,6 +113,7 @@ export function usePdfBackend(onMessage: (msg: string) => void) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [flags, setFlags] = useState<Record<string, { confirm?: boolean; checked?: boolean }>>({});
   const [autoSave, setAutoSave] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const editTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -123,6 +124,8 @@ export function usePdfBackend(onMessage: (msg: string) => void) {
       ]);
       setDocs(d);
       setJobs([...j1, ...j2]);
+      const q = await api.get<{ paused: string[] }>("/api/queue");
+      setPaused(q.paused.includes("*") || q.paused.includes("pdf_save"));
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e : new ApiError("error", errorText(e)));
@@ -227,14 +230,16 @@ export function usePdfBackend(onMessage: (msg: string) => void) {
       case "autoSave":
         return setAutoSave(a.on);
       case "run":
+        // running → pause saving (current step finishes); paused → resume
+        return void call(() => api.post("/api/queue/pause", { kind: "pdf_save", on: !a.on }), a.on ? "Đã tiếp tục lưu" : "Đã tạm dừng lưu — bước đang chạy xong rồi dừng");
       case "tab":
-        return; // processing starts on upload; the Sheet tab is server configuration (SHEET_TAB)
+        return; // the Sheet tab is server configuration (SHEET_TAB)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files, jobs, onMessage, refresh, save]);
 
   const state: QueueState = {
-    files, selectedId: selectedId ?? files[0]?.id ?? null, running: busy, autoSave, tab: "Phoi US",
+    files, selectedId: selectedId ?? files[0]?.id ?? null, running: busy && !paused, autoSave, tab: "Phoi US",
     nextRow: 0,
   };
   return { state, dispatch, upload, error, refresh };

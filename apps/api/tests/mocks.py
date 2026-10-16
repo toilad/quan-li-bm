@@ -54,7 +54,17 @@ class FakeSheet:
         mock.post(url__regex=r".*/values/.*:append.*").mock(side_effect=append)
 
 
-def install_drive(mock, md5_of=lambda body: None, calls=None):
+def install_drive(mock, md5_of=lambda body: None, calls=None, existing: dict | None = None):
+    """existing: {md5: file} already on Drive (found via appProperties qlbm_md5)."""
+    existing = existing if existing is not None else {}
+
+    def search(request):
+        q = request.url.params["q"]
+        md5 = re.search(r"value='([0-9a-f]+)'", q).group(1)
+        return httpx.Response(200, json={"files": [existing[md5]] if md5 in existing else []})
+
+    mock.get(url__startswith="https://www.googleapis.com/drive/v3/files").mock(side_effect=search)
+
     def upload(request):
         if calls is not None:
             calls.append(request)
@@ -64,6 +74,9 @@ def install_drive(mock, md5_of=lambda body: None, calls=None):
         import hashlib
 
         md5 = md5_of(body) or hashlib.md5(body[start:end]).hexdigest()
+        meta = json.loads(body.split(b"\r\n\r\n", 1)[1].split(b"\r\n--", 1)[0])
+        assert meta["appProperties"]["qlbm_md5"]  # every upload is tagged so it can be found again
+        existing[meta["appProperties"]["qlbm_md5"]] = {"id": "DRIVE123", "md5Checksum": md5, "webViewLink": "https://drive.google.com/file/d/DRIVE123/view"}
         return httpx.Response(200, json={"id": "DRIVE123", "md5Checksum": md5, "webViewLink": "https://drive.google.com/file/d/DRIVE123/view"})
 
     mock.post(url__startswith="https://www.googleapis.com/upload/drive/v3/files").mock(side_effect=upload)

@@ -16,7 +16,9 @@ class Settings(BaseSettings):
     data_dir: Path = API_ROOT / "data"  # uploaded PDFs, built sites, backups (gitignored)
     cors_origins: str = "http://localhost:3000,http://localhost:3210"
 
-    # Google (service account; the Sheet and the Drive folder must be shared with its email)
+    # Google. Personal Gmail Drive → OAuth of the owner (client JSON from Google Cloud, "Desktop app" type;
+    # token saved by scripts/google_auth.py in data/google_token.json). Service account only for Sheets / shared drives.
+    google_oauth_client_file: str = ""
     google_service_account_file: str = ""
     sheet_id: str = ""
     sheet_tab: str = "Phoi US"

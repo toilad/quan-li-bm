@@ -39,7 +39,7 @@ export function WebRunPanel({ state, dispatch, onPreview }: { state: WebState; d
         <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-[width] duration-500" style={{ width: `${pct}%` }} />
       </div>
       <div className="mt-1.5 flex justify-between text-[11.5px] text-fg-subtle">
-        <span>{active ? "Backend đang chạy · mỗi hosting một site một lúc" : "Rảnh — không có việc trong hàng đợi"}</span>
+        <span>{state.paused ? "Đã tạm dừng — bước đang chạy xong rồi dừng" : active ? "Backend đang chạy · mỗi hosting một site một lúc" : "Rảnh — không có việc trong hàng đợi"}</span>
         <span>{pct}%</span>
       </div>
 
@@ -104,8 +104,7 @@ export function WebRunPanel({ state, dispatch, onPreview }: { state: WebState; d
         </button>
         <button
           onClick={() => dispatch({ type: state.paused ? "resume" : "pause" })}
-          disabled
-          title="Chưa khả dụng: tạm dừng hàng đợi chưa có ở backend"
+          disabled={!active && !state.paused}
           className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-white/[0.07] px-3 py-2 text-[12.5px] font-semibold hover:bg-white/[0.11] disabled:opacity-40"
         >
           {state.paused ? <Play className="size-4" /> : <Pause className="size-4" />} {state.paused ? "Tiếp tục" : "Tạm dừng"}

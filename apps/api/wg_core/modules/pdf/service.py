@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ...config import settings
 from ...integrations import ai
 from ...integrations.errors import Conflict, Permanent
-from ...integrations.google import Drive, Sheets
+from ...integrations.google import Drive, Sheets, hyperlink_formula
 from ...jobs import JobContext, enqueue, handler
 from ...models import PdfDocument, SheetWrite
 from ..websites.templates import detect as detect_template, template_for_cnae
@@ -50,6 +50,8 @@ def ingest(s: Session, name: str, data: bytes) -> tuple[PdfDocument, bool]:
     s.add(doc)
     s.flush()
     extract_into(doc, data)
+    if doc.status == "needs_ai" and settings().anthropic_api_key:
+        request_ai_read(s, doc)  # scans are read (and classified) by AI as soon as it is configured
     return doc, True
 
 
@@ -67,8 +69,9 @@ def extract_into(doc: PdfDocument, data: bytes, forced_type: str | None = None):
     elif doc.doc_type == "wy" and doc.has_text:
         doc.fields, doc.extra = extract_wy(t)
         doc.status = "review"
-    elif doc.doc_type == "ca":
-        doc.fields, doc.status = {}, "needs_ai"  # read by the pdf_ai_read job
+    elif not doc.has_text and doc.doc_type in ("ca", "wy", "br", "unknown"):
+        # Scan without a text layer: the AI job identifies the form (unless picked by hand) and reads it.
+        doc.fields, doc.status = {}, "needs_ai"
     else:
         doc.fields, doc.status = {k: field("", "missing") for k in FIELD_KEYS}, "review"
     doc.industry = industry_for(doc) if doc.fields else {}
@@ -82,7 +85,14 @@ def request_ai_read(s: Session, doc: PdfDocument):
 def _ai_read(ctx: JobContext):
     doc = ctx.session.get(PdfDocument, ctx.job.payload["doc_id"])
     ctx.step("AI đọc bản scan")
-    result = ai.read_scanned_pdf(storage_path(doc.md5).read_bytes(), doc.doc_type)
+    result = ai.read_scanned_pdf(storage_path(doc.md5).read_bytes())
+    ai_type = result.get("doc_type", "unknown")
+    if doc.detection_reason != "Chọn thủ công":
+        doc.doc_type = ai_type
+        doc.detection_confidence = 0.0 if ai_type == "unknown" else 0.9
+        doc.detection_reason = f"AI nhận diện từ bản scan: {result.get('evidence', '')}".strip()
+    elif ai_type not in (doc.doc_type, "unknown"):
+        ctx.log(f"AI cho rằng đây là loại {ai_type}, khác loại đã chọn tay ({doc.doc_type}) — giữ loại đã chọn, cần kiểm tra", "warn")
     doc.fields = fields_from_ai(result, doc.doc_type)
     doc.industry = industry_for(doc)
     doc.status = "review"
@@ -139,8 +149,12 @@ def _save(ctx: JobContext):
 
     if not doc.drive_file_id:
         ctx.step("Upload PDF gốc lên Drive")
-        data = storage_path(doc.md5).read_bytes()
-        res = Drive().upload_pdf(doc.original_name, data)
+        drive = Drive()
+        res = drive.find_by_md5(doc.md5)  # uploaded before (e.g. crash before the ID was saved) → reuse, never twice
+        if res:
+            ctx.log("Drive đã có file cùng nội dung (md5) do app upload trước đó → dùng lại, không upload lần 2", "info")
+        else:
+            res = drive.upload_pdf(doc.original_name, storage_path(doc.md5).read_bytes(), doc.md5)
         if res.get("md5Checksum") != doc.md5:
             raise Permanent(f"md5 trên Drive ({res.get('md5Checksum')}) khác file gốc ({doc.md5}) — dừng, không ghi Sheet")
         doc.drive_file_id, doc.drive_link = res["id"], res.get("webViewLink") or f"https://drive.google.com/file/d/{res['id']}/view"
@@ -157,5 +171,14 @@ def _save(ctx: JobContext):
         doc.sheet_row = row
         s.add(SheetWrite(tab=sheets.s.sheet_tab, range=f"A{row}:K{row}", old_value=None, new_value=" | ".join(values), job_id=ctx.job.id))
         ctx.checkpoint(sheet_row=row)
-        ctx.log(f"Đã ghi dòng {row}: A, D–K · B, C trống · K = link PDF gốc", "ok")
+        ctx.log(f"Đã ghi dòng {row}: A, D–J · B, C trống", "ok")
+
+    if not ctx.state.get("k_link"):
+        ctx.step("Ghi K = “Xem phôi”")
+        sheets = Sheets()
+        formula = hyperlink_formula(doc.drive_link)
+        sheets.write_cell(f"K{doc.sheet_row}", formula, user_entered=True)
+        s.add(SheetWrite(tab=sheets.s.sheet_tab, range=f"K{doc.sheet_row}", old_value=doc.drive_link, new_value=formula, job_id=ctx.job.id))
+        ctx.checkpoint(k_link=True)
+        ctx.log(f"K{doc.sheet_row} = “Xem phôi” → PDF gốc trên Drive", "ok")
     doc.status, doc.error = "saved", None

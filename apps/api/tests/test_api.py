@@ -60,3 +60,14 @@ def test_pdf_upload_extract_edit_and_save_validation(client):
     assert client.get(f"/api/pdf/{up['id']}/file").content[:4] == b"%PDF"
     bad = client.post("/api/pdf/upload", files=[("files", ("n.pdf", b"not a pdf", "application/pdf"))]).json()[0]
     assert bad["status"] == "rejected"
+
+
+def test_ai_model_check_uses_models_api(client):
+    import respx
+
+    with respx.mock(assert_all_called=False) as m:
+        route = m.get("https://api.anthropic.com/v1/models/claude-opus-5-5").respond(200, json={
+            "type": "model", "id": "claude-opus-5-5", "display_name": "Claude Opus 5.5", "created_at": "2026-01-01T00:00:00Z",
+            "max_input_tokens": 1000000, "max_tokens": 128000})
+        r = client.get("/api/ai/check").json()
+    assert route.called and r["id"] == "claude-opus-5-5" and r["max_input_tokens"] == 1000000

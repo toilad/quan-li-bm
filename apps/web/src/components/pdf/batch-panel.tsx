@@ -74,14 +74,14 @@ export function BatchPanel({ state, dispatch }: { state: QueueState; dispatch: Q
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
           onClick={() => dispatch({ type: "run", on: !state.running })}
-          disabled={!state.running && queued === 0}
+          disabled={!state.running && queued === 0 && !state.files.some((f) => f.status === "saving")}
           className={clsx(
             "inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
             state.running ? "bg-white/[0.07] hover:bg-white/[0.11]" : "bg-gradient-to-r from-brand to-brand-2 text-white hover:brightness-110",
           )}
         >
           {state.running ? <Pause className="size-4" /> : <Play className="size-4" />}
-          {state.running ? "Tạm dừng" : `Bắt đầu (${queued} chờ)`}
+          {state.running ? "Tạm dừng lưu" : state.files.some((f) => f.status === "saving") ? "Tiếp tục lưu" : `Bắt đầu (${queued} chờ)`}
         </button>
         <button
           onClick={() => dispatch({ type: "retryAll" })}

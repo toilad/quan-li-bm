@@ -67,27 +67,40 @@ _FIELD = {"type": "object", "properties": {"value": {"type": "string"}, "found":
           "required": ["value", "found"], "additionalProperties": False}
 PDF_SCHEMA = {
     "type": "object",
-    "properties": {k: _FIELD for k in ("A", "D", "F", "G", "H", "I", "J")},
-    "required": ["A", "D", "F", "G", "H", "I", "J"],
+    "properties": {
+        "doc_type": {"type": "string", "enum": ["ca", "wy", "br", "unknown"]},
+        "evidence": {"type": "string"},
+        **{k: _FIELD for k in ("A", "D", "F", "G", "H", "I", "J")},
+    },
+    "required": ["doc_type", "evidence", "A", "D", "F", "G", "H", "I", "J"],
     "additionalProperties": False,
 }
 
-CA_PROMPT = """This is a California Secretary of State form LLC-1 (Articles of Organization), possibly scanned.
-Read exactly what is printed. Do not guess, do not complete missing characters. If a field is not on the form, return found=false and an empty value.
-A = item 1, the LLC name, exactly as written (keep punctuation and suffix).
-J = the 12-digit filing number printed at the top right of page 1 (digits only, as printed).
-F = item 3a Initial Street Address of the LLC (street line only). Never use the agent's address (item 4).
-G = city of item 3a. H = state of item 3a as printed. I = ZIP of item 3a.
-D = phone number: the LLC-1 has no phone field, so return found=false unless a phone of the LLC is clearly printed."""
+PDF_PROMPT = """Identify this company registration document, then transcribe its fields.
+Read exactly what is printed. Do not guess, do not complete missing characters. A field that is not on the document:
+found=false and an empty value. Never use a registered agent's / service-of-process address as the company address.
+
+doc_type:
+- "ca": California Secretary of State form LLC-1, Articles of Organization (often a scan, stamped FILED, Secretary of State, State of California).
+- "wy": State of Wyoming, Articles of Organization (Wyoming Secretary of State).
+- "br": Brazil, Receita Federal "Comprovante de Inscrição e de Situação Cadastral" (CNPJ).
+- "unknown": anything else, or not sure. evidence = the printed words that decided it.
+
+Fields for ca: A = item 1 LLC name as written (keep punctuation and suffix). J = the 12-digit filing number at the top right
+of page 1. F = item 3a initial street address (street line). G, H, I = city, state, ZIP of item 3a. D = phone (LLC-1 has none).
+Fields for wy: A = name of the LLC. J = the Original ID / filing ID. F, G, H, I = the company's mailing or principal address
+(street, city, state, ZIP). D = the company's phone if printed.
+Fields for br: A = NOME EMPRESARIAL. J = NÚMERO DE INSCRIÇÃO (as printed, 00.000.000/0000-00). F = LOGRADOURO, NÚMERO,
+COMPLEMENTO - BAIRRO (skip boxes printed as asterisks). G = MUNICÍPIO. H = UF. I = CEP as printed. D = TELEFONE.
+For unknown: return found=false for every field."""
 
 
-def read_scanned_pdf(pdf: bytes, doc_type: str) -> dict:
-    if doc_type != "ca":
-        raise Permanent(f"Chưa có hướng dẫn AI cho loại phôi {doc_type}")
+def read_scanned_pdf(pdf: bytes) -> dict:
+    """Classify + transcribe a scanned registration document. Every value comes back marked as read by AI."""
     content = [
         {"type": "document", "source": {"type": "base64", "media_type": "application/pdf",
                                         "data": base64.standard_b64encode(pdf).decode()}},
-        {"type": "text", "text": CA_PROMPT},
+        {"type": "text", "text": PDF_PROMPT},
     ]
     return _json_call(content, PDF_SCHEMA, "You transcribe government forms. Accuracy over completeness.", effort="high")
 
@@ -125,3 +138,18 @@ def write_site_copy(facts: dict, industry: str, template_name: str, feedback: st
     if feedback:
         text += f"\nYour previous draft was rejected: {feedback}\nRewrite it following the rules."
     return _json_call([{"type": "text", "text": text}], SITE_SCHEMA, SITE_SYSTEM, effort="medium")
+
+
+def check_model() -> dict:
+    """Ask the Models API whether the configured model exists for this key (no tokens spent)."""
+    client = _client()
+    try:
+        m = client.models.retrieve(settings().ai_model)
+    except anthropic.NotFoundError as e:
+        raise Permanent(f"Model {settings().ai_model} không có với khoá này") from e
+    except anthropic.AuthenticationError as e:
+        raise NotConfigured("AI (Anthropic)", ["ANTHROPIC_API_KEY hợp lệ"]) from e
+    except anthropic.APIConnectionError as e:
+        raise Transient("AI: lỗi mạng") from e
+    return {"id": m.id, "display_name": getattr(m, "display_name", None), "max_input_tokens": getattr(m, "max_input_tokens", None),
+            "max_tokens": getattr(m, "max_tokens", None), "sdk": anthropic.__version__}

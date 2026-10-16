@@ -197,9 +197,13 @@ export function validate(fields: Fields, t: DocType): Partial<Record<FieldKey, I
         // comes from "Natureza jurídica", so only US filings are checked here.
         if (!br && !LEGAL_SUFFIX_US.test(v)) set("warn", "review", "Tên chưa có hậu tố LLC / Inc. — đối chiếu lại phôi");
         break;
-      case "D":
-        if (digits.length !== 10 && digits.length !== 11) set("error", "format", "Số điện thoại phải có 10–11 chữ số");
+      case "D": {
+        // A comprovante can print several numbers ("(55) 3223-1635 / (55) 3217-0922"): kept as printed.
+        const parts = v.split("/").map((x) => x.replace(/\D/g, ""));
+        if (parts.some((d) => d.length !== 10 && d.length !== 11)) set("error", "format", "Mỗi số điện thoại phải có 10–11 chữ số");
+        else if (parts.length > 1) set("warn", "review", `Phôi có ${parts.length} số — giữ nguyên như phôi`);
         break;
+      }
       case "H":
         if (br ? !UF.includes(v) : !/^[A-Z]{2}$/.test(v)) set("error", "format", br ? "UF không hợp lệ (vd: SP, RJ, MG)" : "Bang phải là 2 chữ in hoa");
         else if ((t === "wy" && v !== "WY") || (t === "ca" && v !== "CA"))
