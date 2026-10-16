@@ -16,6 +16,10 @@ def render(ctx: Dict) -> str:
     today = datetime.now().strftime("%B %d, %Y")
     title = f'Privacy Policy - {c["company"]}'
     meta_desc = f'Privacy policy for {c["company"]}'
+    # QLBM: shown only for a verified business email
+    contact_line = (
+        f'      Questions about this Privacy Policy may be sent to <a href="mailto:{c["email"]}" class="text-brand hover:underline">{c["email"]}</a> or mailed to {c["address"]}.\n'
+    ) if c["email"] else f'      Questions about this Privacy Policy may be mailed to {c["address"]}.\n'
     return (
         f'<html>{render_head(title, meta_desc, ctx)}\n'
         '<body class="bg-white text-gray-900 antialiased">\n'
@@ -67,7 +71,7 @@ def render(ctx: Dict) -> str:
         '\n'
         '    <h2 class="font-heading text-2xl font-semibold mt-8 mb-3">Contact</h2>\n'
         '    <p class="text-gray-700 leading-relaxed mb-5">\n'
-        f'      Questions about this Privacy Policy may be sent to <a href="mailto:{c["email"]}" class="text-brand hover:underline">{c["email"]}</a> or mailed to {c["address"]}.\n'
+        f'{contact_line}'
         '    </p>\n'
         '  </article>\n'
         '</main>\n'

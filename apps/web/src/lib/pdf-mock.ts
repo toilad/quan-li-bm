@@ -276,6 +276,8 @@ export type BrRaw = {
   municipio: string;
   uf: string;
   email: string;
+  /** owner confirmed it is the business's official contact (only then can a website show it) */
+  emailVerified?: boolean;
   telefone: string;
   situacao: string;
   dataSituacao: string;

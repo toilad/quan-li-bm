@@ -43,14 +43,16 @@ def facts_of(cells: dict) -> dict:
 
 
 def email_of(s: Session, cells: dict) -> str:
-    """The Sheet has no email column: use the email printed on the company's own PDF (Brazil comprovante), if any."""
+    """The Sheet has no email column: use the email printed on the company's PDF only after the owner
+    verified it is the business's official contact (it is often the accountant's). Otherwise "" —
+    the templates then hide every email link and the contact form."""
     from ...models import PdfDocument
 
     j = cells["J"].strip()
     if not j:
         return ""
     for d in s.scalars(select(PdfDocument).where(PdfDocument.status == "saved")):
-        if (d.fields.get("J") or {}).get("value") == j and (d.extra or {}).get("email"):
+        if (d.fields.get("J") or {}).get("value") == j and (d.extra or {}).get("email") and d.extra.get("email_verified") is True:
             return d.extra["email"].lower()
     return ""
 

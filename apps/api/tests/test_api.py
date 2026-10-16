@@ -80,3 +80,31 @@ def test_website_preview_is_the_real_legacy_output(client):
     assert "cdn.tailwindcss.com" in r.text and "law,courthouse,justice,books" in r.text and "Acme LLC" in r.text
     assert client.get("/api/websites/preview", params={"template": "lawyer-legal", "page": "about.html"}).status_code == 200
     assert client.get("/api/websites/preview", params={"template": "lawyer-legal", "page": "../x"}).status_code == 404
+
+
+def test_pdf_email_is_used_for_websites_only_after_the_owner_verifies_it(client):
+    from wg_core.db import session_scope
+    from wg_core.models import PdfDocument
+    from wg_core.modules.websites.service import email_of
+
+    with session_scope() as s:
+        d = PdfDocument(md5="e" * 32, original_name="x.pdf", size=1, doc_type="br", status="saved",
+                        fields={"J": {"value": "11.222.333/0001-81"}}, extra={"email": "Contato@Acme.example"})
+        s.add(d)
+        s.flush()
+        doc_id = d.id
+        none_email = PdfDocument(md5="f" * 32, original_name="y.pdf", size=1, doc_type="br", status="review", fields={}, extra={})
+        s.add(none_email)
+        s.flush()
+        none_id = none_email.id
+    cells = {"J": "11.222.333/0001-81"}
+    with session_scope() as s:
+        assert email_of(s, cells) == ""  # printed on the PDF but not verified → not used
+    r = client.patch(f"/api/pdf/{doc_id}", json={"email_verified": True})  # allowed even after saving
+    assert r.status_code == 200 and r.json()["extra"]["email_verified"] is True
+    with session_scope() as s:
+        assert email_of(s, cells) == "contato@acme.example"
+    client.patch(f"/api/pdf/{doc_id}", json={"email_verified": False})
+    with session_scope() as s:
+        assert email_of(s, cells) == ""
+    assert client.patch(f"/api/pdf/{none_id}", json={"email_verified": True}).status_code == 422  # nothing to verify

@@ -28,6 +28,7 @@ type Action =
   | { type: "remove"; id: string }
   | { type: "edit"; id: string; key: FieldKey; value: string }
   | { type: "industry"; id: string; category: IndustryKey }
+  | { type: "emailVerified"; id: string; on: boolean }
   | { type: "docType"; id: string; docType: DocType }
   | { type: "confirmMissing"; id: string; on: boolean }
   | { type: "criticalChecked"; id: string; on: boolean }
@@ -41,7 +42,7 @@ export type QueueDispatch = (a: Action) => void;
 
 type Doc = {
   id: number; name: string; md5: string; size: number; pages: number; has_text: boolean; doc_type: DocType;
-  confidence: number; reason: string; fields: Fields | Record<string, never>; extra: Record<string, string>;
+  confidence: number; reason: string; fields: Fields | Record<string, never>; extra: Record<string, string> & { email_verified?: boolean };
   industry: { raw?: string; template?: string; source?: string; category?: IndustryKey; note?: string };
   status: string; error: string | null; drive_file_id: string | null; drive_link: string | null; sheet_row: number | null;
 };
@@ -89,7 +90,7 @@ function toFile(d: Doc, job: Job | undefined, aiJob: Job | undefined, local: { c
     nome: (d.fields as Fields).A?.value ?? "", fantasia: x.nome_fantasia ?? "", porte: x.porte ?? "", abertura: x.data_abertura ?? "",
     cnaePrincipal: x.cnae_principal ?? "", cnaeSecundarias: x.cnae_secundarias ? [x.cnae_secundarias] : [], natureza: x.natureza_juridica ?? "",
     logradouro: x.logradouro ?? "", numero: x.numero ?? "", complemento: x.complemento ?? "", cep: x.cep ?? "", bairro: x.bairro ?? "",
-    municipio: x.municipio ?? "", uf: x.uf ?? "", email: x.email ?? "", telefone: x.telefone ?? "", situacao: x.situacao_cadastral ?? "",
+    municipio: x.municipio ?? "", uf: x.uf ?? "", email: x.email ?? "", emailVerified: x.email_verified === true, telefone: x.telefone ?? "", situacao: x.situacao_cadastral ?? "",
     dataSituacao: x.data_situacao ?? "",
   } : undefined;
   return {
@@ -206,6 +207,8 @@ export function usePdfBackend(onMessage: (msg: string) => void) {
       }
       case "industry":
         return void call(() => api.patch(`/api/pdf/${a.id}`, { industry: a.category }));
+      case "emailVerified":
+        return void call(() => api.patch(`/api/pdf/${a.id}`, { email_verified: a.on }), a.on ? "Đã xác minh email — web sẽ hiện email này" : "Đã bỏ xác minh — web sẽ ẩn email và form");
       case "docType":
         return void call(() => api.patch(`/api/pdf/${a.id}`, { doc_type: a.docType }), "Đã đọc lại theo loại phôi đã chọn");
       case "aiRead":

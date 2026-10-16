@@ -206,7 +206,7 @@ export function ExtractPanel({
 
         {file.industry && !awaitingType && <IndustryCard file={file} dispatch={dispatch} editable={editable} onHover={onHover} />}
 
-        {file.br && <BrExtraCard file={file} />}
+        {file.br && <BrExtraCard file={file} dispatch={dispatch} />}
 
         {file.fields && !awaitingType && <DriveStatus file={file} />}
       </div>
@@ -378,7 +378,7 @@ function IndustryCard({
 }
 
 /** Other comprovante boxes: not sheet columns, kept in the database exactly as printed. */
-function BrExtraCard({ file }: { file: PdfFile }) {
+function BrExtraCard({ file, dispatch }: { file: PdfFile; dispatch: QueueDispatch }) {
   const r = file.br!;
   const rows: [string, string][] = [
     ["Nome de fantasia", r.fantasia],
@@ -414,6 +414,20 @@ function BrExtraCard({ file }: { file: PdfFile }) {
           </div>
         ))}
       </dl>
+      {r.email && (
+        <label className="mt-2.5 flex cursor-pointer items-start gap-2 border-t border-line pt-2.5 text-[11.5px] text-fg-muted">
+          <input
+            type="checkbox"
+            checked={!!r.emailVerified}
+            onChange={(e) => dispatch({ type: "emailVerified", id: file.id, on: e.target.checked })}
+            className="mt-0.5 accent-brand"
+          />
+          <span>
+            Đây là email liên hệ chính thức của doanh nghiệp (đã xác minh)
+            <span className="block text-[10.5px] text-fg-subtle">Chưa tick → web ẩn email và form gửi thư</span>
+          </span>
+        </label>
+      )}
       {!active && <p className="mt-2 text-[11.5px] text-rose-300">Doanh nghiệp không còn ATIVA — kiểm tra trước khi tạo miền / web.</p>}
       <p className="mt-2 text-[10.5px] text-fg-subtle">Lưu database đúng như in trên phôi · không ghi Sheet</p>
     </div>

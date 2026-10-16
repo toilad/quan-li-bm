@@ -208,6 +208,9 @@ class PdfEdit(BaseModel):
     fields: dict[str, str] | None = None
     doc_type: str | None = None
     industry: str | None = None  # owner’s manual industry category
+    # owner confirms the email printed on the PDF is the business's own official contact
+    # (comprovantes often carry the accountant's address); only then may a website show it
+    email_verified: bool | None = None
 
 
 @app.patch("/api/pdf/{doc_id}")
@@ -215,6 +218,13 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
     d = s.get(PdfDocument, doc_id)
     if not d:
         raise HTTPException(404)
+    if body.email_verified is not None:
+        # not part of the Sheet row, so it can still be set after saving
+        if body.email_verified and not (d.extra or {}).get("email"):
+            raise HTTPException(422, "Phôi không có email để xác minh")
+        d.extra = {**(d.extra or {}), "email_verified": body.email_verified}
+        if body.fields is None and body.doc_type is None and body.industry is None:
+            return doc_out(d)
     if d.status == "saved" or _live_save(s, d):
         raise HTTPException(409, "Đã lưu / đang lưu — không sửa")
     if d.status == "queued":  # last save stopped (blocked/failed): editable again

@@ -125,6 +125,8 @@ def _local_business_jsonld(ctx: Dict, title: str, meta_desc: str) -> str:
             "address": {"@type": "PostalAddress", "streetAddress": c.get("address", "")},
             "description": meta_desc,
         }
+    if not data["email"]:
+        del data["email"]  # QLBM: no email unless verified
     return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False) + "</script>"
 
 
@@ -138,6 +140,10 @@ def render_head(title: str, meta_desc: str, ctx: Dict) -> str:
     jsonld = _local_business_jsonld(ctx, title, meta_desc)
     fb_v = (c.get("fb_verification") or "").strip()
     fb_v_meta = f'<meta name="facebook-domain-verification" content="{fb_v}">' if fb_v else ""
+    # QLBM: shown only for a verified business email
+    email_meta = (
+            f'<meta name="business:contact_data:email" content="{c["email"]}">\n'
+    ) if c["email"] else ""
     return (
             '<!DOCTYPE html>\n'
             '<html lang="en">\n'
@@ -147,7 +153,7 @@ def render_head(title: str, meta_desc: str, ctx: Dict) -> str:
             f'<meta name="description" content="{meta_desc}">\n'
             f'<meta name="business:contact_data:street_address" content="{c["address"]}">\n'
             f'<meta name="business:contact_data:phone_number" content="{c["phone"]}">\n'
-            f'<meta name="business:contact_data:email" content="{c["email"]}">\n'
+            f'{email_meta}'
             f'<meta property="og:title" content="{title}">\n'
             f'<meta property="og:description" content="{meta_desc}">\n'
             '<meta property="og:type" content="website">\n'
@@ -241,6 +247,12 @@ def _render_topbar(ctx: Dict) -> str:
     phone_icon = icon("phone", "w-4 h-4")
     mail_icon = icon("mail", "w-4 h-4")
     pin_icon = icon("pin", "w-4 h-4")
+    # QLBM: shown only for a verified business email
+    email_link = (
+            f'      <a href="mailto:{c["email"]}" class="hidden sm:flex items-center gap-2 font-medium hover:text-white/80 transition" itemprop="email">\n'
+            f'        {mail_icon}<span>{c["email"]}</span>\n'
+            '      </a>\n'
+    ) if c["email"] else ""
     return (
             '<div class="bg-brand text-white text-sm" itemscope itemtype="https://schema.org/LocalBusiness">\n'
             f'  <meta itemprop="name" content="{c["company"]}">\n'
@@ -250,9 +262,7 @@ def _render_topbar(ctx: Dict) -> str:
             f'      <a href="tel:{phone_tel}" class="flex items-center gap-2 font-medium hover:text-white/80 transition" itemprop="telephone" content="{c["phone"]}">\n'
             f'        {phone_icon}<span>{phone_display}</span>\n'
             '      </a>\n'
-            f'      <a href="mailto:{c["email"]}" class="hidden sm:flex items-center gap-2 font-medium hover:text-white/80 transition" itemprop="email">\n'
-            f'        {mail_icon}<span>{c["email"]}</span>\n'
-            '      </a>\n'
+            f'{email_link}'
             '    </div>\n'
             '    <div class="hidden md:flex items-center gap-2 text-white/90" itemprop="address" itemscope itemtype="https://schema.org/PostalAddress">\n'
             f'      {pin_icon}<span class="truncate max-w-[440px]" itemprop="streetAddress">{c["address"]}</span>\n'
@@ -426,6 +436,10 @@ def render_footer(ctx: Dict) -> str:
         phone_icon = icon("phone", "w-4 h-4 text-brand")
         mail_icon = icon("mail", "w-4 h-4 text-brand")
         pin_icon = icon("pin", "w-4 h-4 text-brand")
+        # QLBM: shown only for a verified business email
+        email_link = (
+            f'        <a href="mailto:{c["email"]}" class="flex items-center gap-2 hover:text-white" itemprop="email">{mail_icon}<span>{c["email"]}</span></a>\n'
+        ) if c["email"] else ""
         return (
             f'{fb_sdk}\n'
             '<footer class="bg-gray-900 text-gray-300 mt-24" itemscope itemtype="https://schema.org/LocalBusiness">\n'
@@ -438,7 +452,7 @@ def render_footer(ctx: Dict) -> str:
             '      <div class="space-y-2 text-sm">\n'
             f'        <div class="flex items-start gap-2" itemprop="address" itemscope itemtype="https://schema.org/PostalAddress">{pin_icon}<span itemprop="streetAddress">{c["address"]}</span></div>\n'
             f'        <a href="tel:{phone_tel}" class="flex items-center gap-2 hover:text-white" itemprop="telephone" content="{c["phone"]}">{phone_icon}<span>{phone_display}</span></a>\n'
-            f'        <a href="mailto:{c["email"]}" class="flex items-center gap-2 hover:text-white" itemprop="email">{mail_icon}<span>{c["email"]}</span></a>\n'
+            f'{email_link}'
             '      </div>\n'
             '    </div>\n'
             '    <nav class="flex flex-wrap gap-4 text-xs uppercase tracking-wider text-gray-400 md:justify-end">\n'
@@ -458,6 +472,10 @@ def render_footer(ctx: Dict) -> str:
         phone_icon = icon("phone", "w-4 h-4 text-brand")
         mail_icon = icon("mail", "w-4 h-4 text-brand")
         pin_icon = icon("pin", "w-4 h-4 text-brand mt-0.5")
+        # QLBM: shown only for a verified business email
+        email_li = (
+            f'        <li class="flex items-center gap-2">{mail_icon}<a href="mailto:{c["email"]}" class="hover:text-brand" itemprop="email">{c["email"]}</a></li>\n'
+        ) if c["email"] else ""
         return (
             f'{fb_sdk}\n'
             '<footer class="bg-gray-50 text-gray-700 border-t border-gray-200 mt-24" itemscope itemtype="https://schema.org/LocalBusiness">\n'
@@ -474,7 +492,7 @@ def render_footer(ctx: Dict) -> str:
             '      <ul class="text-sm space-y-3">\n'
             f'        <li class="flex items-start gap-2" itemprop="address" itemscope itemtype="https://schema.org/PostalAddress">{pin_icon}<span itemprop="streetAddress">{c["address"]}</span></li>\n'
             f'        <li class="flex items-center gap-2">{phone_icon}<a href="tel:{phone_tel}" class="hover:text-brand" itemprop="telephone" content="{c["phone"]}">{phone_display}</a></li>\n'
-            f'        <li class="flex items-center gap-2">{mail_icon}<a href="mailto:{c["email"]}" class="hover:text-brand" itemprop="email">{c["email"]}</a></li>\n'
+            f'{email_li}'
             '      </ul>\n'
             '    </div>\n'
             '    <div>\n'
@@ -516,6 +534,12 @@ def render_footer(ctx: Dict) -> str:
             '    </div>'
         )
     grid_cols = "md:grid-cols-4" if services_col else "md:grid-cols-3"
+    # QLBM: shown only for a verified business email
+    email_li = (
+            '        <li class="flex items-center gap-2">\n'
+            f'          {mail_icon}<a href="mailto:{c["email"]}" class="hover:text-white" itemprop="email">{c["email"]}</a>\n'
+            '        </li>\n'
+    ) if c["email"] else ""
     return (
             f'{fb_sdk}\n'
             '<footer class="bg-gray-900 text-gray-300 mt-24" itemscope itemtype="https://schema.org/LocalBusiness">\n'
@@ -536,9 +560,7 @@ def render_footer(ctx: Dict) -> str:
             '        <li class="flex items-center gap-2">\n'
             f'          {phone_icon}<a href="tel:{phone_tel}" class="hover:text-white" itemprop="telephone" content="{c["phone"]}">{phone_display}</a>\n'
             '        </li>\n'
-            '        <li class="flex items-center gap-2">\n'
-            f'          {mail_icon}<a href="mailto:{c["email"]}" class="hover:text-white" itemprop="email">{c["email"]}</a>\n'
-            '        </li>\n'
+            f'{email_li}'
             '      </ul>\n'
             f'    </div>{services_col}\n'
             '    <div>\n'

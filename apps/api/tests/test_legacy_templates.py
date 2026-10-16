@@ -55,3 +55,25 @@ def test_same_site_same_design():
     b = build_context(company("a.example.com"), CONTENT, "lawyer-legal")
     assert a["color"] == b["color"] and a["fonts"] == b["fonts"] and a["sections_order"] == b["sections_order"]
     assert set(a["sections_order"]) == {"about_preview", "services", "why"}
+
+
+def test_no_verified_email_means_no_email_anywhere_and_no_form():
+    for t in TEMPLATES:
+        for k in range(6):
+            files = render_site(company(f"m{k}.example.com"), CONTENT, t.id)
+            for name, data in files.items():
+                html = data.decode()
+                for bad in ("mailto:", "<form", 'itemprop="email"', "contact_data:email", '"email":', "Send Us a Message"):
+                    assert bad not in html, (t.id, name, bad)
+            contact = files["contact.html"].decode()
+            assert "Talk With Us" in contact and "tel:" in contact and "1 Main St, Cheyenne, WY 82001" in contact
+            assert "may be mailed to 1 Main St" in files["privacy.html"].decode()
+
+
+def test_verified_email_keeps_the_legacy_contact_form():
+    c = {**company("v.example.com"), "email": "hello@acme.example"}
+    files = render_site(c, CONTENT, "corporate-firm")
+    contact = files["contact.html"].decode()
+    assert '<form action="mailto:hello@acme.example"' in contact and "Send Us a Message" in contact
+    assert 'href="mailto:hello@acme.example"' in files["privacy.html"].decode()
+    assert '"email": "hello@acme.example"' in files["index.html"].decode()
