@@ -10,7 +10,11 @@ import { detectTemplate, type SiteTemplate } from "./templates";
 export type FieldKey = "A" | "D" | "E" | "F" | "G" | "H" | "I" | "J";
 export type FieldSource = "text" | "ai" | "auto" | "manual" | "missing";
 /** `note` explains a normalisation, e.g. "California" → "CA" or how a BR address was assembled. */
-export type Field = { value: string; source: FieldSource; confidence?: number; note?: string };
+export type Field = {
+  value: string; source: FieldSource; confidence?: number; note?: string;
+  /** California: the same box read again from a later page (null match = not printed again) */
+  check?: { other: string; match: boolean | null };
+};
 export type Fields = Record<FieldKey, Field>;
 
 /* ───────────────────────── Document types ───────────────────────── */
@@ -228,6 +232,16 @@ export function validate(fields: Fields, t: DocType): Partial<Record<FieldKey, I
           if (!/^\d{12}$/.test(v)) set("warn", "review", "Khác dạng thường gặp (12 chữ số) — đối chiếu lại phôi; vẫn được lưu");
         } else if (t === "wy" && !/^\d{4}-\d{9}$/.test(v)) set("error", "format", "Original ID Wyoming dạng 2024-000000000");
         break;
+    }
+
+    // California: compare with the copy printed on a later page (gone once the owner edits the box)
+    if (fld.check && out[m.key]?.level !== "error") {
+      if (fld.check.match === false)
+        m.key === "J"
+          ? set("error", "format", `Khác số in lại ở trang sau (${fld.check.other}) — đối chiếu PDF rồi sửa tay`)
+          : set("warn", "review", `Tên ở trang sau ghi “${fld.check.other}” — đối chiếu lại`);
+      else if (fld.check.match === null && m.key === "J")
+        set("warn", "review", "Không thấy số in lại ở trang sau để đối chiếu — kiểm tra bằng mắt");
     }
 
     if (!out[m.key] && fld.source === "ai" && (fld.confidence ?? 100) < (m.critical ? 95 : 85))

@@ -196,11 +196,30 @@ def extract_wy(t: PdfText) -> tuple[dict, dict]:
 
 # ───────────────────────── California (AI result) ─────────────────────────
 
+def _cross_check(out: dict, ai: dict):
+    """California: compare J and A with the copies printed on a later page (read separately by the AI).
+    The result is kept on the field (`check`); validate() blocks a J mismatch. A manual edit replaces the field."""
+    j = out["J"]["value"]
+    if re.fullmatch(r"[\d ]+", j):
+        out["J"]["value"] = j.replace(" ", "")
+    for k, norm in (("J", lambda v: re.sub(r"\D", "", v)), ("A", lambda v: re.sub(r"[^A-Z0-9]", "", v.upper()))):
+        rep = ai.get(f"{k}_repeat") or {}
+        if not out[k]["value"]:
+            continue
+        if rep.get("found") and rep.get("value", "").strip():
+            other = rep["value"].strip()
+            out[k]["check"] = {"other": other, "match": norm(other) == norm(out[k]["value"])}
+        else:
+            out[k]["check"] = {"other": "", "match": None}
+
+
 def fields_from_ai(ai: dict, doc_type: str) -> dict:
     out = {}
     for k in ("A", "D", "F", "G", "H", "I", "J"):
         f = ai.get(k) or {}
         out[k] = field(f.get("value", "") if f.get("found") else "", "ai")
+    if doc_type == "ca":
+        _cross_check(out, ai)
     h = out["H"]["value"]
     if h.upper() in ("CALIFORNIA", "CALIF.", "CALIF"):
         out["H"] = field("CA", "ai", f"Chuẩn hoá “{h}” → CA")

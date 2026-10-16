@@ -75,9 +75,9 @@ PDF_SCHEMA = {
     "properties": {
         "doc_type": {"type": "string", "enum": ["ca", "wy", "br", "unknown"]},
         "evidence": {"type": "string"},
-        **{k: _FIELD for k in ("A", "D", "F", "G", "H", "I", "J")},
+        **{k: _FIELD for k in ("A", "D", "F", "G", "H", "I", "J", "A_repeat", "J_repeat")},
     },
-    "required": ["doc_type", "evidence", "A", "D", "F", "G", "H", "I", "J"],
+    "required": ["doc_type", "evidence", "A", "D", "F", "G", "H", "I", "J", "A_repeat", "J_repeat"],
     "additionalProperties": False,
 }
 
@@ -97,7 +97,12 @@ Fields for wy: A = name of the LLC. J = the Original ID / filing ID. F, G, H, I 
 (street, city, state, ZIP). D = the company's phone if printed.
 Fields for br: A = NOME EMPRESARIAL. J = NÚMERO DE INSCRIÇÃO (as printed, 00.000.000/0000-00). F = LOGRADOURO, NÚMERO,
 COMPLEMENTO - BAIRRO (skip boxes printed as asterisks). G = MUNICÍPIO. H = UF. I = CEP as printed. D = TELEFONE.
-For unknown: return found=false for every field."""
+For unknown: return found=false for every field.
+
+Cross-check (ca only; for wy, br and unknown return found=false): the filing number and the LLC name are often printed
+again on a later page (e.g. the top right of an "Attachment to Articles of Organization" page). Read them there on their
+own, without copying from page 1: J_repeat = the filing number printed on a later page, A_repeat = the LLC name printed on
+a later page. Not printed again: found=false."""
 
 
 def read_scanned_pdf(pdf: bytes) -> dict:

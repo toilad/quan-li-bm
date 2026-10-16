@@ -230,7 +230,8 @@ def test_scan_is_classified_and_read_by_ai_then_needs_owner_check():
                 "A": {"value": "EXAMPLE SUPPLY CO., LLC", "found": True}, "D": {"value": "", "found": False},
                 "F": {"value": "100 EXAMPLE AVE.", "found": True}, "G": {"value": "LOS ANGELES", "found": True},
                 "H": {"value": "California", "found": True}, "I": {"value": "90000", "found": True},
-                "J": {"value": "202400000000", "found": True}}
+                "J": {"value": "2024 0000 0000", "found": True},
+                "A_repeat": {"value": "Example Supply Co., LLC", "found": True}, "J_repeat": {"value": "202400000000", "found": True}}
     with respx.mock(assert_all_called=False) as m:
         route = m.post("https://api.anthropic.com/v1/messages").mock(return_value=anthropic_json(ai_reply))
         with session_scope() as s:
@@ -241,7 +242,8 @@ def test_scan_is_classified_and_read_by_ai_then_needs_owner_check():
     with session_scope() as s:
         d = s.get(PdfDocument, doc_id)
         assert d.doc_type == "ca" and d.status == "review" and "AI nhận diện" in d.detection_reason
-        assert d.fields["A"] == {"value": "EXAMPLE SUPPLY CO., LLC", "source": "ai"}
+        assert d.fields["A"] == {"value": "EXAMPLE SUPPLY CO., LLC", "source": "ai", "check": {"other": "Example Supply Co., LLC", "match": True}}
+        assert d.fields["J"]["value"] == "202400000000" and d.fields["J"]["check"]["match"] is True  # same number on page 2
         assert d.fields["H"]["value"] == "CA"  # normalised, noted
         assert d.fields["E"]["value"] == "examplesupplycollc"
         # scanned → A/J read by AI → cannot be saved until the owner ticks "đã đối chiếu"
@@ -263,3 +265,27 @@ def test_scan_without_ai_key_waits_for_configuration(monkeypatch):
         doc, _ = pdf.ingest(s, "scan.pdf", open(CA[0], "rb").read())
         assert doc.status == "needs_ai"
     assert drain() == 0  # nothing queued without a key; the UI shows "Chưa cấu hình AI"
+
+
+def test_california_number_that_differs_on_page_2_blocks_saving_until_fixed_by_hand():
+    from wg_core.modules.pdf.extract import fields_from_ai
+    from wg_core.modules.pdf.fields import blocking, field, validate
+
+    base = {"A": {"value": "EXAMPLE SUPPLY CO., LLC", "found": True}, "D": {"value": "", "found": False},
+            "F": {"value": "100 EXAMPLE AVE.", "found": True}, "G": {"value": "LOS ANGELES", "found": True},
+            "H": {"value": "CA", "found": True}, "I": {"value": "90000", "found": True},
+            "J": {"value": "202400000008", "found": True}}
+    f = fields_from_ai({**base, "J_repeat": {"value": "202400000003", "found": True},
+                        "A_repeat": {"value": "EXAMPLE SUPPLY CO LLC", "found": True}}, "ca")
+    issues = validate(f, "ca")
+    assert issues["J"]["level"] == "error" and "202400000003" in issues["J"]["message"]
+    assert "A" not in issues  # punctuation-only difference in the name is a match
+    f["J"] = field("202400000003", "manual")  # owner checked the PDF and typed the number
+    assert "J" not in blocking(validate(f, "ca"))
+    # not printed again → only a warning to check by eye
+    f2 = fields_from_ai({**base, "J_repeat": {"value": "", "found": False}, "A_repeat": {"value": "", "found": False}}, "ca")
+    assert validate(f2, "ca")["J"]["level"] == "warn"
+    # a different name on page 2 is flagged (warning)
+    f3 = fields_from_ai({**base, "J_repeat": {"value": "202400000008", "found": True},
+                         "A_repeat": {"value": "OTHER NAME LLC", "found": True}}, "ca")
+    assert validate(f3, "ca")["A"]["level"] == "warn" and "J" not in validate(f3, "ca")

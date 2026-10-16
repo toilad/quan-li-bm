@@ -73,6 +73,19 @@ def validate(fields: dict, doc_type: str) -> dict[str, dict]:
         if doc_type == "ca" and j and not re.fullmatch(r"\d{12}", j):
             # Only one sample seen: warn, never block.
             issues["J"] = {"level": "warn", "kind": "format", "message": "Mẫu đã thấy có 12 chữ số — kiểm tra lại (không chặn lưu)"}
+    # California cross-check against the copy printed on a later page (set by the AI read; gone after a manual edit)
+    for k in ("J", "A"):
+        chk = (fields.get(k) or {}).get("check")
+        if not chk or not val(k) or (issues.get(k) or {}).get("level") == "error":
+            continue
+        if chk["match"] is False:
+            if k == "J":
+                issues[k] = {"level": "error", "kind": "format",
+                             "message": f"Khác số in lại ở trang sau ({chk['other']}) — đối chiếu PDF rồi sửa tay"}
+            else:
+                issues[k] = {"level": "warn", "kind": "format", "message": f"Tên ở trang sau ghi “{chk['other']}” — đối chiếu lại"}
+        elif chk["match"] is None and k == "J":
+            issues[k] = {"level": "warn", "kind": "format", "message": "Không thấy số in lại ở trang sau để đối chiếu — kiểm tra bằng mắt"}
     return issues
 
 
