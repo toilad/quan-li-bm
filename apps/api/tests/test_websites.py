@@ -11,12 +11,18 @@ from wg_core.modules.websites import service as web
 
 CP = "https://turboweb-022607.000nethost.com:2083/execute"
 DOMAIN, ROW = "acme.huxma.life", 9
-GOOD = {"tagline": "Plumbing services", "intro": "Acme Plumbing LLC offers plumbing services.",
-        "about": ["Acme Plumbing LLC is a plumbing company."],
+GOOD = {"tagline": "Plumbing repairs and installations done right", "hero_subtitle": "Acme Plumbing LLC handles residential plumbing work.",
+        "primary_cta": "Get a Quote", "intro_paragraph": "Acme Plumbing LLC offers plumbing services.",
+        "about_short": "Acme Plumbing LLC is a plumbing company.", "about_full": "Para one.\n\nPara two.\n\nPara three.",
+        "contact_intro": "Send us a message.", "footer_blurb": "Plumbing services.",
+        "meta_description_home": "Plumbing services.", "meta_description_about": "About us.", "meta_description_contact": "Contact.",
+        "meta_description_faq": "FAQ.",
         "services": [{"title": "Repairs", "description": "Pipe repairs."}, {"title": "Installs", "description": "Fixture installs."},
                      {"title": "Inspections", "description": "System checks."}],
-        "faq": [{"question": f"Q{c}?", "answer": "Contact us."} for c in "abcd"]}
-INVENTED = {**GOOD, "intro": "Acme Plumbing LLC has 15 years of experience and is award-winning."}
+        "why_choose_us": [{"title": "Clear quotes", "description": "We explain the work."}, {"title": "Tidy work", "description": "We clean up."},
+                          {"title": "Easy to reach", "description": "Call or write to us."}],
+        "faqs": [{"q": f"Q{c}?", "a": "Contact us."} for c in "abcde"]}
+INVENTED = {**GOOD, "intro_paragraph": "Acme Plumbing LLC has 15 years of experience and is award-winning."}
 
 
 def _sheet():
@@ -57,7 +63,10 @@ def test_full_build_uses_chosen_template_and_reported_docroot():
     req = upload.calls[0].request
     assert req.url.params["dir"] == "sites/acme" and req.url.params["overwrite"] == "0"
     body = req.content.decode("utf-8", "ignore")
-    assert "#1e3a8a" in body  # Lawyer Legal Firm palette, not the detected template
+    assert "loremflickr.com" in body and "law,courthouse,justice,books" in body  # chosen theme (Lawyer Legal Firm) drives the photos
+    assert "cdn.tailwindcss.com" in body and body.count('filename="index.html"') == 1 and 'filename="sitemap.xml"' in body
+    for claim in ("What Our Customers Say", "Trusted by", "100%", "24/7", "A Look at Our Work"):
+        assert claim not in body, claim
     sent = json.loads(ai.calls[1].request.content)
     assert sent["model"] == "claude-opus-5-5" and sent["output_config"]["format"]["type"] == "json_schema"
     assert sheet.writes == [(f"C{ROW}", f"https://{DOMAIN}")]

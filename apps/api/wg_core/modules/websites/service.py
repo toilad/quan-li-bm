@@ -12,7 +12,7 @@ from ...integrations.google import Sheets
 from ...jobs import JobContext, enqueue, handler
 from ...models import Nick, RootDomain, SheetWrite
 from .content_check import problems
-from .render import render_site
+from .legacy_render import render_site, theme_name
 from .templates import BY_ID, detect
 
 
@@ -34,9 +34,25 @@ def host_for(s: Session, domain: str):
     return (best, s.get(Nick, best.nick_id)) if best else (None, None)
 
 
+def address_of(cells: dict) -> str:
+    return ", ".join(x for x in (cells["F"], cells["G"], f'{cells["H"]} {cells["I"]}'.strip()) if x)
+
+
 def facts_of(cells: dict) -> dict:
-    return {"Company": cells["A"], "Phone": cells["D"],
-            "Address": ", ".join(x for x in (cells["F"], cells["G"], f'{cells["H"]} {cells["I"]}'.strip()) if x)}
+    return {"Company": cells["A"], "Phone": cells["D"], "Address": address_of(cells)}
+
+
+def email_of(s: Session, cells: dict) -> str:
+    """The Sheet has no email column: use the email printed on the company's own PDF (Brazil comprovante), if any."""
+    from ...models import PdfDocument
+
+    j = cells["J"].strip()
+    if not j:
+        return ""
+    for d in s.scalars(select(PdfDocument).where(PdfDocument.status == "saved")):
+        if (d.fields.get("J") or {}).get("value") == j and (d.extra or {}).get("email"):
+            return d.extra["email"].lower()
+    return ""
 
 
 def scan(s: Session) -> dict:
@@ -113,7 +129,7 @@ def _build(ctx: JobContext):
         ctx.step("Tạo nội dung bằng AI")
         feedback = ""
         for attempt in range(3):
-            copy = ai.write_site_copy(facts, template.group, template.name, feedback)
+            copy = ai.write_site_copy(facts, theme_name(template.id), template.name, feedback)
             bad = problems(copy, facts)
             if not bad:
                 break
@@ -126,7 +142,9 @@ def _build(ctx: JobContext):
 
     if not st.get("uploaded"):
         ctx.step(f"Dựng HTML ({template.name}) + upload")
-        files = render_site(template, row.cells["A"], facts, st["copy"])
+        company = {"company": row.cells["A"], "domain": domain, "phone": row.cells["D"], "email": email_of(s, row.cells),
+                   "address": address_of(row.cells)}
+        files = render_site(company, st["copy"], template.id)
         out = settings().data_dir / "sites" / domain
         out.mkdir(parents=True, exist_ok=True)
         for name, data in files.items():

@@ -7,6 +7,16 @@ import { TEMPLATES, type TemplateGroup } from "@/lib/templates";
 import { TemplateThumb } from "@/components/templates/template-thumb";
 import { templateEditable, type WebDispatch, type WebState } from "./use-web-queue";
 import { SitePreview } from "./site-preview";
+import type { WebRow } from "@/lib/web-mock";
+import type { Company } from "@/lib/mock-data";
+
+/** Used for previews before any Sheet row is available. */
+const DEMO_ROW = {
+  row: 0, domain: "example.com", host: null, templateId: "corporate-firm", templateSource: "auto", status: "idle", step: 0, progress: 0,
+  contentReady: false, uploaded: false, sslIssued: false, log: [], checked: false,
+  company: { A: "Example Company LLC", B: "example.com", C: "", D: "", E: "", F: "", G: "", H: "", I: "", J: "", K: "", L: "", row: 0 } as unknown as Company,
+  detection: { template: undefined as never, keyword: null },
+} as unknown as WebRow;
 
 /** The 15 legacy templates. Clicking one applies it to the ticked rows (manual choice). */
 export function TemplateGallery({ state, dispatch }: { state: WebState; dispatch: WebDispatch }) {
@@ -17,7 +27,7 @@ export function TemplateGallery({ state, dispatch }: { state: WebState; dispatch
   const list = TEMPLATES.filter((t) => group === "Tất cả" || t.group === group);
   const [previewId, setPreviewId] = useState<string | null>(null);
   // Full-page preview of a template, filled with the selected (or first) row of the Sheet.
-  const sample = state.rows.find((r) => r.row === state.selected) ?? state.rows[0];
+  const sample: WebRow = state.rows.find((r) => r.row === state.selected) ?? state.rows[0] ?? DEMO_ROW;
 
   return (
     <section className="panel p-5">
@@ -64,7 +74,7 @@ export function TemplateGallery({ state, dispatch }: { state: WebState; dispatch
             </div>
             <div className="mt-1 truncate text-[10.5px] text-fg-subtle" title={t.industries.join(", ")}>Từ khoá: {t.industries.slice(0, 4).join(", ")}…</div>
           </button>
-          {sample && (
+          {(
             <button onClick={() => setPreviewId(t.id)} aria-label={`Xem trước mẫu ${t.name}`} className="flex w-full items-center justify-center gap-1 border-t border-line/70 py-1.5 text-[11.5px] font-medium text-fg-muted hover:text-fg">
               <Eye className="size-3.5" /> Xem trước
             </button>
@@ -72,7 +82,7 @@ export function TemplateGallery({ state, dispatch }: { state: WebState; dispatch
           </div>
         ))}
       </div>
-      {previewId && sample && <SitePreview r={{ ...sample, templateId: previewId }} onClose={() => setPreviewId(null)} />}
+      {previewId && <SitePreview r={{ ...sample, templateId: previewId }} onClose={() => setPreviewId(null)} />}
     </section>
   );
 }

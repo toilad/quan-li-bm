@@ -10,12 +10,12 @@ Chưa thao tác lên tài khoản thật nào (chưa có khoá). Mọi dịch v�
 |---|---|---|---|
 | PDF Manager | Upload lên server, chống trùng md5, **nhận diện + trích xuất Brazil CNPJ từ lớp chữ** (đúng trên 3 phôi thật), xem PDF gốc, sửa ô, kiểm tra hợp lệ ở server. **Luồng lưu chạy xuyên suốt giao diện → API → worker → PostgreSQL** với Google giả lập: kiểm trùng (DB + Sheet) → Drive (tìm theo md5 trước, không upload 2 lần) → md5 → Drive ID → dòng A, D–J (B, C trống) → K = “Xem phôi”; Sheet lỗi → chỉ ghi lại Sheet; tạm dừng/tiếp tục | Ghi Google thật — cần OAuth của anh (`scripts/google_auth.py`); bản scan: AI tự nhận diện loại phôi + đọc ô — cần ANTHROPIC_API_KEY | Wyoming: **chưa có phôi thật để kiểm** (bộ đọc lớp chữ theo nhãn + AI cho bản scan) |
 | Tạo miền | 25 miền gốc của 3 nick, **tích chọn lưu trong database**, kiểm tra hosting chỉ đọc theo nick (cPanel `DomainInfo::list_domains` → miền gốc chưa có trên hosting thì không tích được; iNET `GET /domain` lưu nguyên dữ liệu để đối chiếu), chặn miền tạm ngưng / Cloudflare, khoá bỏ chọn miền đang có tác vụ, từ chối dòng gán miền chưa tích (kiểm lại ở server + trước mỗi bước tạo) | Quét Sheet (B trống) — cần Google; kiểm trùng cPanel + DNS, tạo miền phụ trên cPanel, xác minh DNS, đọc lại B rồi ghi — cần token cPanel | **Tạo bản ghi A qua API iNET**: tài liệu chưa có cấu trúc dữ liệu cho `PATCH /domain/{id}/record` → tác vụ dừng ở “Chưa khả dụng”. Đọc danh sách miền qua `GET /domain`: chưa biết cấu trúc trả về (đang dùng bản chép từ portal) |
-| SSL + Tạo web | 15 mẫu, chọn mẫu tay lưu database, dựng HTML 6 trang theo **đúng mẫu đã chọn** (kiểm trong test) | Quét Sheet (B có, C trống) — cần Google; DNS, **document root đọc từ cPanel**, nội dung AI + kiểm tra không bịa, upload `overwrite=0`, AutoSSL, kiểm HTTPS, đọc lại C rồi ghi — cần token cPanel + ANTHROPIC_API_KEY | HTML gốc của 15 mẫu cũ chưa khôi phục (đang dựng lại từ tên, bảng màu, bố cục, từ khoá ảnh của app cũ) |
+| SSL + Tạo web | **Mẫu web gốc của app cũ đã khôi phục** từ EXE (7 module, mọi hàm biên dịch lại khớp từng opcode với bản gốc) và dùng để dựng 6 trang + robots/sitemap; mẫu đã chọn quyết định ảnh minh hoạ; giao diện (màu, font, hero, thứ tự phần) chọn như app cũ nhưng cố định theo tên miền; xem trước trên giao diện = đúng HTML sẽ dựng | Quét Sheet (B có, C trống) — cần Google; DNS, **document root đọc từ cPanel**, nội dung AI + kiểm tra không bịa, upload `overwrite=0`, AutoSSL, kiểm HTTPS, đọc lại C rồi ghi — cần token cPanel + ANTHROPIC_API_KEY | Sheet **không có cột email** → web dùng email in trên phôi Brazil nếu có, nếu không để trống (chờ anh quyết định) |
 | Tổng quan | Giao diện | — | Vẫn là **dữ liệu mẫu** (có nhãn “Dữ liệu mẫu”) |
 | Kho mẫu, Nhật ký, Cài đặt | — | — | Trang giữ chỗ. Khoá/token hiện đặt trong `apps/api/.env` |
 | Nền tảng | Hàng đợi PostgreSQL (khoá chống chạy trùng, một việc/nick, thử lại có giãn cách, chạy tiếp từ bước dở, **tạm dừng/tiếp tục theo loại việc**), nhật ký từng việc, bảng `sheet_writes`, sao lưu/khôi phục `pg_dump` (đã kiểm khôi phục ra DB riêng) | Docker Compose (db, api, worker, web, backup) — **chưa chạy thử** vì máy này chưa có Docker | Đăng nhập/phân quyền; đẩy bản sao lưu ra kho ngoài (restic); đồng bộ GitHub Private (chưa có remote, chưa có `gh`) |
 
-Kiểm thử: `apps/api` 39 test (mọi API ngoài đều mock) · hàng đợi chạy thật trên worker + PostgreSQL (chống trùng, tạm dừng, thử lại, khởi động lại giữ dữ liệu) · E2E PDF xuyên suốt với Google giả lập 12/12, tạm dừng/tiếp tục từ giao diện 4/4, các màn khác 14/14.
+Kiểm thử: `apps/api` 57 test (gồm 15 mẫu × 12 tên miền) (mọi API ngoài đều mock) · hàng đợi chạy thật trên worker + PostgreSQL (chống trùng, tạm dừng, thử lại, khởi động lại giữ dữ liệu) · E2E PDF xuyên suốt với Google giả lập 12/12, tạm dừng/tiếp tục từ giao diện 4/4, các màn khác 14/14.
 
 ## API
 
@@ -50,6 +50,9 @@ Kiểm thử: `apps/api` 39 test (mọi API ngoài đều mock) · hàng đợi 
 - Tạo miền = **tạo miền phụ trên miền gốc đã sở hữu**. B chỉ ghi khi đủ: bản ghi A + miền trên cPanel + DNS trỏ đúng IP + ô B vẫn trống lúc ghi.
   Cột C không bao giờ bị ghi. Miền gốc phải có sẵn trên tài khoản cPanel (API `addsubdomain` yêu cầu).
 - Miền gốc: hiện toàn bộ miền của nick, chỉ dùng miền đã tích; không tích sẵn; không tích → không chạy; không bỏ tích miền đang có tác vụ.
+- Mẫu cũ, những phần **không xuất bản** vì là nội dung không căn cứ: lời chứng thực mẫu (5 sao, “Real feedback”), dải số liệu “100% / 24/7 / A+ / On-time”,
+  “Trusted by / Our customers”, hàng chữ giả logo khách hàng, thư viện ảnh kho ghi “A Look at Our Work”, 4 bước quy trình cố định; giờ làm việc
+  không để AI tự đặt (“Please contact us for current business hours.”). Mỗi chỗ vá có ghi chú `QLBM:` trong `legacy/templates/home.py`.
 - Website: chỉ dòng có miền ở B và C trống. B chỉ đọc. Document root đọc từ cPanel, upload không ghi đè file có sẵn.
   C chỉ ghi khi https://B trả 200, chứng chỉ hợp lệ, đúng nội dung, và ô C vẫn trống lúc ghi.
 

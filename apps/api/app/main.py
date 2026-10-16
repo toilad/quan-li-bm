@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -316,6 +316,31 @@ def domain_run(body: RunBody, s: Session = Depends(db)):
 def templates():
     return [{"id": t.id, "name": t.name, "group": t.group, "primary": t.primary, "accent": t.accent, "hero": t.hero,
              "photo_keywords": list(t.photo_keywords), "industries": list(t.industries)} for t in TEMPLATES]
+
+
+PREVIEW_COPY = {
+    "tagline": "[Tagline — AI writes it from the Sheet facts]", "hero_subtitle": "[One or two sentences written by AI for this business]",
+    "primary_cta": "Get a Quote", "intro_paragraph": "[Intro paragraph written by AI — no invented facts]",
+    "about_short": "[Short about text written by AI]", "about_full": "[About page, paragraph 1]\n\n[Paragraph 2]\n\n[Paragraph 3]",
+    "contact_intro": "[Contact intro written by AI]", "footer_blurb": "[Footer line written by AI]",
+    "meta_description_home": "Preview", "meta_description_about": "Preview", "meta_description_contact": "Preview", "meta_description_faq": "Preview",
+    "services": [{"title": f"[Service {i}]", "description": "[Description written by AI]"} for i in (1, 2, 3)],
+    "why_choose_us": [{"title": f"[Reason {i}]", "description": "[Written by AI]"} for i in (1, 2, 3)],
+    "faqs": [{"q": f"[Question {i}]", "a": "[Answer written by AI]"} for i in (1, 2, 3, 4, 5)],
+}
+
+
+@app.get("/api/websites/preview", response_class=HTMLResponse)
+def web_preview(template: str, domain: str = "example.com", company: str = "Example Company LLC", phone: str = "",
+                address: str = "", page: str = "index.html"):
+    """The real legacy template output for this domain (same design the build will use), with placeholder copy."""
+    from wg_core.modules.websites.legacy_render import render_site
+
+    files = render_site({"company": company, "domain": domain.lower(), "phone": phone, "email": "", "address": address},
+                        PREVIEW_COPY, template)
+    if page not in files or not page.endswith(".html"):
+        raise HTTPException(404)
+    return HTMLResponse(files[page].decode("utf-8"))
 
 
 @app.get("/api/websites/rows")

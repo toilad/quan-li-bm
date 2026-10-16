@@ -107,34 +107,44 @@ def read_scanned_pdf(pdf: bytes) -> dict:
 
 # ── Website copy ──
 
+_ITEM = {"type": "object", "properties": {"title": {"type": "string"}, "description": {"type": "string"}},
+         "required": ["title", "description"], "additionalProperties": False}
+_TEXT = ("tagline", "hero_subtitle", "primary_cta", "intro_paragraph", "about_short", "about_full", "contact_intro",
+         "footer_blurb", "meta_description_home", "meta_description_about", "meta_description_contact", "meta_description_faq")
+# Field names and lengths follow the legacy generator (src/ai_generator.py) so the recovered templates render unchanged.
 SITE_SCHEMA = {
     "type": "object",
     "properties": {
-        "tagline": {"type": "string"},
-        "intro": {"type": "string"},
-        "about": {"type": "array", "items": {"type": "string"}},
-        "services": {"type": "array", "items": {"type": "object", "properties": {
-            "title": {"type": "string"}, "description": {"type": "string"}},
-            "required": ["title", "description"], "additionalProperties": False}},
-        "faq": {"type": "array", "items": {"type": "object", "properties": {
-            "question": {"type": "string"}, "answer": {"type": "string"}},
-            "required": ["question", "answer"], "additionalProperties": False}},
+        **{k: {"type": "string"} for k in _TEXT},
+        "services": {"type": "array", "items": _ITEM},
+        "why_choose_us": {"type": "array", "items": _ITEM},
+        "faqs": {"type": "array", "items": {"type": "object", "properties": {"q": {"type": "string"}, "a": {"type": "string"}},
+                                            "required": ["q", "a"], "additionalProperties": False}},
     },
-    "required": ["tagline", "intro", "about", "services", "faq"],
+    "required": [*_TEXT, "services", "why_choose_us", "faqs"],
     "additionalProperties": False,
 }
 
-SITE_SYSTEM = """You write plain, factual small-business website copy in English.
-Hard rules:
-- Use only the facts given. Never invent awards, certifications, clients, partners, years in business, founding dates,
-  team size, prices, statistics, ratings, testimonials or guarantees. Do not write any number that is not in the facts.
-- Describe services generically for the industry; no promises of results; no superlatives like "best" or "#1".
-- 1 tagline, 1 intro (2-3 sentences), 2-3 about paragraphs, exactly 3 services, 4-5 FAQ items."""
+SITE_SYSTEM = """You write website copy for a small business, in clear, professional English (US business style).
+Sound like a real, established small/medium business — plain-spoken, factual, specific to the business type; no generic
+AI marketing fluff and no cliches ("cutting-edge solutions", "leverage synergies", "we are passionate about").
+Hard rules (the site is published under the company's name):
+- Use only the facts given. Never invent awards, certifications, licences, clients, partners, reviews, ratings,
+  years in business, founding dates, team size, prices, statistics, guarantees or opening hours.
+- Do not write any number that is not in the facts.
+- Describe services generically for the business type; no promises of specific results.
+Lengths: tagline 6-10 words; hero_subtitle ~25 words; primary_cta 2-3 words; intro_paragraph ~50 words;
+exactly 3 services (title 2-4 words, description ~25 words); exactly 3 why_choose_us (title 3-5 words, description ~18 words);
+about_short ~60 words; about_full 3-4 paragraphs (~250 words) separated by blank lines (background, mission, approach,
+commitment to customers — without invented facts); contact_intro ~40 words; footer_blurb ~15 words;
+5 faqs a prospect would ask (how to request a quote, service area — say to contact the company, how to get started,
+what is included, how the process works), each answer 1-2 sentences, no invented credentials or guarantees;
+meta descriptions ~150 characters each."""
 
 
-def write_site_copy(facts: dict, industry: str, template_name: str, feedback: str = "") -> dict:
+def write_site_copy(facts: dict, business_type: str, template_name: str, feedback: str = "") -> dict:
     text = (f"Company facts (from the registration sheet):\n{json.dumps(facts, ensure_ascii=False, indent=2)}\n"
-            f"Industry: {industry}\nWebsite template: {template_name}\n")
+            f"Business type: {business_type}\nWebsite template: {template_name}\n")
     if feedback:
         text += f"\nYour previous draft was rejected: {feedback}\nRewrite it following the rules."
     return _json_call([{"type": "text", "text": text}], SITE_SCHEMA, SITE_SYSTEM, effort="medium")

@@ -9,11 +9,12 @@ BANNED = [
 
 
 def _texts(copy: dict) -> list[str]:
-    out = [copy.get("tagline", ""), copy.get("intro", "")] + list(copy.get("about", []))
-    for s in copy.get("services", []):
-        out += [s.get("title", ""), s.get("description", "")]
-    for f in copy.get("faq", []):
-        out += [f.get("question", ""), f.get("answer", "")]
+    out = [v for k, v in copy.items() if isinstance(v, str)]
+    for key in ("services", "why_choose_us"):
+        for s in copy.get(key, []):
+            out += [s.get("title", ""), s.get("description", "")]
+    for f in copy.get("faqs", []):
+        out += [f.get("q", ""), f.get("a", "")]
     return out
 
 
@@ -29,6 +30,10 @@ def problems(copy: dict, facts: dict) -> list[str]:
                 found.append(f"số “{n}” không có trong Sheet")
     if len(copy.get("services", [])) != 3:
         found.append("cần đúng 3 dịch vụ")
-    if not 4 <= len(copy.get("faq", [])) <= 5:
-        found.append("cần 4–5 câu hỏi đáp")
+    if len(copy.get("why_choose_us", [])) != 3:
+        found.append("cần đúng 3 lý do “why choose us”")
+    if not 4 <= len(copy.get("faqs", [])) <= 8:
+        found.append("cần 4–8 câu hỏi đáp")
+    if re.search(r"\b\d{1,2}(:\d{2})?\s*(am|pm)\b|monday|saturday|sunday", " ".join(_texts(copy)), re.IGNORECASE):
+        found.append("có giờ làm việc tự đặt (không có trong Sheet)")
     return sorted(set(found))
