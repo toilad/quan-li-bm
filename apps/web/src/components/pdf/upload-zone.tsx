@@ -3,17 +3,14 @@
 import { useRef, useState } from "react";
 import clsx from "clsx";
 import { FileUp, ShieldCheck, Files, Lock, ScanSearch } from "lucide-react";
-import type { PdfFile } from "@/lib/pdf-mock";
-
 /**
- * Drag & drop / picker. In this prototype the chosen PDFs never leave the
- * browser — they are only opened locally for preview.
+ * Drag & drop / picker. Files are sent to the backend, which stores them, removes exact duplicates (md5),
+ * detects the document type and extracts the fields.
  */
 export function UploadZone({
-  existing, onAdd, footer,
+  onFiles, footer,
 }: {
-  existing: PdfFile[];
-  onAdd: (files: PdfFile[], skipped: string[]) => void;
+  onFiles: (files: File[], skipped: string[]) => void;
   footer?: React.ReactNode;
 }) {
   const input = useRef<HTMLInputElement>(null);
@@ -22,36 +19,13 @@ export function UploadZone({
   const accept = (list: FileList | null) => {
     if (!list?.length) return;
     const skipped: string[] = [];
-    const added: PdfFile[] = [];
-    Array.from(list).forEach((file, i) => {
+    const files: File[] = [];
+    Array.from(list).forEach((file) => {
       const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-      if (!isPdf) {
-        skipped.push(file.name);
-        return;
-      }
-      const sizeKb = Math.max(1, Math.round(file.size / 1024));
-      const dup = [...existing, ...added].find((f) => f.name === file.name && f.sizeKb === sizeKb);
-      added.push({
-        id: `local-${Date.now()}-${i}`,
-        name: file.name,
-        sizeKb,
-        pages: 0,
-        md5: "",
-        status: dup ? "duplicate" : "queued",
-        step: 0,
-        progress: 0,
-        docType: "unknown",
-        detection: null,
-        fields: null,
-        industry: null,
-        textLayer: true,
-        outcome: "review",
-        local: true,
-        blobUrl: URL.createObjectURL(file),
-        duplicateOf: dup ? { row: dup.sheetRow ?? 0, name: dup.name, reason: "Cùng tên và dung lượng với file đã có trong danh sách" } : undefined,
-      });
+      if (isPdf) files.push(file);
+      else skipped.push(file.name);
     });
-    onAdd(added, skipped);
+    onFiles(files, skipped);
   };
 
   return (
@@ -98,7 +72,7 @@ export function UploadZone({
         <Pill icon={ShieldCheck}>PDF gốc giữ nguyên — không chuyển ảnh, không chỉnh sửa</Pill>
         <Pill icon={Files}>Nhiều file cùng lúc</Pill>
         <Pill icon={ScanSearch}>Tự nhận diện: Wyoming · California · Brazil CNPJ</Pill>
-        <Pill icon={Lock}>Bản thiết kế: file chỉ mở xem trên máy, không gửi đi</Pill>
+        <Pill icon={Lock}>Gửi lên server của app · trùng nội dung (md5) không thêm lần 2</Pill>
       </div>
     </div>
     {footer}

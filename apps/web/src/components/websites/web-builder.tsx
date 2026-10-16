@@ -3,18 +3,19 @@
 import { useState } from "react";
 import { Info, ShieldCheck, FileX2, Plug, Boxes, Sheet, Filter } from "lucide-react";
 import { SimTag } from "@/components/domains/ui";
-import { scanForWeb } from "@/lib/web-mock";
 import { useWebQueue } from "./use-web-queue";
 import { WebRunPanel } from "./web-run-panel";
 import { WebTable } from "./web-table";
 import { WebDetail } from "./web-detail";
 import { TemplateGallery } from "./template-gallery";
 import { WebConfirmDialog } from "./web-confirm-dialog";
+import { BackendStatusBanner, useBackendStatus } from "@/components/shell/backend-status";
 
 export function WebBuilder() {
   const { state, dispatch } = useWebQueue();
   const [confirm, setConfirm] = useState(false);
-  const scan = scanForWeb();
+  const backend = useBackendStatus();
+  const dash = (n: number | undefined) => (state.scan ? n ?? 0 : "—");
   const live = state.rows.filter((r) => r.liveNotWritten && !r.liveNotWritten.resolved);
   const noHost = state.rows.filter((r) => !r.host).length;
   const autoCount = state.rows.filter((r) => r.templateSource === "auto").length;
@@ -22,6 +23,12 @@ export function WebBuilder() {
 
   return (
     <div className="space-y-5">
+      <BackendStatusBanner needs={["sheets", "ai", "cpanel"]} status={backend.status} offline={backend.offline} />
+      {state.message && (
+        <button onClick={() => dispatch({ type: "message", text: null })} className="panel w-full !rounded-2xl px-5 py-3 text-left text-[12.5px] text-sky-100">
+          {state.message} <span className="text-fg-subtle">· bấm để ẩn</span>
+        </button>
+      )}
       <div className="panel flex flex-wrap items-center gap-x-6 gap-y-2 !rounded-2xl px-5 py-3 text-[12.5px]">
         <span className="inline-flex items-center gap-2 font-semibold"><Info className="size-4 text-sky-300" /> Chỉ dòng có miền ở B và C trống</span>
         <span className="inline-flex items-center gap-1.5 text-emerald-200/90"><ShieldCheck className="size-4" /> Ghi C chỉ khi https:// chạy thật (200 + chứng chỉ hợp lệ)</span>
@@ -46,15 +53,15 @@ export function WebBuilder() {
               <span className="grid size-10 place-items-center rounded-xl bg-sky-500/15 text-sky-200"><Sheet className="size-5" /></span>
               <div>
                 <div className="flex items-center gap-2"><h2 className="text-[16px] font-semibold">Quét Google Sheet</h2><SimTag /></div>
-                <p className="text-[12.5px] text-fg-muted">Tab Phoi US · đọc qua Google Sheets API (mô phỏng)</p>
+                <p className="text-[12.5px] text-fg-muted">{state.scan ? "Đọc qua Google Sheets API" : state.loadError ? <span className="text-amber-300">{state.loadError.message}</span> : "Đang đọc…"}</p>
               </div>
             </div>
           </header>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Stat label="Tổng dòng" value={scan.total} />
-            <Stat label="B trống — chờ Tạo miền" value={scan.noB} muted />
-            <Stat label="C đã có — bỏ qua" value={scan.hasC} muted />
-            <Stat label="Đủ điều kiện dựng web" value={state.rows.length} accent />
+            <Stat label="Tổng dòng" value={dash(state.scan?.total)} />
+            <Stat label="B trống — chờ Tạo miền" value={dash(state.scan?.noB)} muted />
+            <Stat label="C đã có — bỏ qua" value={dash(state.scan?.hasC)} muted />
+            <Stat label="Đủ điều kiện dựng web" value={dash(state.rows.filter((r) => r.status !== "done").length)} accent />
           </div>
           <div className="mt-4 grid grid-cols-1 gap-3 text-[12px] md:grid-cols-3">
             <Info2 icon={<Filter className="size-3.5" />} title="Điều kiện">B có miền · C trống · B thuộc miền gốc của một nick (biết hosting)</Info2>
@@ -77,7 +84,7 @@ export function WebBuilder() {
   );
 }
 
-function Stat({ label, value, muted, accent }: { label: string; value: number; muted?: boolean; accent?: boolean }) {
+function Stat({ label, value, muted, accent }: { label: string; value: number | string; muted?: boolean; accent?: boolean }) {
   return (
     <div className="rounded-xl border border-line bg-ink-850/60 px-4 py-3">
       <div className="text-[11.5px] text-fg-subtle">{label}</div>

@@ -3,18 +3,19 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { FileSpreadsheet, RefreshCw, ChevronDown, ListFilter, Flag, AlertTriangle, Lock } from "lucide-react";
-import { SLUG_RULES, scanSheet, type SlugRule } from "@/lib/domain-mock";
+import { SLUG_RULES, type SlugRule } from "@/lib/domain-mock";
 import type { DomainDispatch, DomainState } from "./use-domain-queue";
 
 export function ScanPanel({ state, dispatch }: { state: DomainState; dispatch: DomainDispatch }) {
-  const scan = scanSheet();
+  const scan = state.scan;
   const [open, setOpen] = useState(true);
-  const flagged = state.rows.filter((r) => r.flags.length);
+  const flagged = state.rows.filter((r) => r.flags.length && !r.jobId);
+  const dash = (n: number | undefined) => (scan ? n ?? 0 : "—");
   const stats = [
-    { label: "Tổng dòng", value: scan.total, cls: "text-fg" },
-    { label: "Đã có B · bỏ qua", value: scan.withB, cls: "text-fg-muted" },
-    { label: "B trống · tạo được", value: scan.rows.length, cls: "text-emerald-300" },
-    { label: "Trong đó cần kiểm tra", value: flagged.length, cls: "text-amber-300" },
+    { label: "Tổng dòng", value: dash(scan?.total), cls: "text-fg" },
+    { label: "Đã có B · bỏ qua", value: dash(scan?.withB), cls: "text-fg-muted" },
+    { label: "B trống · tạo được", value: dash(state.rows.filter((r) => !r.jobId || r.status !== "done").length), cls: "text-emerald-300" },
+    { label: "Trong đó cần kiểm tra", value: dash(flagged.length), cls: "text-amber-300" },
   ];
 
   return (
@@ -27,11 +28,11 @@ export function ScanPanel({ state, dispatch }: { state: DomainState; dispatch: D
           <div>
             <h2 className="text-[16px] font-semibold">Quét Google Sheet</h2>
             <p className="text-[12.5px] text-fg-muted">
-              Tab <b className="text-fg">Phoi US</b> · đọc demo qua Google Sheets API (mô phỏng), đồng bộ 2 phút trước
+              {scan ? <>Tab <b className="text-fg">{scan.tab}</b> · đọc qua Google Sheets API · {state.lastSync}</> : state.loadError ? <span className="text-amber-300">{state.loadError.message}</span> : "Đang đọc…"}
             </p>
           </div>
         </div>
-        <button className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-medium text-fg-muted hover:border-line-strong hover:text-fg">
+        <button onClick={() => dispatch({ type: "sync" })} className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-medium text-fg-muted hover:border-line-strong hover:text-fg">
           <RefreshCw className="size-3.5" /> Quét lại
         </button>
       </header>
@@ -101,8 +102,8 @@ export function ScanPanel({ state, dispatch }: { state: DomainState; dispatch: D
               <span className="shrink-0 text-right text-amber-200/80">{r.flags.join(" · ")}</span>
             </li>
           ))}
-          {scan.excluded.length > 0 && (
-            <li className="px-1 pt-1 text-[11px] text-rose-300">{scan.excluded.length} dòng thiếu tên doanh nghiệp — không tạo được miền.</li>
+          {!!scan?.excluded && (
+            <li className="px-1 pt-1 text-[11px] text-rose-300">{scan.excluded} dòng thiếu tên doanh nghiệp — không tạo được miền.</li>
           )}
         </ul>
       )}

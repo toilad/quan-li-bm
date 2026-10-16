@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 
-import { usePdfQueue } from "./use-pdf-queue";
+import { usePdfBackend } from "./use-pdf-backend";
+import { BackendStatusBanner, useBackendStatus } from "@/components/shell/backend-status";
 import { UploadZone } from "./upload-zone";
 import { BatchPanel, BatchSettings } from "./batch-panel";
 import { FileQueue } from "./file-queue";
@@ -11,9 +12,11 @@ import { PdfPreview, type HighlightKey } from "./pdf-preview";
 import { ExtractPanel } from "./extract-panel";
 
 export function PdfManager() {
-  const { state, dispatch } = usePdfQueue();
-  const [hover, setHover] = useState<HighlightKey>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const onMessage = useCallback((m: string) => setToast(m), []);
+  const { state, dispatch, upload } = usePdfBackend(onMessage);
+  const backend = useBackendStatus();
+  const [hover, setHover] = useState<HighlightKey>(null);
   const selected = state.files.find((f) => f.id === state.selectedId) ?? null;
 
   useEffect(() => {
@@ -24,19 +27,13 @@ export function PdfManager() {
 
   return (
     <div className="space-y-5">
+      <BackendStatusBanner needs={["sheets", "drive", "ai"]} status={backend.status} offline={backend.offline} />
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
         <UploadZone
-          existing={state.files}
           footer={<BatchSettings state={state} dispatch={dispatch} />}
-          onAdd={(files, skipped) => {
-            if (files.length) dispatch({ type: "add", files });
-            const dups = files.filter((f) => f.status === "duplicate").length;
-            const parts = [
-              files.length && `Đã thêm ${files.length} PDF`,
-              dups && `${dups} file trùng đã được đánh dấu`,
-              skipped.length && `bỏ qua ${skipped.length} file không phải PDF`,
-            ].filter(Boolean);
-            if (parts.length) setToast(parts.join(" · "));
+          onFiles={(files, skipped) => {
+            if (skipped.length) setToast(`Bỏ qua ${skipped.length} file không phải PDF`);
+            if (files.length) upload(files);
           }}
         />
         <BatchPanel state={state} dispatch={dispatch} />

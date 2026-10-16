@@ -86,6 +86,8 @@ export type WebRow = {
   checked: boolean;
   /** Demo only: scripted behaviour for this row. */
   outcome?: "aiRegenerate" | "sslPendingOnce" | "dnsMismatch" | "conflictAtWrite" | "notOnCpanel";
+  /** Backend job that owns this row. */
+  jobId?: number;
   /** Demo only: the document root cPanel will report for this domain. */
   demoDocRoot?: string;
 };

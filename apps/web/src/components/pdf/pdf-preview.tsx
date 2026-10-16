@@ -3,7 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { ZoomIn, ZoomOut, FileText, ScanLine, Fingerprint, Loader2, FileX2, Eye } from "lucide-react";
-import { DOC_TYPES, MOCK_RESULTS, type FieldKey, type Fields, type Industry, type PdfFile } from "@/lib/pdf-mock";
+import { DOC_TYPES, type FieldKey, type Fields, type Industry, type PdfFile } from "@/lib/pdf-mock";
 import { fmtSize } from "./file-queue";
 
 export type HighlightKey = FieldKey | "industry" | null;
@@ -18,9 +18,8 @@ export function PdfPreview({ file, highlight }: { file: PdfFile | null; highligh
       </section>
     );
 
-  const pending = file.status === "processing" ? MOCK_RESULTS[file.id] : undefined;
-  const fields = file.fields ?? pending?.fields;
-  const industry = file.industry ?? pending?.industry ?? null;
+  const fields = file.fields;
+  const industry = file.industry ?? null;
   const hasContent = fields && Object.values(fields).some((f) => f.value);
 
   return (
@@ -325,7 +324,7 @@ function CaliforniaLlc1({ fields, hl }: { fields: Fields; hl: HighlightKey }) {
 
 /** Box layout follows the owner's comprovante samples (IN RFB nº 2.119/2022). */
 function BrazilCnpj({ file, fields, industry, hl }: { file: PdfFile; fields: Fields; industry: Industry | null; hl: HighlightKey }) {
-  const r = file.br ?? MOCK_RESULTS[file.id]?.br;
+  const r = file.br;
   const v = (k: FieldKey) => val(fields, k);
   const Cell = ({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) => (
     <div className={clsx("border border-slate-700 px-1.5 py-0.5", className)}>

@@ -304,6 +304,9 @@ export type PdfFile = {
   outcome?: "review" | "failed" | "sheetFail";
   blobUrl?: string;
   local?: boolean;
+  /** Scanned form waiting for the AI read (backend status needs_ai). */
+  needsAi?: boolean;
+  aiRunning?: boolean;
 };
 
 export type Extracted = { fields: Fields; industry: Industry; br?: BrRaw };

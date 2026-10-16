@@ -4,7 +4,8 @@ import clsx from "clsx";
 import { Play, Pause, RotateCcw, Save, FolderOpen, FileSpreadsheet as SheetIcon, Zap } from "lucide-react";
 import { DOC_TYPES, SHEET_TABS, type DocType, type PdfStatus } from "@/lib/pdf-mock";
 import { PDF_STATUS } from "./status";
-import { isCleanForBulk, type QueueDispatch, type QueueState } from "./use-pdf-queue";
+import { isCleanForBulk } from "./use-pdf-queue";
+import type { QueueDispatch, QueueState } from "./use-pdf-backend";
 
 const ORDER: PdfStatus[] = ["queued", "processing", "review", "saved", "failed", "duplicate"];
 
@@ -120,8 +121,9 @@ export function BatchSettings({ state, dispatch }: { state: QueueState; dispatch
         </span>
         <select
           value={state.tab}
-          onChange={(e) => dispatch({ type: "tab", tab: e.target.value as QueueState["tab"] })}
-          className="rounded-lg border border-line bg-ink-850 px-2 py-1 text-[12.5px] outline-none focus:border-brand/60"
+          disabled
+          title="Tab ghi do cấu hình server quyết định (SHEET_TAB)"
+          className="rounded-lg border border-line bg-ink-850 px-2 py-1 text-[12.5px] outline-none disabled:opacity-70"
         >
           {SHEET_TABS.map((t) => (
             <option key={t}>{t}</option>
@@ -132,7 +134,7 @@ export function BatchSettings({ state, dispatch }: { state: QueueState; dispatch
         <span className="inline-flex items-center gap-1.5 text-fg-muted">
           <FolderOpen className="size-3.5" /> Thư mục Drive
         </span>
-        <span className="truncate font-medium">Phôi PDF / 2026-10</span>
+        <span className="truncate font-medium" title="Cấu hình server: DRIVE_FOLDER_ID">Theo cấu hình server</span>
       </div>
     </div>
   );

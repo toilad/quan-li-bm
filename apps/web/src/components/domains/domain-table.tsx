@@ -185,7 +185,7 @@ export function DomainTable({ state, dispatch }: { state: DomainState; dispatch:
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-10 text-center text-fg-subtle">Không có dòng nào.</td>
+                <td colSpan={6} className="py-10 text-center text-fg-subtle">{state.loadError ? state.loadError.message : "Không có dòng nào có cột B trống."}</td>
               </tr>
             )}
           </tbody>

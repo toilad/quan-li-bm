@@ -97,8 +97,11 @@ def scan(s: Session) -> dict:
             flags.append("Chưa có link K")
         if not c["E"].strip():
             flags.append("Thiếu cột E")
-        out.append({"row": r.row, "A": c["A"], "E": c["E"], "K": c["K"], "flags": flags, "label": slug(c["A"])})
-    return {"total": len(rows), "with_b": sum(1 for r in rows if r.cells["B"].strip()), "rows": out, "excluded": excluded}
+        out.append({"row": r.row, "A": c["A"], "D": c["D"], "E": c["E"], "F": c["F"], "G": c["G"], "H": c["H"], "I": c["I"],
+                    "J": c["J"], "K": c["K"], "flags": flags, "label": slug(c["A"])})
+    existing_b = sorted({r.cells["B"].strip().lower() for r in rows if r.cells["B"].strip()})
+    return {"total": len(rows), "with_b": len(existing_b), "rows": out, "excluded": excluded, "existing_b": existing_b,
+            "tab": settings().sheet_tab}
 
 
 def enqueue_rows(s: Session, items: list[dict]) -> dict:

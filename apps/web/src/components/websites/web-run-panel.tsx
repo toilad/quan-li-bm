@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { Zap, Play, Pause, RotateCcw, Eye, Layers, Bot, ListChecks } from "lucide-react";
-import { SimTag, Toggle } from "@/components/domains/ui";
+import { SimTag } from "@/components/domains/ui";
 import type { WebStatus } from "@/lib/web-mock";
 import { WEB_STATUS } from "./web-ui";
 import { webIssue, type AiProvider, type WebDispatch, type WebState } from "./use-web-queue";
@@ -39,7 +39,7 @@ export function WebRunPanel({ state, dispatch, onPreview }: { state: WebState; d
         <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-[width] duration-500" style={{ width: `${pct}%` }} />
       </div>
       <div className="mt-1.5 flex justify-between text-[11.5px] text-fg-subtle">
-        <span>{state.paused ? "Tạm dừng — bước đang chạy xong rồi dừng" : active ? "Đang chạy · mỗi hosting 1 site · tối đa 2 hosting song song" : "Rảnh — không tự chạy khi mở trang"}</span>
+        <span>{active ? "Backend đang chạy · mỗi hosting một site một lúc" : "Rảnh — không có việc trong hàng đợi"}</span>
         <span>{pct}%</span>
       </div>
 
@@ -83,17 +83,15 @@ export function WebRunPanel({ state, dispatch, onPreview }: { state: WebState; d
           <Bot className="size-4 text-fg-subtle" />
           <select
             value={state.provider}
-            onChange={(e) => dispatch({ type: "provider", provider: e.target.value as AiProvider })}
-            className="h-8 flex-1 rounded-lg border border-line bg-ink-850 px-2 outline-none focus:border-brand/60"
+            disabled
+            title="Backend dùng Claude (Anthropic API); tự chuyển model dự phòng khi bị từ chối"
+            className="h-8 flex-1 rounded-lg border border-line bg-ink-850 px-2 outline-none disabled:opacity-80"
             aria-label="Nhà cung cấp AI"
           >
-            {PROVIDERS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            {PROVIDERS.filter((p) => p.key === "claude").map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
-          <label className="flex items-center gap-1.5 text-[11.5px] text-fg-muted">
-            <Toggle on={state.fallback} onChange={(on) => dispatch({ type: "fallback", on })} label="Dự phòng nhà cung cấp còn lại" /> Dự phòng
-          </label>
         </div>
-        <p className="-mt-1 text-[11px] text-fg-subtle">Khoá AI lưu phía server, chọn model ở Cài đặt API. Nội dung luôn qua bước kiểm tra “không bịa” trước khi dựng.</p>
+        <p className="-mt-1 text-[11px] text-fg-subtle">Khoá AI và model đặt ở server (.env). Nội dung luôn qua bước kiểm tra “không bịa” trước khi dựng.</p>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
@@ -106,7 +104,8 @@ export function WebRunPanel({ state, dispatch, onPreview }: { state: WebState; d
         </button>
         <button
           onClick={() => dispatch({ type: state.paused ? "resume" : "pause" })}
-          disabled={!active && !state.paused}
+          disabled
+          title="Chưa khả dụng: tạm dừng hàng đợi chưa có ở backend"
           className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-white/[0.07] px-3 py-2 text-[12.5px] font-semibold hover:bg-white/[0.11] disabled:opacity-40"
         >
           {state.paused ? <Play className="size-4" /> : <Pause className="size-4" />} {state.paused ? "Tiếp tục" : "Tạm dừng"}

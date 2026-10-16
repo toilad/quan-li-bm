@@ -124,14 +124,14 @@ def _save(ctx: JobContext):
     j = (doc.fields.get("J") or {}).get("value", "")
     h = (doc.fields.get("H") or {}).get("value", "")
 
-    if not ctx.state.get("dup_checked"):
+    if not ctx.state.get("dup_checked") and not doc.sheet_row:  # already written by an earlier run → nothing to check
         ctx.step("Kiểm tra trùng")
         for other in s.scalars(select(PdfDocument).where(PdfDocument.id != doc.id, PdfDocument.status == "saved")):
             if (other.fields.get("J") or {}).get("value") == j and (other.fields.get("H") or {}).get("value") == h:
                 doc.status, doc.error = "failed", f"Trùng mã {j} ({h}) với file đã lưu “{other.original_name}”"
                 raise Conflict(doc.error)
         for r in Sheets().read_rows():
-            if r.cells["J"].strip() == j and r.cells["H"].strip() == h:
+            if r.cells["J"].strip() == j and r.cells["H"].strip() == h and r.row != doc.sheet_row:
                 doc.status, doc.error = "failed", f"Sheet đã có mã {j} ({h}) ở dòng {r.row} — không thêm trùng"
                 raise Conflict(doc.error)
         ctx.checkpoint(dup_checked=True)

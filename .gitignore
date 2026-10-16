@@ -46,3 +46,6 @@ apps/api/backups/
 apps/api/config/nicks.json
 secrets/
 .pytest_cache/
+apps/api/*.log
+apps/api/*.err
+apps/api/e2e.url

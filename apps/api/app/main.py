@@ -74,6 +74,18 @@ def status(s: Session = Depends(db)):
     return integration_status(s)
 
 
+@app.get("/api/backups")
+def backups():
+    """Real backup files (scripts/backup.py). Restore drills are not automated yet."""
+    from datetime import datetime
+
+    from wg_core.config import API_ROOT
+
+    dumps = sorted((API_ROOT / "backups").glob("*.dump"), key=lambda p: p.stat().st_mtime, reverse=True)
+    latest = datetime.fromtimestamp(dumps[0].stat().st_mtime).isoformat(timespec="minutes") if dumps else None
+    return {"count": len(dumps), "latest": latest, "restore_test": None}
+
+
 def job_out(j: Job, logs: list[JobLog] | None = None) -> dict:
     out = {"id": j.id, "kind": j.kind, "status": j.status, "step": j.step, "attempts": j.attempts, "error": j.last_error,
            "payload": j.payload, "state": {k: v for k, v in (j.state or {}).items() if k != "copy"},
@@ -139,9 +151,14 @@ def pdf_file(doc_id: int, s: Session = Depends(db)):
     return FileResponse(pdf.storage_path(d.md5), media_type="application/pdf")
 
 
+def _live_save(s: Session, d: PdfDocument) -> bool:
+    return bool(s.scalar(select(Job.id).where(Job.idem_key == f"pdf:{d.md5}", Job.status.in_(("queued", "running")))))
+
+
 class PdfEdit(BaseModel):
     fields: dict[str, str] | None = None
     doc_type: str | None = None
+    industry: str | None = None  # owner’s manual industry category
 
 
 @app.patch("/api/pdf/{doc_id}")
@@ -149,8 +166,10 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
     d = s.get(PdfDocument, doc_id)
     if not d:
         raise HTTPException(404)
-    if d.status in ("queued", "saved"):
+    if d.status == "saved" or _live_save(s, d):
         raise HTTPException(409, "Đã lưu / đang lưu — không sửa")
+    if d.status == "queued":  # last save stopped (blocked/failed): editable again
+        d.status = "review"
     if body.doc_type and body.doc_type != d.doc_type:
         if body.doc_type not in ("wy", "ca", "br"):
             raise HTTPException(422, "Loại phôi không hợp lệ")
@@ -161,6 +180,8 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
             if k in FIELD_KEYS:
                 f[k] = {"value": v.strip(), "source": "manual" if v.strip() else "missing"}
         d.fields = f
+    if body.industry:
+        d.industry = {**(d.industry or {}), "category": body.industry, "source": "manual"}
     return doc_out(d)
 
 
@@ -187,6 +208,8 @@ def save_pdf(doc_id: int, body: SaveBody, s: Session = Depends(db)):
         raise HTTPException(404)
     if d.status == "saved":
         raise HTTPException(409, "Đã lưu")
+    if _live_save(s, d):
+        raise HTTPException(409, "Đang lưu — chờ tác vụ hiện tại xong")
     reasons = pdf.save_check(d, body.confirm_missing, body.critical_checked)
     if reasons:
         raise HTTPException(422, {"message": "Chưa lưu được", "reasons": reasons})

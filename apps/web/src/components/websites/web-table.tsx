@@ -153,7 +153,7 @@ export function WebTable({ state, dispatch }: { state: WebState; dispatch: WebDi
               );
             })}
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="py-10 text-center text-fg-subtle">Không có dòng nào.</td></tr>
+              <tr><td colSpan={6} className="py-10 text-center text-fg-subtle">{state.loadError ? state.loadError.message : "Không có dòng nào có B và C trống."}</td></tr>
             )}
           </tbody>
         </table>

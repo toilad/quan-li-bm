@@ -147,3 +147,31 @@ def test_save_not_configured_is_blocked_not_success(monkeypatch):
     with session_scope() as s:
         j = s.get(Job, job_id)
         assert j.status == "blocked" and "SHEET_ID" in j.last_error
+
+
+@needs_fixtures
+def test_resave_after_stop_does_not_duplicate_or_flag_itself():
+    """A save that stopped after Drive (e.g. Sheet down) and is saved again later uploads nothing twice."""
+    data = open(BR[0], "rb").read()
+    sheet = FakeSheet({})
+    drive_calls = []
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m, fail_append=5)
+        install_drive(m, calls=drive_calls)
+        with session_scope() as s:
+            doc, _ = pdf.ingest(s, "doc.pdf", data)
+            job, _ = pdf.request_save(s, doc)
+            doc_id, job_id = doc.id, job.id
+        drain()
+        with session_scope() as s:  # give up on this job (as if it hit max attempts), then save again
+            s.get(Job, job_id).status = "failed"
+            s.get(PdfDocument, doc_id).status = "review"
+        sheet2 = FakeSheet({})
+        sheet2.install(m)
+        with session_scope() as s:
+            job2, created = pdf.request_save(s, s.get(PdfDocument, doc_id))
+            assert created
+        drain()
+    with session_scope() as s:
+        assert s.get(PdfDocument, doc_id).status == "saved"
+    assert len(drive_calls) == 1 and len(sheet2.appends) == 1

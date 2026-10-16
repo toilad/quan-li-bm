@@ -10,14 +10,22 @@ import { RowDetail } from "./row-detail";
 import { NickAccounts } from "./nick-accounts";
 import { RootDomains } from "./root-domains";
 import { PreviewDialog } from "./preview-dialog";
+import { BackendStatusBanner, useBackendStatus } from "@/components/shell/backend-status";
 
 export function DomainManager() {
   const { state, dispatch } = useDomainQueue();
   const [preview, setPreview] = useState(false);
   const orphans = state.rows.filter((r) => r.orphan && !r.orphan.resolved);
+  const backend = useBackendStatus();
 
   return (
     <div className="space-y-5">
+      <BackendStatusBanner needs={["sheets", "cpanel", "inet"]} status={backend.status} offline={backend.offline} />
+      {state.message && (
+        <button onClick={() => dispatch({ type: "message", text: null })} className="panel w-full !rounded-2xl px-5 py-3 text-left text-[12.5px] text-sky-100">
+          {state.message} <span className="text-fg-subtle">· bấm để ẩn</span>
+        </button>
+      )}
       <div className="panel flex flex-wrap items-center gap-x-6 gap-y-2 !rounded-2xl px-5 py-3 text-[12.5px]">
         <span className="inline-flex items-center gap-2 font-semibold">
           <Info className="size-4 text-sky-300" /> Tạo miền phụ, không đăng ký domain mới

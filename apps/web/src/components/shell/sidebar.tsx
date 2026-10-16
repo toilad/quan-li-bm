@@ -6,7 +6,23 @@ import clsx from "clsx";
 import {
   LayoutDashboard, FileText, Globe2, ShieldCheck, LayoutTemplate, ScrollText, Settings, DatabaseBackup, CheckCircle2,
 } from "lucide-react";
-import { BACKUP } from "@/lib/mock-data";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+
+type Backups = { count: number; latest: string | null; restore_test: string | null };
+
+/** Real backup files reported by the backend — never a made-up number. */
+function useBackups() {
+  const [b, setB] = useState<Backups | null>(null);
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    const load = () => api.get<Backups>("/api/backups").then((x) => { setB(x); setOffline(false); }).catch(() => setOffline(true));
+    load();
+    const id = setInterval(load, 60000);
+    return () => clearInterval(id);
+  }, []);
+  return { b, offline };
+}
 
 const NAV = [
   { href: "/", label: "Tổng quan", icon: LayoutDashboard },
@@ -20,6 +36,8 @@ const NAV = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { b, offline } = useBackups();
+  const last = b?.latest ? new Date(b.latest).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : null;
 
   return (
     <aside className="sticky top-0 flex h-screen w-[264px] shrink-0 flex-col border-r border-line bg-ink-900/70 px-4 py-6 backdrop-blur-xl">
@@ -61,17 +79,17 @@ export function Sidebar() {
             Bảo vệ dữ liệu
           </div>
           <dl className="space-y-2 text-[12px]">
-            <Row label="Sao lưu gần nhất" value={BACKUP.lastRun} />
-            <Row label="Số phiên bản" value={`${BACKUP.versions} bản`} />
-            <Row label="Thử khôi phục" value={BACKUP.lastRestoreTest} />
+            <Row label="Sao lưu gần nhất" value={offline ? "—" : last ?? "Chưa có"} />
+            <Row label="Số bản" value={offline ? "—" : `${b?.count ?? 0} bản`} />
+            <Row label="Thử khôi phục" value={b?.restore_test ?? "Chưa tự động"} />
           </dl>
-          <div className="mt-3 flex items-center gap-1.5 text-[11px] text-emerald-400/90">
+          <div className="mt-3 flex items-center gap-1.5 text-[11px] text-amber-300/90">
             <CheckCircle2 className="size-3.5" />
-            Lưu tại kho độc lập · mã hoá
+            Bản sao lưu ở máy chủ · chưa đẩy ra kho ngoài
           </div>
         </div>
         <div className="mt-4 flex items-center justify-between px-2 text-[12px] text-fg-subtle">
-          <span>v0.1 · bản thiết kế</span>
+          <span>v0.2 · backend local</span>
           <span className="flex items-center gap-1.5">
             <span className="animate-pulse-dot size-1.5 rounded-full bg-emerald-400" />
             Hoạt động

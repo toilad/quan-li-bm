@@ -10,7 +10,8 @@ import {
   type DocType, type FieldKey, type FieldSource, type IndustryKey, type PdfFile,
 } from "@/lib/pdf-mock";
 import { PdfStatusChip } from "./status";
-import { canSave, saveBlockers, type QueueDispatch } from "./use-pdf-queue";
+import { canSave, saveBlockers } from "./use-pdf-queue";
+import type { QueueDispatch } from "./use-pdf-backend";
 import type { HighlightKey } from "./pdf-preview";
 
 const SOURCE: Record<FieldSource, { label: string; icon: typeof Bot; cls: string }> = {
@@ -88,6 +89,18 @@ export function ExtractPanel({
         {file.local && file.status === "review" && (
           <Notice tone="sky" icon={Info} title="Bản thiết kế chưa đọc nội dung PDF thật">
             Nhận diện loại phôi và trích xuất làm ở giai đoạn 4 (backend). Ở bản này anh chọn loại phôi và nhập tay để thử luồng lưu.
+          </Notice>
+        )}
+
+        {file.needsAi && (
+          <Notice tone="sky" icon={Info} title="Bản scan — cần AI đọc">
+            PDF không có lớp chữ. AI đọc từng ô của phôi; mọi ô do AI đọc phải được anh đối chiếu trước khi lưu.
+            {file.error && <span className="mt-1 block text-rose-200">{file.error}</span>}
+            <div className="mt-2.5">
+              <SmallBtn onClick={() => dispatch({ type: "aiRead", id: file.id })} icon={RotateCcw}>
+                {file.aiRunning ? "AI đang đọc…" : "AI đọc phôi"}
+              </SmallBtn>
+            </div>
           </Notice>
         )}
 

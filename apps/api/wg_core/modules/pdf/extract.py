@@ -159,6 +159,9 @@ def extract_br(t: PdfText) -> tuple[dict, dict]:
         "natureza_juridica": g("CODIGO E DESCRICAO DA NATUREZA JURIDICA", "CODIGO"),
         "email": g("ENDERECO ELETRONICO", "ENDERECO"),
         "situacao_cadastral": situ,
+        # raw boxes as printed (shown next to the composed address for checking)
+        "logradouro": lograd, "numero": numero, "complemento": compl, "bairro": bairro,
+        "cep": g("CEP", "CEP"), "municipio": g("CEP", "MUNICIPIO"), "uf": g("CEP", "UF"), "telefone": phone,
         "data_situacao": g("SITUACAO CADASTRAL", "DATA"),
     }
     if situ and situ.upper() != "ATIVA":

@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { FileText, Search, RotateCcw, X, ScanLine } from "lucide-react";
 import { DOC_TYPES, PROCESS_STEPS, SAVE_STEPS, type PdfFile, type PdfStatus } from "@/lib/pdf-mock";
 import { PdfStatusChip } from "./status";
-import type { QueueDispatch } from "./use-pdf-queue";
+import type { QueueDispatch } from "./use-pdf-backend";
 
 type Tab = { key: string; label: string; match: PdfStatus[] };
 

@@ -38,9 +38,9 @@ export function RootDomains({ state, dispatch }: { state: DomainState; dispatch:
               <SimTag />
             </div>
             <p className="text-[12.5px] text-fg-muted">
-              Toàn bộ tên miền của từng nick, lấy qua API iNET. Tích miền nào thì app chỉ phân bổ công ty vào miền đó — không giới hạn số miền mỗi nick.
+              Toàn bộ tên miền của từng nick (bản chép từ portal iNET 16/10/2026 — đọc qua API iNET chưa khả dụng). Tích miền nào thì app chỉ phân bổ công ty vào miền đó.
             </p>
-            <p className="mt-0.5 text-[11.5px] text-fg-subtle">Đồng bộ lần cuối: {state.lastSync}</p>
+            <p className="mt-0.5 text-[11.5px] text-fg-subtle">Lựa chọn lưu ở database · tải lần cuối {state.lastSync}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -58,8 +58,8 @@ export function RootDomains({ state, dispatch }: { state: DomainState; dispatch:
           <Btn onClick={() => dispatch({ type: "pickRoots", roots: all.map(({ r }) => r.name), on: false })}>
             <Square className="size-4" /> Bỏ chọn tất cả
           </Btn>
-          <Btn onClick={() => dispatch({ type: "sync" })} title="Đọc lại danh sách miền qua API iNET (mô phỏng)">
-            <RefreshCw className="size-4" /> Đồng bộ lại
+          <Btn onClick={() => dispatch({ type: "sync" })} title="Tải lại danh sách từ backend. Đọc danh sách miền qua API iNET: chưa khả dụng (cấu trúc trả về chưa có trong tài liệu)">
+            <RefreshCw className="size-4" /> Tải lại
           </Btn>
         </div>
       </header>
@@ -78,7 +78,7 @@ export function RootDomains({ state, dispatch }: { state: DomainState; dispatch:
 
       <p className="mt-3 text-[11.5px] text-fg-subtle">
         Miền tạm ngưng, hết hạn hoặc API hiện tại không ghi được DNS thì không tích được. Miền đang có dòng chạy (hoặc đã tạo DNS chưa ghi B) không bỏ chọn được tới khi xong.
-        Lựa chọn được lưu lại cho lần sau (bản thiết kế lưu trên trình duyệt này; bản thật lưu database).
+        Lựa chọn lưu trong database của app.
       </p>
     </section>
   );

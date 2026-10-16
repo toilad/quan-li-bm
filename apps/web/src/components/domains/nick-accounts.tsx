@@ -42,6 +42,8 @@ export function NickAccounts({ state, dispatch }: { state: DomainState; dispatch
           </div>
         </div>
         <button
+          disabled
+          title="Chưa khả dụng: thêm nick bằng file cấu hình server (config/nicks.json + .env)"
           onClick={() => setEditing(blank)}
           className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.07] px-3 py-1.5 text-[12.5px] font-semibold hover:bg-white/[0.11]"
         >
@@ -128,11 +130,11 @@ export function NickAccounts({ state, dispatch }: { state: DomainState; dispatch
                     <div className="text-[11px] text-fg-subtle">{n.lastCheck}</div>
                   </td>
                   <td className="py-3 pr-3">
-                    <Toggle on={n.enabled} onChange={() => dispatch({ type: "toggleNick", id: n.id })} label={`Bật/tắt ${n.name}`} />
+                    <span title="Bật/tắt nick: cấu hình ở server"><Toggle on={n.enabled} onChange={() => dispatch({ type: "toggleNick", id: n.id })} label={`Bật/tắt ${n.name}`} /></span>
                   </td>
                   <td className="py-3 pr-1">
                     <div className="flex justify-end gap-1">
-                      <IconBtn label="Kiểm tra API (mô phỏng)" onClick={() => dispatch({ type: "testNick", id: n.id })}><PlugZap className="size-4" /></IconBtn>
+                      <IconBtn label="Kiểm tra API: chưa khả dụng" onClick={() => dispatch({ type: "testNick", id: n.id })}><PlugZap className="size-4" /></IconBtn>
                       <IconBtn label="Sửa" onClick={() => setEditing(n)}><PenLine className="size-4" /></IconBtn>
                     </div>
                   </td>

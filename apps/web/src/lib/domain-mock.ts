@@ -239,6 +239,8 @@ export type DomainRow = {
   checked: boolean;
   /** Demo only: scripted failure for this row. */
   outcome?: "cpanelTimeoutOnce" | "conflictAtWrite";
+  /** Backend job that owns this row (set once the row was sent to the server). */
+  jobId?: number;
 };
 
 /**
