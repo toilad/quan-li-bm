@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:pdf-rules": "npx --yes tsx@4.19.2 scripts/check-pdf-rules.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

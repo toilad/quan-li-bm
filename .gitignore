@@ -9,6 +9,11 @@ service_account*.json
 inet_accounts*.json
 .app_settings.json
 
+# Real sample filings (owner's PDFs) — local testing only, never committed
+test-fixtures/**
+!test-fixtures/README.md
+*.pdf
+
 # Legacy binaries / extracted data (may contain plaintext credentials)
 *.exe
 legacy/extracted/

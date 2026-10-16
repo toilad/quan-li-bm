@@ -2,17 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
-import type { FieldKey } from "@/lib/pdf-mock";
+
 import { usePdfQueue } from "./use-pdf-queue";
 import { UploadZone } from "./upload-zone";
 import { BatchPanel, BatchSettings } from "./batch-panel";
 import { FileQueue } from "./file-queue";
-import { PdfPreview } from "./pdf-preview";
+import { PdfPreview, type HighlightKey } from "./pdf-preview";
 import { ExtractPanel } from "./extract-panel";
 
 export function PdfManager() {
   const { state, dispatch } = usePdfQueue();
-  const [hover, setHover] = useState<FieldKey | null>(null);
+  const [hover, setHover] = useState<HighlightKey>(null);
   const [toast, setToast] = useState<string | null>(null);
   const selected = state.files.find((f) => f.id === state.selectedId) ?? null;
 

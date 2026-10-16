@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import clsx from "clsx";
-import { FileUp, ShieldCheck, Files, Lock } from "lucide-react";
+import { FileUp, ShieldCheck, Files, Lock, ScanSearch } from "lucide-react";
 import type { PdfFile } from "@/lib/pdf-mock";
 
 /**
@@ -40,9 +40,11 @@ export function UploadZone({
         status: dup ? "duplicate" : "queued",
         step: 0,
         progress: 0,
+        docType: "unknown",
+        detection: null,
         fields: null,
+        industry: null,
         textLayer: true,
-        drive: "none",
         outcome: "review",
         local: true,
         blobUrl: URL.createObjectURL(file),
@@ -95,6 +97,7 @@ export function UploadZone({
       <div className="relative mt-5 flex flex-wrap justify-center gap-2 text-[12px]">
         <Pill icon={ShieldCheck}>PDF gốc giữ nguyên — không chuyển ảnh, không chỉnh sửa</Pill>
         <Pill icon={Files}>Nhiều file cùng lúc</Pill>
+        <Pill icon={ScanSearch}>Tự nhận diện: Wyoming · California · Brazil CNPJ</Pill>
         <Pill icon={Lock}>Bản thiết kế: file chỉ mở xem trên máy, không gửi đi</Pill>
       </div>
     </div>

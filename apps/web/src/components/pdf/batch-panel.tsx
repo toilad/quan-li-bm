@@ -2,10 +2,9 @@
 
 import clsx from "clsx";
 import { Play, Pause, RotateCcw, Save, FolderOpen, FileSpreadsheet as SheetIcon, Zap } from "lucide-react";
-import { SHEET_TABS, type PdfStatus } from "@/lib/pdf-mock";
+import { DOC_TYPES, SHEET_TABS, type DocType, type PdfStatus } from "@/lib/pdf-mock";
 import { PDF_STATUS } from "./status";
-import type { QueueDispatch, QueueState } from "./use-pdf-queue";
-import { validate } from "@/lib/pdf-mock";
+import { isCleanForBulk, type QueueDispatch, type QueueState } from "./use-pdf-queue";
 
 const ORDER: PdfStatus[] = ["queued", "processing", "review", "saved", "failed", "duplicate"];
 
@@ -17,7 +16,8 @@ export function BatchPanel({ state, dispatch }: { state: QueueState; dispatch: Q
   const pct = total ? Math.round((settled / total) * 100) : 0;
   const queued = count("queued");
   const failed = count("failed");
-  const cleanReview = files.filter((f) => f.status === "review" && f.fields && Object.keys(validate(f.fields)).length === 0).length;
+  const cleanReview = files.filter(isCleanForBulk).length;
+  const types: DocType[] = ["wy", "ca", "br", "unknown"];
 
   return (
     <section className="panel flex flex-col p-5">
@@ -57,6 +57,19 @@ export function BatchPanel({ state, dispatch }: { state: QueueState; dispatch: Q
         })}
       </div>
 
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
+        <span className="mr-0.5 text-fg-subtle">Loại phôi:</span>
+        {types.map((t) => {
+          const n = files.filter((f) => f.docType === t && (f.detection || t !== "unknown")).length;
+          if (!n) return null;
+          return (
+            <span key={t} title={DOC_TYPES[t].label} className={clsx("rounded-md border px-1.5 py-0.5 font-semibold", DOC_TYPES[t].tagCls)}>
+              {DOC_TYPES[t].short} {n}
+            </span>
+          );
+        })}
+      </div>
+
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
           onClick={() => dispatch({ type: "run", on: !state.running })}
@@ -79,7 +92,7 @@ export function BatchPanel({ state, dispatch }: { state: QueueState; dispatch: Q
         <button
           onClick={() => dispatch({ type: "saveAllValid" })}
           disabled={cleanReview === 0}
-          title="Chỉ lưu file đã đủ trường, đúng định dạng, không trùng"
+          title="Chỉ lưu file đủ trường, đúng định dạng, không trùng và không có trường do AI đọc"
           className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500/15 px-3 py-2 text-[12.5px] font-semibold text-emerald-200 transition hover:bg-emerald-500/25 disabled:opacity-40"
         >
           <Save className="size-4" /> Lưu tất cả file hợp lệ ({cleanReview})
@@ -97,7 +110,7 @@ export function BatchSettings({ state, dispatch }: { state: QueueState; dispatch
       <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-ink-850/60 px-3.5 py-2.5">
         <span className="text-fg-muted">
           Tự lưu file hợp lệ
-          <span className="block text-[11px] text-fg-subtle">Đủ trường, đúng định dạng, không trùng</span>
+          <span className="block text-[11px] text-fg-subtle">Mặc định tắt · bản scan luôn cần anh duyệt</span>
         </span>
         <Toggle on={state.autoSave} onChange={(on) => dispatch({ type: "autoSave", on })} />
       </label>

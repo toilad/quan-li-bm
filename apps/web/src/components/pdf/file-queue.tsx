@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { FileText, Search, RotateCcw, X, ScanLine } from "lucide-react";
-import { PROCESS_STEPS, SAVE_STEPS, type PdfFile, type PdfStatus } from "@/lib/pdf-mock";
+import { DOC_TYPES, PROCESS_STEPS, SAVE_STEPS, type PdfFile, type PdfStatus } from "@/lib/pdf-mock";
 import { PdfStatusChip } from "./status";
 import type { QueueDispatch } from "./use-pdf-queue";
 
@@ -93,8 +93,18 @@ export function FileQueue({
                   {f.textLayer ? <FileText className="size-4" /> : <ScanLine className="size-4" />}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12.5px] font-medium" title={f.name}>
-                    {f.name}
+                  <div className="flex items-center gap-1.5">
+                    {(f.detection || f.docType !== "unknown") && (
+                      <span
+                        title={DOC_TYPES[f.docType].label}
+                        className={clsx("shrink-0 rounded border px-1 text-[10px] font-bold leading-4", DOC_TYPES[f.docType].tagCls)}
+                      >
+                        {DOC_TYPES[f.docType].short}
+                      </span>
+                    )}
+                    <span className="truncate text-[12.5px] font-medium" title={f.name}>
+                      {f.name}
+                    </span>
                   </div>
                   <div className="mt-0.5 truncate text-[11px] text-fg-subtle">
                     {f.fields?.A.value || (f.local ? "File trên máy · chưa đọc" : "—")} · {fmtSize(f.sizeKb)}
@@ -126,7 +136,7 @@ export function FileQueue({
                     }}
                     className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-sky-300 hover:bg-sky-400/10"
                   >
-                    <RotateCcw className="size-3" /> Thử lại
+                    <RotateCcw className="size-3" /> {f.failedAt === "sheet" ? "Ghi lại Sheet" : "Thử lại"}
                   </button>
                 )}
                 {f.status === "duplicate" && f.duplicateOf && (
