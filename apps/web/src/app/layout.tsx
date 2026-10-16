@@ -10,7 +10,7 @@ const beVietnam = Be_Vietnam_Pro({
 });
 
 export const metadata: Metadata = {
-  title: "WebsiteGenerator Studio",
+  title: "Quản Lí BM",
   description: "Quản lý PDF doanh nghiệp, tên miền và website tự động",
 };
 

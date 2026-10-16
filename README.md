@@ -1,6 +1,9 @@
-# WebsiteGenerator Studio
+# Quản Lí BM
 
 Web App quản trị online: đọc PDF doanh nghiệp → Google Sheets/Drive, tạo miền iNET, dựng website + SSL.
+
+> Tên app: **Quản Lí BM** (trước đây gọi là WebsiteGenerator Studio). Thư mục dự án vẫn là `WebsiteGenerator-Studio`.
+
 Ba chức năng **độc lập**, mỗi chức năng chỉ ghi cột của mình trên Google Sheet:
 
 | Chức năng | Điều kiện dòng | Ghi cột |

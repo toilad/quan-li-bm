@@ -26,8 +26,10 @@ export function Sidebar() {
       <Link href="/" className="mb-8 flex items-center gap-3 px-2">
         <Logo />
         <div className="leading-tight">
-          <div className="text-[15px] font-bold tracking-tight">WebsiteGenerator</div>
-          <div className="text-gradient text-[13px] font-semibold">Studio</div>
+          <div className="text-[17px] font-bold tracking-tight">
+            Quản Lí <span className="text-gradient">BM</span>
+          </div>
+          <div className="mt-0.5 text-[11.5px] font-medium text-fg-subtle">PDF · Tên miền · Website</div>
         </div>
       </Link>
 
@@ -99,14 +101,19 @@ function Logo() {
         </linearGradient>
       </defs>
       <rect width="40" height="40" rx="11" fill="url(#wg-logo)" opacity="0.16" />
-      <path
-        d="M8 11l5.2 18L20 15.5 26.8 29 32 11"
-        fill="none"
-        stroke="url(#wg-logo)"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <rect x="0.75" y="0.75" width="38.5" height="38.5" rx="10.25" fill="none" stroke="url(#wg-logo)" strokeOpacity="0.45" strokeWidth="1.5" />
+      <text
+        x="20"
+        y="26"
+        textAnchor="middle"
+        fontSize="15"
+        fontWeight="800"
+        letterSpacing="-0.5"
+        fill="url(#wg-logo)"
+        style={{ fontFamily: "var(--font-be-vietnam), system-ui, sans-serif" }}
+      >
+        BM
+      </text>
     </svg>
   );
 }

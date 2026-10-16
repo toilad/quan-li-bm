@@ -1,4 +1,4 @@
-# Kiến trúc WebsiteGenerator Studio
+# Kiến trúc Quản Lí BM
 
 Đã được chủ dự án duyệt hướng: Next.js + React, FastAPI, PostgreSQL, Docker, GitHub Private.
 
