@@ -107,6 +107,42 @@ def list_jobs(kind: str | None = None, s: Session = Depends(db)):
     return [job_out(j, logs.get(j.id, [])) for j in js]
 
 
+class PauseBody(BaseModel):
+    kind: str = "*"  # pdf_save | pdf_ai_read | domain_create | web_build | selftest | "*"
+    on: bool
+
+
+@app.get("/api/queue")
+def queue(s: Session = Depends(db)):
+    from sqlalchemy import func
+
+    counts = {f"{k}:{st}": n for k, st, n in s.execute(select(Job.kind, Job.status, func.count()).group_by(Job.kind, Job.status))}
+    return {"paused": sorted(jobs.paused_kinds(s)), "counts": counts}
+
+
+@app.post("/api/queue/pause")
+def pause(body: PauseBody, s: Session = Depends(db)):
+    return {"paused": sorted(jobs.set_paused(s, body.kind, body.on))}
+
+
+class SelftestBody(BaseModel):
+    count: int = 3
+    steps: int = 3
+    sleep: float = 0.5
+    fail_once_at: int | None = 2
+    key: str = "demo"
+
+
+@app.post("/api/queue/selftest")
+def selftest(body: SelftestBody, s: Session = Depends(db)):
+    """Fake jobs (no external call) to check dedupe / pause / retry on the running worker."""
+    out = []
+    for i in range(body.count):
+        job, created = jobs.enqueue(s, "selftest", f"selftest:{body.key}:{i}", body.model_dump(exclude={"count", "key"}), resource="selftest")
+        out.append({"job_id": job.id, "created": created})
+    return out
+
+
 @app.post("/api/jobs/{job_id}/retry")
 def retry_job(job_id: int, s: Session = Depends(db)):
     j = jobs.retry(s, job_id)

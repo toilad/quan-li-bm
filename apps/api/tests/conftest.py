@@ -53,7 +53,7 @@ def clean_db(_env):
 
     google._token_cache.clear()
     with engine().begin() as c:
-        c.execute(text("TRUNCATE job_logs, sheet_writes, jobs, pdf_documents, site_choices RESTART IDENTITY CASCADE"))
+        c.execute(text("TRUNCATE job_logs, sheet_writes, jobs, pdf_documents, site_choices, app_settings RESTART IDENTITY CASCADE"))
         c.execute(text("UPDATE root_domains SET selected = false"))
     yield
 

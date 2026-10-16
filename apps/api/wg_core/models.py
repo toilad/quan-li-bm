@@ -108,3 +108,11 @@ class RootDomain(Base):
     suspended: Mapped[bool] = mapped_column(Boolean, default=False)
     selected: Mapped[bool] = mapped_column(Boolean, default=False)  # ticked by the owner; nothing pre-ticked
     source: Mapped[str] = mapped_column(String(20), default="seed")  # seed|inet_api
+
+
+class AppSetting(Base):
+    """Small key/value store: queue pause flags, the Drive folder the app created, etc."""
+
+    __tablename__ = "app_settings"
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)

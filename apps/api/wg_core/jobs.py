@@ -4,6 +4,8 @@
 - claim(): SELECT … FOR UPDATE SKIP LOCKED, and at most one running job per `resource` (e.g. a nick).
 - run_one(): calls the handler for the job kind. Handlers advance `job.state` step by step and commit
   after each step, so a crash or retry resumes exactly where it stopped.
+- pause: per kind (or "*" = everything). Paused kinds are not claimed, and a running job stops
+  before its next step (state kept) — "the current step finishes, then it holds".
 - Error mapping: NotConfigured/NotAvailable → blocked, Transient → retry with backoff,
   Conflict → conflict, anything else → failed. Nothing is ever reported as done unless the handler returned.
 """
@@ -19,7 +21,27 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .db import session_scope
 from .integrations.errors import Conflict, NotAvailable, NotConfigured, Transient
-from .models import Job, JobLog
+from .models import AppSetting, Job, JobLog
+
+PAUSE_KEY = "paused_kinds"
+
+
+class Paused(Exception):
+    """Raised by JobContext.step() when the job kind was paused; the job goes back to the queue."""
+
+
+def paused_kinds(session: Session) -> set[str]:
+    row = session.get(AppSetting, PAUSE_KEY, populate_existing=True)
+    return set((row.value or {}).get("kinds", [])) if row else set()
+
+
+def set_paused(session: Session, kind: str, on: bool) -> set[str]:
+    row = session.get(AppSetting, PAUSE_KEY) or AppSetting(key=PAUSE_KEY, value={"kinds": []})
+    kinds = set(row.value.get("kinds", []))
+    (kinds.add if on else kinds.discard)(kind)
+    row.value = {"kinds": sorted(kinds)}
+    session.merge(row)
+    return kinds
 
 WORKER_ID = f"{socket.gethostname()}"
 HANDLERS: dict[str, Callable[["JobContext"], None]] = {}
@@ -50,6 +72,9 @@ class JobContext:
         self.session.flush()
 
     def step(self, name: str):
+        kinds = paused_kinds(self.session)
+        if "*" in kinds or self.job.kind in kinds:
+            raise Paused(name)
         self.job.step = name
         self.checkpoint()
 
@@ -86,15 +111,18 @@ def retry(session: Session, job_id: int) -> Job:
 
 
 def claim(session: Session) -> Job | None:
+    paused = paused_kinds(session)
+    if "*" in paused:
+        return None
     row = session.execute(text("""
         SELECT id FROM jobs j
-        WHERE j.status = 'queued' AND j.run_after <= now()
+        WHERE j.status = 'queued' AND j.run_after <= now() AND NOT (j.kind = ANY(CAST(:paused AS text[])))
           AND (j.resource IS NULL OR NOT EXISTS (
                 SELECT 1 FROM jobs r WHERE r.resource = j.resource AND r.status = 'running'))
         ORDER BY j.run_after, j.id
         FOR UPDATE SKIP LOCKED
         LIMIT 1
-    """)).first()
+    """), {"paused": list(paused)}).first()
     if not row:
         return None
     job = session.get(Job, row[0])
@@ -119,6 +147,9 @@ def run_one() -> bool:
             job.status, job.last_error = "done", None
             if job.state.get("outcome") == "conflict":
                 job.status = "conflict"
+        except Paused as e:
+            job.status, job.attempts = "queued", max(0, job.attempts - 1)
+            ctx.log(f"Đã tạm dừng trước bước “{e}” — các bước đã xong được giữ", "warn")
         except (NotConfigured, NotAvailable) as e:
             job.status, job.last_error = "blocked", str(e)
             ctx.log(str(e), "err")

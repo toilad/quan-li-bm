@@ -2,6 +2,7 @@
 from .modules.domains import service as domains  # noqa: F401
 from .modules.pdf import service as pdf  # noqa: F401
 from .modules.websites import service as websites  # noqa: F401
+from . import selftest  # noqa: F401
 
 
 def setup():
