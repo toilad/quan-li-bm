@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
-import { KeyRound, Save, Trash2, ShieldCheck, FileSpreadsheet, Bot, Server, Users, Link2, PlugZap, CheckCircle2, AlertCircle, Copy } from "lucide-react";
+import { KeyRound, Save, Trash2, ShieldCheck, FileSpreadsheet, Bot, Server, Users, Link2, PlugZap, CheckCircle2, AlertCircle, Copy, Image as ImageIcon } from "lucide-react";
 import { API_URL, api, errorText } from "@/lib/api";
 import { DnsWriteCard } from "./dns-write";
 
@@ -13,6 +13,7 @@ type Msg = { tone: "ok" | "err" | "info"; text: string } | null;
 const GROUPS: { key: string; title: string; icon: typeof Bot; note: string }[] = [
   { key: "google", title: "Google Sheets & Drive", icon: FileSpreadsheet, note: "OAuth của chính anh: quyền Sheets + chỉ các file do app tạo trên Drive." },
   { key: "ai", title: "AI (Anthropic)", icon: Bot, note: "Dùng để đọc phôi scan và viết nội dung website." },
+  { key: "photos", title: "Ảnh cho website (Pexels)", icon: ImageIcon, note: "Khoá miễn phí tại pexels.com/api. Ảnh tải về và upload kèm web; chân trang ghi nguồn Pexels + tên nhiếp ảnh gia. Chưa có khoá → web dùng khung màu." },
   { key: "server", title: "Máy chủ", icon: Server, note: "Địa chỉ công khai khi đưa app lên server (dùng cho OAuth redirect)." },
   { key: "nick:n1", title: "Nick iNET-1", icon: Users, note: "Khoá iNET + user/token cPanel của hosting nick này." },
   { key: "nick:n2", title: "Nick iNET-2", icon: Users, note: "Khoá iNET + user/token cPanel của hosting nick này." },
@@ -89,6 +90,12 @@ export function ApiSettings() {
                   <Btn onClick={() => run("ai", "Đang hỏi Models API", () => api.get("/api/ai/check"),
                     (r: { id: string; display_name: string; max_input_tokens: number; sdk: string }) => `Model ${r.id} (${r.display_name}) có với khoá này · ngữ cảnh ${r.max_input_tokens?.toLocaleString?.() ?? "?"} token · SDK ${r.sdk}`)}>
                     <PlugZap className="size-4" /> Kiểm tra model
+                  </Btn>
+                )}
+                {g.key === "photos" && (
+                  <Btn onClick={() => run("photos", "Đang thử 1 lượt tìm ảnh Pexels", () => api.get("/api/photos/check"),
+                    (r: { found: number; remaining: string | null }) => `Khoá Pexels dùng được · còn ${r.remaining ?? "?"} lượt gọi trong tháng`)}>
+                    <PlugZap className="size-4" /> Kiểm tra khoá
                   </Btn>
                 )}
                 {g.key.startsWith("nick:") && (

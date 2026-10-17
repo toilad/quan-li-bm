@@ -69,6 +69,17 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
   Vì vậy em chỉ hiện phiên bản để đối chiếu, không tự đặt ngưỡng tối thiểu.
   Nguồn: https://api.docs.cpanel.net/openapi/cpanel/operation/get_stats
 
+## Pexels — ảnh cho website
+
+Nguồn: https://www.pexels.com/api/documentation/ (tra 2026-10-17)
+- ✔ Header `Authorization: <khoá>`. `GET https://api.pexels.com/v1/search?query=&orientation=landscape|portrait|square&per_page=(≤80)&page=`.
+- ✔ Mỗi ảnh có `src`: `original`, `large2x`, `large` (940×650), `medium`, `small`, `portrait` (800×1200), `landscape` (1200×627), `tiny`.
+  Ngoài ra có `alt`, `photographer`, `photographer_url`, `url`.
+- ✔ Giới hạn 200 yêu cầu/giờ, 20.000/tháng. Header `X-Ratelimit-*` chỉ có ở phản hồi 2xx.
+- ✔ Hướng dẫn: hiện link nổi bật về Pexels và ghi tên nhiếp ảnh gia khi có thể.
+  App ghi "Photos by … on Pexels" ở chân trang mỗi web.
+- Tài liệu không nói về hot-link. App tải ảnh về và upload kèm web, chỉ phần xem trước trong app mới tải thẳng từ Pexels.
+
 ## Ảnh hưởng tới thiết kế
 
 | Bước | Khả năng |

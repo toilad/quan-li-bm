@@ -106,8 +106,9 @@ def media(d: dict, w: int, h: int, slot: str, cls: str, alt: str = "") -> str:
     """A photo only when one was supplied for this slot (files shipped with the site, never a hot-linked random
     image service — loremflickr, used by the legacy app, returns HTTP 500). Otherwise a gradient panel with an icon,
     so a page never shows a broken image."""
-    src = (d.get("photos") or {}).get(slot)
-    if src:
+    ph = (d.get("photos") or {}).get(slot)
+    if ph:
+        src, alt = (ph, alt) if isinstance(ph, str) else (ph["src"], ph.get("alt") or alt)
         return f'<img src="{escape(src)}" alt="{escape(alt)}" width="{w}" height="{h}" class="{cls}" loading="lazy">'
     art_cls = cls.replace("object-cover", "").strip()
     background = "absolute" in art_cls  # behind text: no icon, the text is the subject
@@ -472,6 +473,16 @@ def contact_band(c: dict, d: dict, content: dict) -> str:
         '  </div>\n</section>\n')
 
 
+def photo_credit(d: dict) -> str:
+    """Pexels guidelines: a visible link to Pexels and credit to the photographers."""
+    if not d.get("credits"):
+        return ""
+    names = ", ".join(f'<a href="{escape(x["url"])}" target="_blank" rel="noopener" class="hover:text-white underline">{escape(x["name"])}</a>'
+                      for x in d["credits"])
+    return (f'<div>Photos by {names} on '
+            '<a href="https://www.pexels.com" target="_blank" rel="noopener" class="hover:text-white underline">Pexels</a></div>')
+
+
 def footer(c: dict, d: dict, content: dict) -> str:
     lines = ""
     if c.get("address"):
@@ -494,7 +505,7 @@ def footer(c: dict, d: dict, content: dict) -> str:
         f'    <div><h4 class="font-heading text-lg font-bold text-white mb-4">Contact</h4><ul class="space-y-3 text-sm">{lines}</ul>{find}</div>\n'
         f'    <div><h4 class="font-heading text-lg font-bold text-white mb-4">Quick Links</h4><ul class="space-y-2 text-sm">{links}</ul></div>\n'
         '  </div>\n'
-        f'  <div class="border-t border-white/10 py-6 text-center text-xs">&copy; {date.today().year} {escape(c["company"])}. All rights reserved.</div>\n'
+        f'  <div class="border-t border-white/10 py-6 text-center text-xs space-y-1"><div>&copy; {date.today().year} {escape(c["company"])}. All rights reserved.</div>{photo_credit(d)}</div>\n'
         '</footer>\n</body>\n</html>\n')
 
 
@@ -609,13 +620,15 @@ def page_terms(c: dict, d: dict, content: dict) -> str:
     ])
 
 
-def render_site(company: dict, content: dict, template: str, photos: dict | None = None) -> dict[str, bytes]:
+def render_site(company: dict, content: dict, template: str, photos: dict | None = None,
+                credits: list[dict] | None = None) -> dict[str, bytes]:
     """company: {company, domain, phone, email (verified only), address}. content: the checked AI copy.
-    photos: optional {slot: relative file path} for images shipped with the site. → {filename: bytes}."""
+    photos: optional {slot: file path or {src, alt}} (files shipped with the site; URLs only in the in-app preview).
+    credits: [{name, url}] of the photographers (Pexels guidelines). → {filename: bytes}."""
     if template not in BY_ID:
         raise ValueError(f"Unknown template {template}")
     c = dict(company)
-    d = {**design(company, template), "photos": photos or {}}
+    d = {**design(company, template), "photos": photos or {}, "credits": credits or []}
     content = {**content, "business_hours": HOURS_TEXT}
     pages = {"index.html": page_home(c, d, content), "about.html": page_about(c, d, content), "faq.html": page_faq(c, d, content),
              "contact.html": page_contact(c, d, content), "privacy.html": page_privacy(c, d, content), "terms.html": page_terms(c, d, content)}

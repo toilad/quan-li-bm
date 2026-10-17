@@ -23,6 +23,7 @@ def integration_status(s: Session) -> dict:
     }
     key = cfg("ANTHROPIC_API_KEY")
     ai = {"configured": bool(key), "model": cfg("AI_MODEL", st.ai_model), "missing": [] if key else ["ANTHROPIC_API_KEY"]}
+    photos = {"configured": bool(cfg("PEXELS_API_KEY")), "provider": "Pexels", "missing": [] if cfg("PEXELS_API_KEY") else ["PEXELS_API_KEY"]}
     nicks = []
     for n in s.scalars(select(Nick).order_by(Nick.id)):
         k = n.id.upper()
@@ -35,6 +36,7 @@ def integration_status(s: Session) -> dict:
     return {
         "google": google,
         "ai": ai,
+        "photos": photos,
         "nicks": nicks,
         "unavailable": [
             {"what": "Bản ghi A cho miền dùng DNS của hosting cPanel", "why": "DNS::mass_edit_zone có trong tài liệu cPanel nhưng chưa triển khai"},

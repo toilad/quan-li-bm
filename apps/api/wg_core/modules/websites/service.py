@@ -4,15 +4,17 @@ from sqlalchemy import String, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...config import settings
+from ...runtime_config import get as cfg
 from ...db import Base
-from ...integrations import ai, net
+from ...integrations import ai, net, pexels
 from ...integrations.cpanel import CPanel
-from ...integrations.errors import Conflict, Permanent, Transient
+from ...integrations.errors import Conflict, NotConfigured, Permanent, Transient
 from ...integrations.google import Sheets
 from ...jobs import JobContext, enqueue, handler
 from ...models import Nick, RootDomain, SheetWrite
 from .content_check import problems
-from .brand_render import render_site
+from . import photos
+from .brand_render import design, render_site
 from .legacy_render import theme_name
 from .templates import BY_ID, detect
 
@@ -143,12 +145,31 @@ def _build(ctx: JobContext):
         ctx.checkpoint(copy=copy)
         ctx.log("Nội dung đạt kiểm tra: không giải thưởng / khách hàng / số liệu bịa", "ok")
 
+    out = settings().data_dir / "sites" / domain
+    if "photos" not in st:
+        ctx.step("Lấy ảnh (Pexels)")
+        out.mkdir(parents=True, exist_ok=True)
+        try:
+            chosen = photos.choose(domain, template.id, design({"domain": domain}, template.id))
+            for p in chosen:
+                (out / p["file"]).write_bytes(pexels.download(p["src"]))
+            names = ", ".join(sorted({p["photographer"] for p in chosen if p["photographer"]}))
+            ctx.log(f"Pexels: {len(chosen)} ảnh ({names}) — đã tải về, upload kèm web", "ok")
+        except NotConfigured:
+            if cfg("PEXELS_API_KEY"):  # a key is set but refused: stop, do not publish silently without photos
+                raise
+            chosen = []
+            ctx.log("Chưa cấu hình Pexels (Cài đặt API) — web dùng khung màu thay ảnh", "warn")
+        ctx.checkpoint(photos=chosen)
+
     if not st.get("uploaded"):
         ctx.step(f"Dựng HTML ({template.name}) + upload")
         company = {"company": row.cells["A"], "domain": domain, "phone": row.cells["D"], "email": email_of(s, row.cells),
                    "address": address_of(row.cells)}
-        files = render_site(company, st["copy"], template.id)
-        out = settings().data_dir / "sites" / domain
+        chosen = st.get("photos") or []
+        files = render_site(company, st["copy"], template.id,
+                            photos={p["slot"]: {"src": p["file"], "alt": p["alt"]} for p in chosen}, credits=photos.credits(chosen))
+        files.update({p["file"]: (out / p["file"]).read_bytes() for p in chosen})
         out.mkdir(parents=True, exist_ok=True)
         for name, data in files.items():
             (out / name).write_bytes(data)
@@ -157,7 +178,8 @@ def _build(ctx: JobContext):
             reasons = "; ".join(f'{u.get("file")}: {u.get("reason")}' for u in res.get("uploads", []) if u.get("reason"))
             raise Permanent(f"Upload không hoàn tất (không ghi đè file có sẵn): {reasons}")
         ctx.checkpoint(uploaded=True, built_template=template.id)
-        ctx.log(f"Fileman::upload_files → {st['doc_root']} · {len(files)} trang · mẫu {template.name}", "ok")
+        pages = sum(1 for n in files if n.endswith('.html'))
+        ctx.log(f"Fileman::upload_files → {st['doc_root']} · {pages} trang + {len(chosen)} ảnh · mẫu {template.name}", "ok")
 
     if not st.get("https_ok"):
         ctx.step("Bật SSL (AutoSSL) + kiểm tra HTTPS")

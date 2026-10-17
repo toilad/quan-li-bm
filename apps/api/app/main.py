@@ -389,14 +389,57 @@ PREVIEW_COPY = {
 }
 
 
+TEMPLATE_IDS = {t.id for t in TEMPLATES}
+PREVIEW_PHOTO_HOURS = 24
+
+
+def _preview_photos(domain: str, template: str) -> list[dict]:
+    """Same choice as the build (cached a day per domain + template, so previews cost no extra Pexels requests)."""
+    import hashlib
+    from datetime import datetime, timedelta, timezone
+
+    from wg_core.integrations.errors import IntegrationError
+    from wg_core.models import AppSetting
+    from wg_core.modules.websites.brand_render import design
+
+    if not cfg("PEXELS_API_KEY"):
+        return []
+    key = "photo_preview:" + hashlib.sha256(f"{template}|{domain}".encode()).hexdigest()[:40]
+    with session_scope() as s:
+        row = s.get(AppSetting, key)
+        if row and datetime.now(timezone.utc) - datetime.fromisoformat(row.value["at"]) < timedelta(hours=PREVIEW_PHOTO_HOURS):
+            return row.value["photos"]
+    try:
+        chosen = websites.photos.choose(domain, template, design({"domain": domain}, template))
+    except IntegrationError:
+        return []  # the preview still works, with the gradient panels
+    with session_scope() as s:
+        s.merge(AppSetting(key=key, value={"at": datetime.now(timezone.utc).isoformat(), "photos": chosen}))
+    return chosen
+
+
+@app.get("/api/photos/check")
+def photos_check():
+    """Read-only: one small Pexels search to confirm the key works (1 of the 200 requests / hour)."""
+    from wg_core.integrations import pexels
+
+    r = pexels.search("office", "landscape", per_page=1)
+    return {"ok": True, "found": len(r["photos"]), "remaining": r["remaining"]}
+
+
 @app.get("/api/websites/preview", response_class=HTMLResponse)
 def web_preview(template: str, domain: str = "example.com", company: str = "Example Company LLC", phone: str = "",
                 address: str = "", page: str = "index.html"):
-    """The real template output for this domain (same renderer and design the build will use), with placeholder copy."""
+    """The real template output for this domain (same renderer, design and Pexels photos the build will use), with
+    placeholder copy. In this owner-only preview the photos load from Pexels; the build ships them as files."""
     from wg_core.modules.websites.brand_render import render_site
 
+    if template not in TEMPLATE_IDS:
+        raise HTTPException(404)
+    chosen = _preview_photos(domain.lower(), template)
     files = render_site({"company": company, "domain": domain.lower(), "phone": phone, "email": "", "address": address},
-                        PREVIEW_COPY, template)
+                        PREVIEW_COPY, template, photos={p["slot"]: {"src": p["src"], "alt": p["alt"]} for p in chosen},
+                        credits=websites.photos.credits(chosen))
     if page not in files or not page.endswith(".html"):
         raise HTTPException(404)
     return HTMLResponse(files[page].decode("utf-8"))
