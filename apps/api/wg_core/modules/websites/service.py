@@ -4,9 +4,8 @@ from sqlalchemy import String, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...config import settings
-from ...runtime_config import get as cfg
 from ...db import Base
-from ...integrations import ai, net, pixabay
+from ...integrations import ai, net
 from ...integrations.cpanel import CPanel
 from ...integrations.errors import Conflict, NotConfigured, Permanent, Transient
 from ...integrations.google import Sheets
@@ -147,19 +146,19 @@ def _build(ctx: JobContext):
 
     out = settings().data_dir / "sites" / domain
     if "photos" not in st:
-        ctx.step("Lấy ảnh (Pixabay)")
+        ctx.step("Lấy ảnh (Pexels / Pixabay)")
         out.mkdir(parents=True, exist_ok=True)
         try:
             chosen = photos.choose(domain, template.id, design({"domain": domain}, template.id))
             for p in chosen:
-                (out / p["file"]).write_bytes(pixabay.download(p["src"]))
+                (out / p["file"]).write_bytes(photos.download(p))
             names = ", ".join(sorted({p["photographer"] for p in chosen if p["photographer"]}))
-            ctx.log(f"Pixabay: {len(chosen)} ảnh ({names}) — đã tải về, upload kèm web", "ok")
+            ctx.log(f"{chosen[0]['provider'].capitalize() if chosen else 'Ảnh'}: {len(chosen)} ảnh ({names}) — đã tải về, upload kèm web", "ok")
         except NotConfigured:
-            if cfg("PIXABAY_API_KEY"):  # a key is set but refused: stop, do not publish silently without photos
+            if photos.provider_name():  # a key is set but refused: stop, do not publish silently without photos
                 raise
             chosen = []
-            ctx.log("Chưa cấu hình Pixabay (Cài đặt API) — web dùng khung màu thay ảnh", "warn")
+            ctx.log("Chưa cấu hình nguồn ảnh Pexels/Pixabay (Cài đặt API) — web dùng khung màu thay ảnh", "warn")
         ctx.checkpoint(photos=chosen)
 
     if not st.get("uploaded"):

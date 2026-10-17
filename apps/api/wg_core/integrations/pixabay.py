@@ -17,7 +17,7 @@ from .errors import NotConfigured, Permanent, Transient
 API = "https://pixabay.com/api/"
 IMAGE_HOSTS = ("pixabay.com", "cdn.pixabay.com")
 ORIENTATION = {"portrait": "vertical", "landscape": "horizontal", "square": "all"}
-SITE = "https://pixabay.com/"
+NAME, SITE = "Pixabay", "https://pixabay.com/"
 
 
 def _key() -> str:

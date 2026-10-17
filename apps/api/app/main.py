@@ -390,11 +390,11 @@ PREVIEW_COPY = {
 
 
 TEMPLATE_IDS = {t.id for t in TEMPLATES}
-PREVIEW_PHOTO_HOURS = 23  # Pixabay: cache searches 24 h; webformat links last 24 h
+PREVIEW_PHOTO_HOURS = 23  # Pixabay: cache searches 24 h, its links last 24 h; Pexels has no such limit
 
 
 def _preview_photos(domain: str, template: str) -> list[dict]:
-    """Same choice as the build (cached a day per domain + template, so previews cost no extra Pixabay requests)."""
+    """Same choice as the build (cached a day per domain + template, so previews cost no extra photo API requests)."""
     import hashlib
     from datetime import datetime, timedelta, timezone
 
@@ -402,9 +402,10 @@ def _preview_photos(domain: str, template: str) -> list[dict]:
     from wg_core.models import AppSetting
     from wg_core.modules.websites.brand_render import design
 
-    if not cfg("PIXABAY_API_KEY"):
+    provider = websites.photos.provider_name()
+    if not provider:
         return []
-    key = "photo_preview:" + hashlib.sha256(f"{template}|{domain}".encode()).hexdigest()[:40]
+    key = "photo_preview:" + hashlib.sha256(f"{provider}|{template}|{domain}".encode()).hexdigest()[:40]
     with session_scope() as s:
         row = s.get(AppSetting, key)
         if row and datetime.now(timezone.utc) - datetime.fromisoformat(row.value["at"]) < timedelta(hours=PREVIEW_PHOTO_HOURS):
@@ -419,19 +420,20 @@ def _preview_photos(domain: str, template: str) -> list[dict]:
 
 
 @app.get("/api/photos/check")
-def photos_check():
-    """Read-only: one small Pixabay search to confirm the key works (limit: 100 requests / minute)."""
-    from wg_core.integrations import pixabay
-
-    r = pixabay.search("office", "landscape", per_page=3)
-    return {"ok": True, "found": len(r["photos"]), "remaining": r["remaining"]}
+def photos_check(provider: str = "pixabay"):
+    """Read-only: one small search to confirm a photo key works (1 request)."""
+    if provider not in websites.photos.PROVIDERS:
+        raise HTTPException(404)
+    r = websites.photos.PROVIDERS[provider].search("office", "landscape", per_page=3)
+    return {"ok": True, "provider": provider, "found": len(r["photos"]), "remaining": r["remaining"],
+            "in_use": websites.photos.provider_name() == provider}
 
 
 @app.get("/api/websites/preview", response_class=HTMLResponse)
 def web_preview(template: str, domain: str = "example.com", company: str = "Example Company LLC", phone: str = "",
                 address: str = "", page: str = "index.html"):
-    """The real template output for this domain (same renderer, design and Pixabay photos the build will use), with
-    placeholder copy. In this owner-only preview the photos load from Pixabay (temporary display is allowed); the build ships them as files."""
+    """The real template output for this domain (same renderer, design and photos the build will use), with
+    placeholder copy. In this owner-only preview the photos load from Pexels / Pixabay (temporary display); the build ships them as files."""
     from wg_core.modules.websites.brand_render import render_site
 
     if template not in TEMPLATE_IDS:

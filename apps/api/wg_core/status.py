@@ -23,7 +23,8 @@ def integration_status(s: Session) -> dict:
     }
     key = cfg("ANTHROPIC_API_KEY")
     ai = {"configured": bool(key), "model": cfg("AI_MODEL", st.ai_model), "missing": [] if key else ["ANTHROPIC_API_KEY"]}
-    photos = {"configured": bool(cfg("PIXABAY_API_KEY")), "provider": "Pixabay", "missing": [] if cfg("PIXABAY_API_KEY") else ["PIXABAY_API_KEY"]}
+    provider = "Pexels" if cfg("PEXELS_API_KEY") else "Pixabay" if cfg("PIXABAY_API_KEY") else None
+    photos = {"configured": bool(provider), "provider": provider, "missing": [] if provider else ["PEXELS_API_KEY hoặc PIXABAY_API_KEY"]}
     nicks = []
     for n in s.scalars(select(Nick).order_by(Nick.id)):
         k = n.id.upper()

@@ -69,7 +69,19 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
   Vì vậy em chỉ hiện phiên bản để đối chiếu, không tự đặt ngưỡng tối thiểu.
   Nguồn: https://api.docs.cpanel.net/openapi/cpanel/operation/get_stats
 
-## Pixabay — ảnh cho website
+## Pexels — ảnh cho website (ưu tiên khi có khoá)
+
+Nguồn: https://www.pexels.com/api/documentation/ (tra 2026-10-17).
+Tài khoản mới hiện không được cấp khoá ("New API key issuance is currently paused"), nhưng khoá đã cấp trước đó vẫn dùng được.
+- ✔ Khoá gửi trong header `Authorization: <khoá>`, không đặt trong URL.
+- ✔ `GET https://api.pexels.com/v1/search?query=&orientation=landscape|portrait|square&per_page=(≤80)&page=`.
+- ✔ Mỗi ảnh có `src`: `portrait` (800×1200), `landscape` (1200×627), `large` (940×650)…
+  Ngoài ra có `alt`, `photographer`, `photographer_url`, `url`.
+- ✔ Giới hạn 200 yêu cầu/giờ, 20.000/tháng.
+- ✔ Hướng dẫn: hiện link nổi bật về Pexels và ghi tên nhiếp ảnh gia. App ghi "Photos by … on Pexels".
+- App tải ảnh về và upload kèm web.
+
+## Pixabay — ảnh cho website (dùng khi không có khoá Pexels)
 
 Nguồn: https://pixabay.com/api/docs/ (tra 2026-10-17).
 Pexels đã được tích hợp trước, nhưng ngày 2026-10-17 trang khoá Pexels báo "New API key issuance is currently paused", nên app chuyển sang Pixabay.

@@ -13,7 +13,7 @@ type Msg = { tone: "ok" | "err" | "info"; text: string } | null;
 const GROUPS: { key: string; title: string; icon: typeof Bot; note: string }[] = [
   { key: "google", title: "Google Sheets & Drive", icon: FileSpreadsheet, note: "OAuth của chính anh: quyền Sheets + chỉ các file do app tạo trên Drive." },
   { key: "ai", title: "AI (Anthropic)", icon: Bot, note: "Dùng để đọc phôi scan và viết nội dung website." },
-  { key: "photos", title: "Ảnh cho website (Pixabay)", icon: ImageIcon, note: "Khoá miễn phí: đăng nhập pixabay.com rồi mở pixabay.com/api/docs (khoá hiện ở mục Parameters). Ảnh tải về và upload kèm web; chân trang ghi nguồn Pixabay + tên tác giả. Chưa có khoá → web dùng khung màu." },
+  { key: "photos", title: "Ảnh cho website (Pexels / Pixabay)", icon: ImageIcon, note: "Có khoá Pexels thì dùng Pexels, không thì Pixabay. Khoá Pexels: pexels.com/api/key · khoá Pixabay: pixabay.com/api/docs (mục Parameters). Ảnh tải về và upload kèm web; chân trang ghi nguồn + tên tác giả. Chưa có khoá → web dùng khung màu." },
   { key: "server", title: "Máy chủ", icon: Server, note: "Địa chỉ công khai khi đưa app lên server (dùng cho OAuth redirect)." },
   { key: "nick:n1", title: "Nick iNET-1", icon: Users, note: "Khoá iNET + user/token cPanel của hosting nick này." },
   { key: "nick:n2", title: "Nick iNET-2", icon: Users, note: "Khoá iNET + user/token cPanel của hosting nick này." },
@@ -93,10 +93,15 @@ export function ApiSettings() {
                   </Btn>
                 )}
                 {g.key === "photos" && (
-                  <Btn onClick={() => run("photos", "Đang thử 1 lượt tìm ảnh Pixabay", () => api.get("/api/photos/check"),
-                    (r: { found: number; remaining: string | null }) => `Khoá Pixabay dùng được · còn ${r.remaining ?? "?"} lượt trong phút này`)}>
-                    <PlugZap className="size-4" /> Kiểm tra khoá
-                  </Btn>
+                  <>
+                    {(["pexels", "pixabay"] as const).map((p) => (
+                      <Btn key={p} onClick={() => run("photos", `Đang thử 1 lượt tìm ảnh ${p === "pexels" ? "Pexels" : "Pixabay"}`, () => api.get(`/api/photos/check?provider=${p}`),
+                        (r: { found: number; remaining: string | null; in_use: boolean }) =>
+                          `Khoá ${p === "pexels" ? "Pexels" : "Pixabay"} dùng được · còn ${r.remaining ?? "?"} lượt${r.in_use ? " · đang dùng cho web" : ""}`)}>
+                        <PlugZap className="size-4" /> Kiểm tra {p === "pexels" ? "Pexels" : "Pixabay"}
+                      </Btn>
+                    ))}
+                  </>
                 )}
                 {g.key.startsWith("nick:") && (
                   <Btn onClick={() => run(g.key, "Đang đọc cPanel + iNET (chỉ đọc)", () => api.post(`/api/domains/check/${g.key.slice(5)}`),

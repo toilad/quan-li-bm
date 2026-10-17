@@ -140,5 +140,6 @@ def test_preview_shows_the_same_photos_and_caches_the_search(client, key):
 def test_key_check_is_read_only_and_reports_the_remaining_quota(client, key):
     with respx.mock(assert_all_called=False) as m:
         search, img = _pixabay(m)
-        r = client.get("/api/photos/check").json()
-    assert r == {"ok": True, "found": 30, "remaining": "99"} and search.call_count == 1 and not img.called
+        r = client.get("/api/photos/check", params={"provider": "pixabay"}).json()
+    assert r == {"ok": True, "provider": "pixabay", "found": 30, "remaining": "99", "in_use": True}
+    assert search.call_count == 1 and not img.called

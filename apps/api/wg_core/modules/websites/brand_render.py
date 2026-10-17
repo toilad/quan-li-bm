@@ -474,13 +474,14 @@ def contact_band(c: dict, d: dict, content: dict) -> str:
 
 
 def photo_credit(d: dict) -> str:
-    """Show where the photos come from (Pixabay API rules) and credit the photographers."""
+    """Show where the photos come from and credit the photographers (asked by both Pexels and Pixabay)."""
     if not d.get("credits"):
         return ""
     names = ", ".join(f'<a href="{escape(x["url"])}" target="_blank" rel="noopener" class="hover:text-white underline">{escape(x["name"])}</a>'
                       for x in d["credits"])
+    source, source_url = d["credits"][0].get("source", "Pixabay"), d["credits"][0].get("source_url", "https://pixabay.com/")
     return (f'<div>Photos by {names} on '
-            '<a href="https://pixabay.com/" target="_blank" rel="noopener" class="hover:text-white underline">Pixabay</a></div>')
+            f'<a href="{escape(source_url)}" target="_blank" rel="noopener" class="hover:text-white underline">{escape(source)}</a></div>')
 
 
 def footer(c: dict, d: dict, content: dict) -> str:
