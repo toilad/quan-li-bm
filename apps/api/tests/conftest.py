@@ -52,6 +52,9 @@ def clean_db(_env):
     from wg_core.integrations import google
 
     google._token_cache.clear()
+    from wg_core.integrations import net
+
+    net.system_resolve = lambda name: []  # never a real DNS lookup in tests
     from wg_core import runtime_config
 
     runtime_config._cache.clear()

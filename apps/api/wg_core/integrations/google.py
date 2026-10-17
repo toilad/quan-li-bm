@@ -157,7 +157,13 @@ def access_token(client: httpx.Client) -> str:
 
 
 class _Transport(httpx.HTTPTransport):
-    """Network errors (timeout, reset, DNS) become Transient, so the job retries instead of failing."""
+    """Network errors (timeout, reset, DNS) become Transient, so the job retries instead of failing.
+    IPv4 like every other integration (see integrations/http.py)."""
+
+    def __init__(self, **kw):
+        from .http import local_address
+
+        super().__init__(local_address=local_address(), **kw)
 
     def handle_request(self, request):
         try:

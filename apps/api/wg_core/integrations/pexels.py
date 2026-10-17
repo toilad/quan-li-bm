@@ -11,6 +11,8 @@ Same normalised output as pixabay.py, so the photo picker works with either.
 """
 import httpx
 
+from . import http
+
 from ..runtime_config import get as cfg
 from .errors import NotConfigured, Permanent, Transient
 
@@ -48,7 +50,7 @@ def search(query: str, orientation: str, per_page: int = 30, page: int = 1) -> d
     """orientation: portrait | landscape | square. Returns {"photos": [normalised], "remaining": header or None}."""
     params = {"query": query, "orientation": orientation, "per_page": min(per_page, 80), "page": page}
     try:
-        with httpx.Client(timeout=30) as c:
+        with http.client(timeout=30) as c:
             r = c.get(f"{API}/search", params=params, headers={"Authorization": _key()})
     except httpx.TransportError as e:
         raise Transient(f"Pexels search: lỗi mạng ({type(e).__name__})") from None
@@ -62,7 +64,7 @@ def download(url: str) -> bytes:
     if httpx.URL(url).host not in IMAGE_HOSTS:
         raise Permanent(f"Pexels: địa chỉ ảnh không thuộc Pexels ({httpx.URL(url).host})")
     try:
-        with httpx.Client(timeout=60, follow_redirects=True) as c:
+        with http.client(timeout=60, follow_redirects=True) as c:
             r = c.get(url)
     except httpx.TransportError as e:
         raise Transient(f"Pexels ảnh: lỗi mạng ({type(e).__name__})") from None

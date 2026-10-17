@@ -92,6 +92,9 @@ def install_doh(mock, answers: dict[str, list[str]]):
         ips = answers.get(name, [])
         return httpx.Response(200, json={"Status": 0, "Answer": [{"name": name, "type": 1, "data": ip} for ip in ips]})
 
+    from wg_core.integrations import net
+
+    net.system_resolve = lambda name: list(answers.get(name, []))  # same answers as the fake DoH
     mock.get(url__startswith="https://cloudflare-dns.com/dns-query").mock(side_effect=doh)
     mock.get(url__startswith="https://dns.google/resolve").mock(side_effect=doh)
 

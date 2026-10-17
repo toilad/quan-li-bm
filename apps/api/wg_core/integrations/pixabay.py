@@ -11,6 +11,8 @@ The key travels in the query string, so request URLs are never logged or put in 
 """
 import httpx
 
+from . import http
+
 from ..runtime_config import get as cfg
 from .errors import NotConfigured, Permanent, Transient
 
@@ -53,7 +55,7 @@ def search(query: str, orientation: str, per_page: int = 30, page: int = 1) -> d
     params = {"key": _key(), "q": query[:100], "image_type": "photo", "orientation": ORIENTATION[orientation],
               "safesearch": "true", "per_page": max(3, min(per_page, 200)), "page": page}
     try:
-        with httpx.Client(timeout=30) as c:
+        with http.client(timeout=30) as c:
             r = c.get(API, params=params)
     except httpx.TransportError as e:
         raise Transient(f"Pixabay search: lỗi mạng ({type(e).__name__})") from None
@@ -70,7 +72,7 @@ def download(url: str) -> bytes:
     if httpx.URL(url).host not in IMAGE_HOSTS:
         raise Permanent(f"Pixabay: địa chỉ ảnh không thuộc Pixabay ({httpx.URL(url).host})")
     try:
-        with httpx.Client(timeout=60, follow_redirects=True) as c:
+        with http.client(timeout=60, follow_redirects=True) as c:
             r = c.get(url)
     except httpx.TransportError as e:
         raise Transient(f"Pixabay ảnh: lỗi mạng ({type(e).__name__})") from None

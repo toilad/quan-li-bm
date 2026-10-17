@@ -19,6 +19,8 @@ from typing import Callable
 
 import httpx
 
+from . import http
+
 from ..config import env_secret
 from .errors import Conflict, NotAvailable, NotConfigured, Permanent, Transient
 
@@ -64,7 +66,7 @@ class Inet:
     def _call(self, method: str, path: str, params: dict | None = None, json: dict | None = None, note: str = ""):
         shown = path + ("?" + "&".join(f"{k}={v}" for k, v in params.items()) if params else "")
         try:
-            with httpx.Client(timeout=60) as c:
+            with http.client(timeout=60) as c:
                 r = c.request(method, BASE + path, params=params, json=json, headers={"Authorization": f"Bearer {self.key}"})
         except httpx.TransportError as e:
             self.log(f"iNET {method} {shown} → lỗi mạng: {e}", "warn")

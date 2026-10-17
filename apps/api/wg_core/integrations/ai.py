@@ -24,7 +24,13 @@ def _client() -> anthropic.Anthropic:
     key = cfg("ANTHROPIC_API_KEY")
     if not key:
         raise NotConfigured("AI (Anthropic)", ["ANTHROPIC_API_KEY"])
-    return anthropic.Anthropic(api_key=key, max_retries=2, timeout=300)
+    import httpx2
+
+    from .http import local_address
+
+    # IPv4 like every other integration (integrations/http.py); the SDK runs on httpx2.
+    http_client = anthropic.DefaultHttpxClient(transport=httpx2.HTTPTransport(local_address=local_address()))
+    return anthropic.Anthropic(api_key=key, max_retries=2, timeout=300, http_client=http_client)
 
 
 def _json_call(content: list, schema: dict, system: str, effort: str, max_tokens: int = 16000) -> dict:

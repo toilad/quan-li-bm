@@ -13,6 +13,8 @@ import re
 
 import httpx
 
+from . import http
+
 from ..config import env_secret
 from .errors import NotConfigured, Permanent, Transient
 
@@ -29,7 +31,7 @@ class CPanel:
     def _call(self, module: str, fn: str, params: dict | None = None, files: dict | None = None):
         headers = {"Authorization": f"cpanel {self.user}:{self.token}"}
         try:
-            with httpx.Client(timeout=120) as c:
+            with http.client(timeout=120) as c:
                 if files:
                     r = c.post(f"{self.base}/{module}/{fn}", headers=headers, params=params or {}, files=files)
                 else:

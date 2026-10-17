@@ -103,7 +103,10 @@ def oauth_callback(state: str = "", code: str = "", error: str = ""):
         return RedirectResponse(f"{web}?google=error&reason={urllib.parse.quote(error or 'state')}", status_code=302)
     oc = google.oauth_client()
     try:
-        r = httpx.post(google.TOKEN_URL, timeout=30, data={
+        from wg_core.integrations.http import client as http_client
+
+        with http_client(timeout=30) as hc:
+            r = hc.post(google.TOKEN_URL, data={
             "code": code, "client_id": oc["client_id"], "client_secret": oc.get("client_secret", ""), "redirect_uri": redirect_uri(),
             "grant_type": "authorization_code", "code_verifier": p["verifier"]})
     except httpx.TransportError:
