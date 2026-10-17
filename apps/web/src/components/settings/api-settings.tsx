@@ -162,6 +162,8 @@ function FieldRow({ f, onSave }: { f: Field; onSave: (value: string) => void }) 
   const [v, setV] = useState(f.secret ? "" : f.value ?? "");
   const isJson = f.name === "GOOGLE_OAUTH_CLIENT_JSON";
   useEffect(() => { if (!f.secret) setV(f.value ?? ""); }, [f.value, f.secret]);
+  const dirty = !!v.trim() && (f.secret || v !== (f.value ?? ""));
+  const submit = () => { if (!dirty) return; onSave(v); if (f.secret) setV(""); };
   return (
     <label className="block text-[12px]">
       <span className="mb-1 flex flex-wrap items-center gap-2 text-fg-muted">
@@ -176,10 +178,11 @@ function FieldRow({ f, onSave }: { f: Field; onSave: (value: string) => void }) 
             className="min-w-0 flex-1 rounded-lg border border-line bg-ink-850 px-3 py-2 font-mono text-[11.5px] outline-none focus:border-brand/60" aria-label={f.label} />
         ) : (
           <input type={f.secret ? "password" : "text"} value={v} onChange={(e) => setV(e.target.value)} autoComplete="off"
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}
             placeholder={f.secret ? (f.set ? "Đã có — nhập để thay" : "Nhập để lưu (không hiện lại)") : f.default ? `mặc định: ${f.default}` : ""}
             className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-ink-850 px-3 font-mono text-[12.5px] outline-none focus:border-brand/60" aria-label={f.label} />
         )}
-        <button onClick={(e) => { e.preventDefault(); onSave(v); if (f.secret) setV(""); }} disabled={!v.trim() || (!f.secret && v === (f.value ?? ""))}
+        <button onClick={(e) => { e.preventDefault(); submit(); }} disabled={!dirty}
           className="inline-flex items-center gap-1 rounded-lg bg-white/[0.07] px-3 text-[12px] font-semibold hover:bg-white/[0.11] disabled:opacity-40" aria-label={`Lưu ${f.label}`}>
           <Save className="size-3.5" /> Lưu
         </button>
@@ -188,6 +191,7 @@ function FieldRow({ f, onSave }: { f: Field; onSave: (value: string) => void }) 
             className="grid w-9 place-items-center rounded-lg border border-line text-fg-subtle hover:text-rose-300"><Trash2 className="size-3.5" /></button>
         )}
       </div>
+      {dirty && <span className="mt-1 block text-[11.5px] text-amber-300">Chưa lưu — bấm Lưu (hoặc Enter) để gửi lên máy chủ</span>}
     </label>
   );
 }

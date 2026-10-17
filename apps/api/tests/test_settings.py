@@ -119,3 +119,14 @@ def test_client_id_and_secret_fields_are_enough_to_connect(client):
         back = client.get("/api/google/oauth/callback", params={"state": q["state"][0], "code": "c"})
     assert back.headers["location"].endswith("google=connected")
     assert urllib.parse.parse_qs(tok.calls[0].request.content.decode())["client_secret"] == ["secret-value-xyz"]
+
+
+def test_saving_a_setting_logs_its_name_never_its_value(client, caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="qlbm.settings"):
+        assert client.put("/api/settings", json={"name": "CPANEL_TOKEN_N3", "value": "TOP-SECRET-VALUE"}).status_code == 200
+        assert client.put("/api/settings", json={"name": "CPANEL_ADDON_API_N3", "value": "nope"}).status_code == 422
+    text = caplog.text
+    assert "CPANEL_TOKEN_N3 saved" in text and "CPANEL_ADDON_API_N3 NOT saved (HTTP 422" in text
+    assert "TOP-SECRET-VALUE" not in text and "nope" not in text.split("HTTP 422")[0]

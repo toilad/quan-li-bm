@@ -14,6 +14,8 @@ import secrets
 import time
 import urllib.parse
 
+import logging
+
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
@@ -23,6 +25,8 @@ from wg_core import runtime_config
 from wg_core.db import session_scope
 from wg_core.integrations import google
 from wg_core.models import AppSetting
+
+log = logging.getLogger("qlbm.settings")  # names only — a value (secret or not) is never logged
 
 router = APIRouter()
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -53,6 +57,16 @@ class PutSetting(BaseModel):
 
 @router.put("/api/settings")
 def put_setting(body: PutSetting):
+    try:
+        out = _put_setting(body)
+    except HTTPException as e:
+        log.warning("settings: %s NOT saved (HTTP %s: %s)", body.name if body.name in runtime_config.FIELDS else "?", e.status_code, e.detail)
+        raise
+    log.warning("settings: %s %s", body.name, "saved" if out["set"] else "cleared")
+    return out
+
+
+def _put_setting(body: PutSetting):
     if body.name not in runtime_config.FIELDS:
         raise HTTPException(422, "Không có trường cài đặt này")
     if body.name in runtime_config.SET_ONLY_BY_SERVER and body.value.strip():
