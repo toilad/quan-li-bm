@@ -35,6 +35,15 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - xem trước trong app = đúng HTML sẽ dựng;
   - chưa có khoá ảnh thì dùng khung màu.
 
+### Đã chạy thật với tài khoản của anh (17/10/2026, chỉ đọc)
+- **Google đã kết nối** (OAuth Web, tài khoản vantinh16082017@gmail.com, app Google Cloud “Quan Li BM” ở chế độ Testing — quyền cần kết nối lại sau 7 ngày cho tới khi có tên miền để Publish).
+- Đọc Sheet bản sao “NL 2026 (New)”, tab Phoi US, từ dòng 2:
+  - 2.863 dòng;
+  - **50 dòng chờ tạo miền** (B trống);
+  - **105 dòng chờ tạo web** (B có, C trống). Trong đó 70 dòng thuộc iNET-1/iNET-3. 35 dòng chưa biết hosting: lusterteas.com 22, th-ntp.com 7, zentrivo.top 2, và 4 dòng có **tên công ty ở cột B** thay vì tên miền.
+- Chưa ghi gì lên Sheet hay Drive.
+- **Mạng của máy này**: IPv6 không đi ra ngoài được, và DNS-over-HTTPS bị chặn. App đã chuyển sang IPv4 và dùng thêm DNS hệ thống.
+
 ## 2. Đã có code, chỉ chạy với dịch vụ giả lập (đúng cấu trúc tài liệu chính thức)
 
 | Luồng | Đã kiểm bằng giả lập | Lần đầu chạy thật cần xác nhận |
