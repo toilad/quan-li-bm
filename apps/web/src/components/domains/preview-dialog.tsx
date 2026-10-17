@@ -76,7 +76,7 @@ export function PreviewDialog({ state, dispatch, onClose }: { state: DomainState
           {noRoots && <Pill cls="text-rose-300">Chưa chọn miền gốc nào — không thể bắt đầu</Pill>}
           {fresh && (
             <Pill cls={fresh.mode === "off" ? "text-rose-300" : fresh.mode === "trial" ? "text-amber-300" : "text-emerald-300"}>
-              Ghi DNS thật: {DNS_MODE_TEXT[fresh.mode]}{fresh.mode === "trial" && fresh.trial_fqdn ? ` (${fresh.trial_fqdn})` : ""}
+              Ghi thật: {DNS_MODE_TEXT[fresh.mode]}{fresh.mode === "trial" && fresh.trial_fqdn ? ` (${fresh.trial_fqdn})` : ""}
             </Pill>
           )}
         </div>

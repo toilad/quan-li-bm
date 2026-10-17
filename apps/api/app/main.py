@@ -352,21 +352,22 @@ def domain_run(body: RunBody, s: Session = Depends(db)):
 class DnsWriteBody(BaseModel):
     enabled: bool | None = None
     trial_fqdn: str | None = None
+    ops: list[str] | None = None
 
 
 @app.get("/api/domains/dns-write")
 def dns_write_get(s: Session = Depends(db)):
     sw = dns_plan.get_switch(s)
-    return {**sw, "mode": dns_plan.mode(sw)}
+    return {**sw, "mode": dns_plan.mode(sw), "op_labels": dns_plan.OPS}
 
 
 @app.put("/api/domains/dns-write")
 def dns_write_put(body: DnsWriteBody, s: Session = Depends(db)):
     try:
-        sw = dns_plan.set_switch(s, enabled=body.enabled, trial_fqdn=body.trial_fqdn)
+        sw = dns_plan.set_switch(s, enabled=body.enabled, trial_fqdn=body.trial_fqdn, ops=body.ops)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    return {**sw, "mode": dns_plan.mode(sw)}
+    return {**sw, "mode": dns_plan.mode(sw), "op_labels": dns_plan.OPS}
 
 
 # ───────── Websites ─────────

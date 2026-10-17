@@ -1,6 +1,6 @@
-"""Real DNS writes are guarded three ways:
+"""Real DNS writes are guarded three ways (and every hosting write by wg_core/write_guard.py at the API client):
 
-1. Switch (AppSetting "dns_write"), OFF by default. Only the owner turns it on.
+1. Switch (AppSetting "dns_write"), OFF by default, with the list of writes the owner allows. Only the owner turns it on.
 2. Trial: while it is on but no trial has passed, a run may contain exactly ONE subdomain, the one the owner named.
    When that job finishes (A record + cPanel + DNS verified + B written), batch runs are allowed.
 3. Preview: before any run, a read-only check over the APIs (cPanel domain + hosting IP, the domain in THIS nick's
@@ -17,15 +17,14 @@ from ...integrations.cpanel import CPanel
 from ...integrations.errors import IntegrationError
 from ...integrations.inet import Inet, dns_provider, record_label
 from ...models import AppSetting, Nick, RootDomain
+from ... import write_guard
+from ...write_guard import DEFAULT, KEY, OPS
 
-KEY = "dns_write"
 PLAN_MINUTES = 30
-DEFAULT = {"enabled": False, "trial_fqdn": "", "trial_passed": False, "trial_job": None, "changed_at": None}
 
 
 def get_switch(s: Session) -> dict:
-    row = s.get(AppSetting, KEY)
-    return {**DEFAULT, **(row.value if row else {})}
+    return write_guard.load(s)
 
 
 def mode(sw: dict) -> str:
@@ -34,7 +33,7 @@ def mode(sw: dict) -> str:
     return "batch" if sw["trial_passed"] else "trial"
 
 
-def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None = None) -> dict:
+def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None = None, ops: list[str] | None = None) -> dict:
     from .service import LABEL_RX
 
     sw = get_switch(s)
@@ -48,7 +47,12 @@ def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None =
             if not LABEL_RX.match(label):
                 raise ValueError("Tên miền phụ chỉ gồm a–z, 0–9, “-”")
         if t != sw["trial_fqdn"]:
-            sw.update(trial_fqdn=t, trial_passed=False, trial_job=None)
+            sw.update(trial_fqdn=t, trial_passed=False, trial_job=None, web_trial_passed=False, web_trial_job=None)
+    if ops is not None:
+        bad = sorted(set(ops) - set(OPS))
+        if bad:
+            raise ValueError(f"Thao tác không có: {', '.join(bad)}")
+        sw["ops"] = [o for o in OPS if o in ops]
     if enabled is not None:
         if enabled and not sw["trial_passed"] and not sw["trial_fqdn"]:
             raise ValueError("Chỉ định miền thử trước khi bật ghi DNS thật")
@@ -62,7 +66,9 @@ def gate(sw: dict, fqdns: list[str]) -> str | None:
     """Why a run with these subdomains may not write DNS now (None = allowed)."""
     m = mode(sw)
     if m == "off":
-        return "Ghi DNS thật đang TẮT — anh bật ở Cài đặt › Ghi DNS thật khi duyệt chạy thử"
+        return "Ghi thật đang KHOÁ — anh mở ở Cài đặt › Ghi thật khi duyệt chạy thử"
+    if missing := [OPS[o] for o in ("dns", "host") if o not in sw["ops"]]:
+        return "Anh chưa cho phép: " + ", ".join(missing) + " (Cài đặt › Ghi thật)"
     if m == "trial" and sorted(set(fqdns)) != [sw["trial_fqdn"]]:
         return f"Đang chạy thử: chỉ được chạy đúng 1 miền thử {sw['trial_fqdn']} — chạy hàng loạt sau khi miền thử thành công"
     return None
@@ -88,26 +94,11 @@ def _check_one(it: dict, nick: Nick, cache: dict, log: list) -> dict:
 
     try:
         cp = CPanel(nick.id, nick.cpanel_host)
-        key = ("cp", root)
-        if key not in cache:
-            cache[key] = cp.creation_mode(root)
-        how = cache[key]
-        host_ip = how["ip"]
-        out["hosting_ip"], out["host_mode"] = host_ip, how["mode"]
-        where = root if how["mode"] == "subdomain" else f"miền chính {how['main']}"
-        if host_ip and host_ip != ip:
-            out["reason"] = f"IP hosting của {where} trên cPanel là {host_ip}, khác IP cấu hình cho {nick.name} ({ip}) — sửa cấu hình trước"
-            return out
-        if how["mode"] == "subdomain":
-            ok(f"cPanel: {root} có trên tài khoản" + (f", IP {host_ip}" if host_ip else ", cPanel không báo IP") + " → tạo subdomain")
-        else:
-            ok(f"cPanel: {root} không nằm trên tài khoản → tạo addon domain trên {how['main']}" + (f" (IP {host_ip})" if host_ip else ""))
-        if cp.subdomain(fqdn) or (how["mode"] == "addon" and cp.addon(fqdn)):
-            out["reason"] = f"{fqdn} đã có trên cPanel — không tạo lại"
-            return out
-        if how["mode"] == "addon" and cp.subdomain(f"{fqdn}.{how['main']}"):
-            out["reason"] = f"Đã có subdomain {fqdn}.{how['main']} — addon sẽ dùng lại thư mục cũ, không tạo"
-            return out
+        from .service import host_plan
+
+        how = host_plan(cp, root, fqdn, nick)  # read-only; stops with the reason (alias, exists, folder taken, IP…)
+        out["hosting_ip"], out["host_mode"] = how["ip"], how["mode"]
+        ok(f"cPanel: {how['say']}" + (f", IP {how['ip']}" if how["ip"] else ", cPanel không báo IP"))
 
         key = ("inet", nick.id, root)
         if key not in cache:

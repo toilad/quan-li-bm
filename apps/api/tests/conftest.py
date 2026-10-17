@@ -91,3 +91,18 @@ def client():
     with TestClient(app, follow_redirects=False) as c:
         assert c.post("/api/auth/login", json={"username": TEST_USER, "password": TEST_PASSWORD}).status_code == 200
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _writes_allowed(request, monkeypatch):
+    """Most tests exercise the flows themselves, so the owner's real-write lock (wg_core/write_guard.py) is opened for
+    them; tests marked `real_guard` keep the real lock (default: everything locked)."""
+    if request.node.get_closest_marker("real_guard"):
+        return
+    from wg_core import write_guard
+
+    monkeypatch.setattr(write_guard, "check", lambda op, fqdn: None)
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "real_guard: keep the real-write lock as in production")

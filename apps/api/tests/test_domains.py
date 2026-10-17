@@ -1,6 +1,6 @@
 import respx
 from tests.conftest import drain
-from tests.mocks import FakeSheet, cp_ok, install_doh
+from tests.mocks import FakeSheet, cp_account, cp_ok, install_doh
 
 from wg_core.db import session_scope
 from wg_core.integrations.inet import Inet
@@ -46,8 +46,10 @@ def test_same_fqdn_twice_is_one_job():
 def _routes(m, sheet, ips):
     sheet.install(m)
     install_doh(m, ips)
-    m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"result": {"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life", "type": "addon_domain"}}})
+    cp_account(m, CP)
+    m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life", "type": "addon_domain"}})
     m.get(f"{CP}/SubDomain/listsubdomains").mock(return_value=cp_ok([]))
+    m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))
     return m.get(f"{CP}/SubDomain/addsubdomain").mock(return_value=cp_ok(None))
 
 
@@ -108,7 +110,7 @@ def test_read_only_nick_check_marks_roots_on_hosting_and_in_inet():
             "main_domain": "levantoan.000web.com", "addon_domains": ["sustainlife.io.vn", "huxma.life"],
             "sub_domains": ["sustainlife.io.vn.levantoan.000web.com", "huxma.life.levantoan.000web.com", "a.huxma.life"], "parked_domains": []}))
         m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([
-            {"domain": d, "subdomain": d, "rootdomain": "levantoan.000web.com", "basedir": f"public_html/{d}"} for d in ("sustainlife.io.vn", "huxma.life")]))
+            {"domain": d, "subdomain": d, "rootdomain": "levantoan.000web.com", "fullsubdomain": f"{d}.levantoan.000web.com", "basedir": f"public_html/{d}"} for d in ("sustainlife.io.vn", "huxma.life")]))
         ver = m.get(f"{CP}/StatsBar/get_stats").mock(return_value=cp_ok([{"name": "cpanelversion", "id": "cpanelversion", "count": "11.130.0.15", "item": "cPanel Version"}]))
         inet = m.get(url__startswith="https://developers.inet.vn/api/gateway/v1/domain").mock(return_value=httpx.Response(200, json={
             "content": [{"id": 1, "name": "huxma.life"}, {"id": 2, "name": "sustainlife.io.vn"}], "totalPages": 1}))

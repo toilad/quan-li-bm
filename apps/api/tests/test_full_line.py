@@ -8,7 +8,7 @@ import hashlib
 import httpx
 import respx
 from tests.conftest import drain
-from tests.mocks import FakeInet, FakeSheet, anthropic_json, cp_ok, install_doh, install_drive
+from tests.mocks import FakeInet, FakeSheet, anthropic_json, cp_account, cp_ok, install_doh, install_drive
 from tests.test_websites import GOOD
 
 from wg_core.db import session_scope
@@ -50,8 +50,9 @@ def _cpanel(m, answers):
         answers[FQDN] = [IP]  # the stubbed A record "propagates" once the host exists
         return cp_ok(None)
 
-    m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"result": {"status": 1, "data": {
-        "documentroot": "/home/u1/public_html/huxma.life", "type": "addon_domain", "ip": IP}}})
+    cp_account(m, CP)
+    m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"status": 1, "data": {
+        "documentroot": "/home/u1/public_html/huxma.life", "type": "addon_domain", "ip": IP}})
     m.get(f"{CP}/SubDomain/listsubdomains").mock(side_effect=listsub)
     m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))  # not an addon domain
     add = m.get(f"{CP}/SubDomain/addsubdomain").mock(side_effect=addsub)
@@ -91,7 +92,7 @@ def test_pdf_to_domain_to_website_on_one_sheet():
         #     A record (ACTION_ADD) + cPanel subdomain → DNS verified → B
         with session_scope() as s:
             assert domains.set_selected(s, ["huxma.life"], True)["changed"] == ["huxma.life"]
-            dns_plan.set_switch(s, enabled=True, trial_fqdn=FQDN)
+            dns_plan.set_switch(s, enabled=True, trial_fqdn=FQDN, ops=["dns", "host", "upload", "ssl"])
         with session_scope() as s:
             plan = dns_plan.preview(s, [{"row": row, "company": "Acme Plumbing LLC", "root": "huxma.life", "label": "acme"}])
             assert plan["token"] and plan["rows"][0]["action"] == "add" and plan["rows"][0]["ip"] == IP and not patch.called

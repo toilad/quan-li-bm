@@ -26,7 +26,8 @@ def fake_inet(records=None, ns=None, drop_on_add=False, name="huxma.life"):
 def batch_mode():
     """As if the owner enabled real DNS writes and the trial already passed."""
     with session_scope() as s:
-        s.merge(AppSetting(key="dns_write", value={"enabled": True, "trial_fqdn": "t.huxma.life", "trial_passed": True}))
+        s.merge(AppSetting(key="dns_write", value={"enabled": True, "trial_fqdn": "t.huxma.life", "trial_passed": True,
+                                                           "ops": ["dns", "host", "upload", "ssl"], "web_trial_passed": True}))
 
 
 def _job(label="acme"):
@@ -49,7 +50,7 @@ def test_dns_write_is_off_by_default_nothing_is_written():
         drain()
     with session_scope() as s:
         j = s.get(Job, job_id)
-        assert j.status == "blocked" and "Ghi DNS thật đang TẮT" in j.last_error and not j.state.get("dns_created")
+        assert j.status == "blocked" and "Ghi thật đang KHOÁ" in j.last_error and not j.state.get("dns_created")
     assert not patch.called and not add.called and sheet.writes == []  # nothing created, B untouched
 
 
@@ -152,7 +153,7 @@ def _preview(client, rows):
 
 
 def _docroot_with_ip(m, ip=IP):
-    m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"result": {"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life", "ip": ip}}})
+    m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life", "ip": ip}})
 
 
 def test_preview_shows_subdomain_root_nick_ip_then_trial_then_batch(client):
@@ -163,14 +164,14 @@ def test_preview_shows_subdomain_root_nick_ip_then_trial_then_batch(client):
         patch = inet.install(m)
         _docroot_with_ip(m)
         p = _preview(client, [(7, "acme"), (8, "beta")])
-        assert p["mode"] == "off" and p["token"] is None and "TẮT" in p["blocked"]
+        assert p["mode"] == "off" and p["token"] is None and "KHOÁ" in p["blocked"]
         r7 = next(r for r in p["rows"] if r["row"] == 7)
         assert (r7["fqdn"], r7["root"], r7["nick"], r7["ip"], r7["dns_provider"], r7["action"]) == \
             ("acme.huxma.life", "huxma.life", "iNET-1", IP, "inet", "add")
         assert r7["domain_id"] == 501 and r7["hosting_ip"] == IP and r7["existing"] == []
         assert client.put("/api/domains/dns-write", json={"enabled": True}).status_code == 422  # trial domain first
         assert client.put("/api/domains/dns-write", json={"trial_fqdn": "x.not-mine.com"}).status_code == 422
-        sw = client.put("/api/domains/dns-write", json={"trial_fqdn": "acme.huxma.life", "enabled": True}).json()
+        sw = client.put("/api/domains/dns-write", json={"trial_fqdn": "acme.huxma.life", "enabled": True, "ops": ["dns", "host"]}).json()
         assert sw["mode"] == "trial"
         p = _preview(client, [(7, "acme"), (8, "beta")])
         assert p["token"] is None and "chỉ được chạy đúng 1 miền thử" in p["blocked"]
@@ -204,7 +205,7 @@ def test_preview_refuses_wrong_hosting_ip_and_a_root_missing_from_the_nicks_inet
         assert p["rows"][0]["action"] == "refuse" and "không thuộc tài khoản iNET" in p["rows"][0]["reason"]
         _docroot_with_ip(m, "10.0.0.9")
         p = _preview(client, [(7, "acme")])
-        assert p["rows"][0]["action"] == "refuse" and "khác IP cấu hình" in p["rows"][0]["reason"]
+        assert p["rows"][0]["action"] == "refuse" and "khác IP của" in p["rows"][0]["reason"]
 
 
 def test_run_without_a_confirmed_preview_is_refused(client):

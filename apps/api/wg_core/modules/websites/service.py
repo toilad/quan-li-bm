@@ -187,7 +187,7 @@ def _build(ctx: JobContext):
             # before that attempt (checked above), so any file with these names now is this site's own → replace.
             overwrite = True
             ctx.log("Upload lại sau lượt bị gián đoạn: chỉ thay các file của chính website này", "warn")
-        res = cp.upload_files(st["doc_root"], files, overwrite=overwrite) or {}
+        res = cp.upload_files(st["doc_root"], files, fqdn=domain, overwrite=overwrite) or {}
         if res.get("failed"):
             reasons = "; ".join(f'{u.get("file")}: {u.get("reason")}' for u in res.get("uploads", []) if u.get("reason"))
             raise Permanent(f"Upload không hoàn tất (không ghi đè file có sẵn): {reasons}")
@@ -201,7 +201,7 @@ def _build(ctx: JobContext):
 
         last = st.get("autossl_started_at")
         if not last or (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() > AUTOSSL_RETRIGGER_HOURS * 3600:
-            cp.start_autossl()  # again every few hours while waiting: an earlier run may have happened before DNS was ready
+            cp.start_autossl(domain)  # again every few hours while waiting: an earlier run may have happened before DNS was ready
             ctx.checkpoint(autossl_started=True, autossl_started_at=datetime.now(timezone.utc).isoformat())
             ctx.log("SSL::start_autossl_check đã gửi", "info")
         if cp.autossl_in_progress():
@@ -222,4 +222,8 @@ def _build(ctx: JobContext):
     sheets.write_cell(cell, url)
     s.add(SheetWrite(tab=sheets.tab, range=cell, old_value="", new_value=url, job_id=ctx.job.id))
     ctx.checkpoint(written_c=url)
+    from ... import write_guard
+
+    if write_guard.mark_web_trial(s, domain, ctx.job.id):
+        ctx.log(f"Web thử {domain} đã xong — tải web / SSL cho miền khác được mở theo các thao tác anh cho phép", "ok")
     ctx.log(f"Ghi {cell} = {url} · cột B giữ nguyên", "ok")

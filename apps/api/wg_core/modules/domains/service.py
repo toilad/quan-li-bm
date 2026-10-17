@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 
 from ...config import API_ROOT, settings
 from ...integrations import net
+from ...integrations import cpanel_api2
 from ...integrations.cpanel import CPanel
+from ...runtime_config import get as cfg
 from ...integrations.errors import Conflict, NotAvailable, Permanent, Transient, wait_or_fail
 from ...integrations.google import Sheets
 from ...integrations.inet import Inet
@@ -81,11 +83,11 @@ def check_nick(s: Session, nick_id: str) -> dict:
     out: dict = {"nick": nick.name}
     try:
         inv = CPanel(nick.id, nick.cpanel_host).inventory()
-        names = inv.pop("names")
+        names, aliases = inv.pop("names"), set(inv.pop("aliases"))
         s.merge(AppSetting(key=f"cpanel_domains:{nick.id}", value={"domains": names, "main": inv["main"], "at": datetime.now(timezone.utc).isoformat()}))
         roots = [r.name for r in s.scalars(select(RootDomain).where(RootDomain.nick_id == nick.id))]
         # how a new name under each root gets created on this account — read per root, not assumed per nick
-        modes = {r: ("subdomain" if r in names else "addon") for r in roots}
+        modes = {r: ("subdomain" if r in names else "dừng: là alias" if r in aliases else "addon") for r in roots}
         out["cpanel"] = {"ok": True, **inv, "subdomains": inv["subdomain"], "modes": modes,
                          "on_hosting": [r for r in roots if r in names], "missing": [r for r in roots if r not in names],
                          "note": (f"Miền chính {inv['main']}: {inv['addon']} addon, {inv['subdomain']} subdomain, {inv['parked']} alias. "
@@ -200,6 +202,26 @@ def enqueue_rows(s: Session, items: list[dict]) -> dict:
     return {"queued": queued, "refused": refused}
 
 
+def host_plan(cp: CPanel, root: str, fqdn: str, nick: Nick) -> dict:
+    """Read-only, before anything is written: how `fqdn` will be created on this nick's cPanel, and that it does not
+    exist and will not take over a folder. Raises Permanent with the reason when it must stop."""
+    how = cp.creation_mode(root)
+    if not how["mode"]:
+        raise Permanent(f"Dừng trước khi tạo: {how['reason']}. B giữ trống.")
+    if how["ip"] and how["ip"] != nick.ip:
+        raise Permanent(f"IP hosting của {how['parent']} trên cPanel ({how['ip']}) khác IP của {nick.name} ({nick.ip}) — dừng")
+    if cp.subdomain(fqdn) or cp.addon(fqdn):
+        raise Permanent(f"{fqdn} đã tồn tại trên cPanel — không tạo lại. Đổi tên hoặc miền gốc")
+    if how["mode"] == "addon" and cp.subdomain(f"{fqdn}.{how['main']}"):  # addaddondomain would reuse it and its folder
+        raise Permanent(f"Đã có subdomain {fqdn}.{how['main']} trên cPanel — addon sẽ dùng lại thư mục cũ, dừng")
+    if cp.folder_exists(f"public_html/{fqdn}"):
+        raise Permanent(f"Thư mục public_html/{fqdn} đã có trên hosting — không dùng chung thư mục của miền khác, dừng")
+    how["say"] = (f"{root} là {'miền chính' if how['kind'] == 'main' else 'addon domain'} trên tài khoản → tạo subdomain (SubDomain::addsubdomain)"
+                  if how["mode"] == "subdomain" else
+                  f"{root} không nằm trên tài khoản → tạo addon domain gắn vào {how['main']} (AddonDomain::addaddondomain), thư mục public_html/{fqdn}")
+    return how
+
+
 def _gate(s: Session, root: str):
     r = s.get(RootDomain, root)
     if not r or not r.selected:
@@ -222,20 +244,9 @@ def _create(ctx: JobContext):
         if sheets.read_cell(cell).strip():
             raise Conflict(f"Ô {cell} đã có dữ liệu — không tạo miền, không ghi đè")
         cp = CPanel(nick.id, nick.cpanel_host)
-        how = cp.creation_mode(p["root"])
-        if how["ip"] and how["ip"] != nick.ip:
-            where = p["root"] if how["mode"] == "subdomain" else f"miền chính {how.get('main')}"
-            raise Permanent(f"IP hosting của {where} trên cPanel ({how['ip']}) khác IP của {nick.name} ({nick.ip}) — dừng")
-        if cp.subdomain(fqdn):
-            raise Permanent(f"{fqdn} đã tồn tại trên cPanel — không tạo lại. Đổi tên hoặc miền gốc")
-        if how["mode"] == "addon":
-            if cp.addon(fqdn):
-                raise Permanent(f"{fqdn} đã là addon domain trên cPanel — không tạo lại. Đổi tên hoặc miền gốc")
-            if cp.subdomain(f"{fqdn}.{how['main']}"):  # addaddondomain would silently reuse it (and its folder)
-                raise Permanent(f"Đã có subdomain {fqdn}.{how['main']} trên cPanel — addon sẽ dùng lại thư mục cũ, dừng")
+        how = host_plan(cp, p["root"], fqdn, nick)
         ctx.checkpoint(host_mode=how["mode"], host_main=how.get("main"))
-        ctx.log(f"cPanel: {p['root']} " + ("có trên tài khoản → tạo subdomain (SubDomain::addsubdomain)" if how["mode"] == "subdomain"
-                else f"không có trên tài khoản → tạo addon domain trên {how['main']} (AddonDomain::addaddondomain)"), "ok")
+        ctx.log(f"cPanel: {how['say']}", "ok")
         existing = net.resolve_a(fqdn)
         if existing and set(existing) != {nick.ip}:
             raise Permanent(f"{fqdn} đã có bản ghi A ({', '.join(existing)}) — không ghi đè")
@@ -260,12 +271,15 @@ def _create(ctx: JobContext):
         if st.get("host_mode") == "addon":
             # an earlier attempt whose answer was lost may have created it (the pre-check found none before it)
             if found := cp.addon(fqdn):
-                if (found.get("basedir") or "").strip("/") != want:
-                    raise Conflict(f"{fqdn} đã có trên cPanel với thư mục {found.get('basedir')} (không phải {want}) — không ghi đè, B giữ trống")
                 ctx.log(f"cPanel: addon {fqdn} đã có từ lượt trước → không tạo lại", "warn")
             else:
-                cp.add_addon(fqdn, want)
-                ctx.log(f"cPanel: đã tạo addon domain {fqdn} → {want}", "ok")
+                used = cpanel_api2.add_addon(cp, fqdn, want, cfg(f"CPANEL_ADDON_API_{nick.id.upper()}") or "api2")
+                found = cp.addon(fqdn)  # confirm with the read API whatever the create call answered
+                if not found:
+                    raise Permanent(f"{used} không báo lỗi nhưng cPanel không liệt kê {fqdn} — kiểm tra trên cPanel trước khi chạy lại")
+                ctx.log(f"cPanel: đã tạo addon domain {fqdn} ({used})", "ok")
+            if (found.get("basedir") or "").strip("/") != want:
+                raise Conflict(f"{fqdn} trên cPanel dùng thư mục {found.get('basedir')} (không phải {want}) — không ghi đè, B giữ trống")
         elif cp.subdomain(fqdn):  # created by an earlier attempt whose answer was lost (before it, the pre-check found none)
             ctx.log(f"cPanel: {fqdn} đã có từ lượt trước → không tạo lại", "warn")
         else:

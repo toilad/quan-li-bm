@@ -55,7 +55,7 @@ def test_google_network_error_is_retried_not_failed():
 # ───────── domains ─────────
 
 def test_subdomain_created_by_a_lost_attempt_is_not_created_again_and_b_waits_for_the_right_company():
-    from tests.mocks import cp_ok, install_doh
+    from tests.mocks import cp_account, cp_ok, install_doh
     from tests.test_dns_write import batch_mode, fake_inet
     from tests.test_domains import CP, ROW, _tick
     from wg_core.modules.domains import service as domains
@@ -72,7 +72,8 @@ def test_subdomain_created_by_a_lost_attempt_is_not_created_again_and_b_waits_fo
     with respx.mock(assert_all_called=False) as m:
         sheet.install(m)
         install_doh(m, {"acme.huxma.life": ["103.75.187.26"]})
-        m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"result": {"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life"}}})
+        cp_account(m, CP)
+        m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life"}})
         m.get(f"{CP}/SubDomain/listsubdomains").mock(side_effect=listsub)
         m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))  # not an addon domain
         add = m.get(f"{CP}/SubDomain/addsubdomain").mock(return_value=cp_ok(None))
@@ -139,7 +140,7 @@ def test_existing_site_files_in_the_folder_are_never_replaced():
     sheet = _sheet()
     with respx.mock(assert_all_called=False) as m:
         _web(m, sheet, files=["index.html", "wp-config.php"])
-        upload = m.post(f"{CP}/Fileman/upload_files").mock(return_value=httpx.Response(200, json={"result": {"status": 1, "data": {"failed": 0}}}))
+        upload = m.post(f"{CP}/Fileman/upload_files").mock(return_value=httpx.Response(200, json={"status": 1, "data": {"failed": 0}}))
         job_id = _run()
         drain()
     with session_scope() as s:
@@ -155,7 +156,7 @@ def test_upload_whose_answer_was_lost_is_redone_over_its_own_files_only():
     with respx.mock(assert_all_called=False) as m:
         _web(m, sheet)
         upload = m.post(f"{CP}/Fileman/upload_files").mock(side_effect=[
-            httpx.ReadTimeout("lost"), httpx.Response(200, json={"result": {"status": 1, "data": {"succeeded": 8, "failed": 0, "uploads": []}}})])
+            httpx.ReadTimeout("lost"), httpx.Response(200, json={"status": 1, "data": {"succeeded": 8, "failed": 0, "uploads": []}})])
         job_id = _run()
         drain()
         _retry_now(job_id)
@@ -172,7 +173,7 @@ def test_https_check_accepts_a_company_name_with_an_ampersand():
     sheet = FakeSheet({9: {"A": "Silva & Cia Ltda", "B": DOMAIN, "C": "", "D": "(11) 3251-4400", "G": "Sao Paulo", "H": "SP"}})
     with respx.mock(assert_all_called=False) as m:
         _web(m, sheet, https_body="<title>Silva &amp; Cia Ltda</title>")
-        m.post(f"{CP}/Fileman/upload_files").mock(return_value=httpx.Response(200, json={"result": {"status": 1, "data": {"failed": 0}}}))
+        m.post(f"{CP}/Fileman/upload_files").mock(return_value=httpx.Response(200, json={"status": 1, "data": {"failed": 0}}))
         job_id = _run()
         drain()
     with session_scope() as s:
@@ -186,7 +187,7 @@ def test_ssl_is_waited_for_without_using_up_retries():
     sheet = _sheet()
     with respx.mock(assert_all_called=False) as m:
         _web(m, sheet, https_body="<title>Default cPanel page</title>")
-        m.post(f"{CP}/Fileman/upload_files").mock(return_value=httpx.Response(200, json={"result": {"status": 1, "data": {"failed": 0}}}))
+        m.post(f"{CP}/Fileman/upload_files").mock(return_value=httpx.Response(200, json={"status": 1, "data": {"failed": 0}}))
         job_id = _run()
         for _ in range(8):
             drain()

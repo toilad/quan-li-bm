@@ -100,11 +100,11 @@ def install_doh(mock, answers: dict[str, list[str]]):
 
 
 def cp_ok(data=None):
-    return httpx.Response(200, json={"result": {"status": 1, "data": data, "errors": None}})
+    return httpx.Response(200, json={"status": 1, "data": data, "errors": None})
 
 
 def cp_err(msg):
-    return httpx.Response(200, json={"result": {"status": 0, "data": None, "errors": [msg]}})
+    return httpx.Response(200, json={"status": 0, "data": None, "errors": [msg]})
 
 
 def anthropic_json(payload: dict):
@@ -163,3 +163,14 @@ class FakeInet:
         mock.get(url__regex=rf"^{re.escape(INET)}/domain/\d+$").mock(side_effect=detail)
         mock.get(url__regex=rf"^{re.escape(INET)}/domain/\d+/record$").mock(side_effect=records)
         return mock.patch(url__regex=rf"^{re.escape(INET)}/domain/\d+/record$").mock(side_effect=patch)
+
+
+def cp_account(mock, cp, main="levantoan.000web.com", addon=("huxma.life", "sustainlife.io.vn"), parked=(), subs=(), dirs=()):
+    """One cPanel account as DomainInfo::list_domains sees it, plus the folders in public_html (Fileman::list_files
+    types=dir). Defaults: huxma.life is an addon domain of nick 1, so names under it are created as subdomains."""
+    import re as _re
+
+    mock.get(f"{cp}/DomainInfo/list_domains").mock(return_value=cp_ok({
+        "main_domain": main, "addon_domains": list(addon), "sub_domains": list(subs), "parked_domains": list(parked)}))
+    mock.get(url__regex=rf"^{_re.escape(cp)}/Fileman/list_files\?.*types=dir").mock(
+        return_value=cp_ok([{"file": d, "type": "dir"} for d in dirs]))

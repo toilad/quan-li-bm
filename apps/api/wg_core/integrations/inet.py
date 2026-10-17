@@ -132,6 +132,9 @@ class Inet:
     def create_a_record(self, domain: str, label: str, ip: str, expect_domain_id: int | None = None, ttl: int = 300) -> dict:
         """Add `label.domain A ip`. Returns {"result": "created"|"exists", "domain_id", "record_id"}.
         Any other record already using that name → Conflict: nothing is overwritten, edited or deleted."""
+        from .. import write_guard
+
+        write_guard.check("dns", f"{label}.{domain}")
         d = self.find_domain(domain)
         if not d:
             raise Permanent(f"Miền {domain} không có trong tài khoản iNET của nick {self.nick_id}")

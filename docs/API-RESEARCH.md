@@ -41,6 +41,10 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
 ## cPanel UAPI — api.docs.cpanel.net
 
 - Gọi qua `https://HOST:2083/execute/<Module>/<function>?…` với header `Authorization: cpanel USER:TOKEN`.
+- ✔ **Định dạng phản hồi thật của `/execute/`** (đọc trên nick 3, cPanel 138, ngày 2026-10-17):
+  `{"status": 1|0, "data", "errors", "messages", "warnings", "metadata"}` nằm ngay ở cấp ngoài cùng, **không** bọc trong `"result"`.
+  Code cũ đọc `result.status` nên mọi lệnh cPanel thật đều sẽ báo lỗi; test giả lập dùng sai định dạng nên không bắt được. Đã sửa cả code lẫn test.
+  `/execute/<Module>` nạp module Perl `Cpanel::API::<Module>` (thấy trong thông báo lỗi khi gọi module không tồn tại).
   Token tạo ở Security › Manage API Tokens, mặc định hết hạn sau 1 năm. Nhà cung cấp hosting có thể ẩn tính năng này.
   Nguồn: https://api.docs.cpanel.net/cpanel/tokens/ · https://docs.cpanel.net/cpanel/security/manage-api-tokens-in-cpanel/
 - ✔ `SubDomain::addsubdomain`: bắt buộc `domain`, `rootdomain` (phải có sẵn trên tài khoản); `dir` tuỳ chọn.
@@ -90,15 +94,31 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
     922 miền đang chạy được tạo dạng **addon domain** theo đúng một mẫu.
     Ví dụ: `newdomain` = `subdomain` = `ten.namecheapp.site`; thư mục `public_html/ten.namecheapp.site`; gắn vào `toandao.site`.
     Vì vậy `SubDomain::addsubdomain(rootdomain=namecheapp.site)` và `DomainInfo::single_domain_data(namecheapp.site)` sẽ báo không có miền.
-    App chọn cách tạo **theo từng miền gốc**, đọc trực tiếp từ cPanel, không gán cứng theo nick:
-    - miền gốc có trên tài khoản (`single_domain_data` trả về) → `SubDomain::addsubdomain`;
-    - miền gốc không có → `AddonDomain::addaddondomain` trên miền chính, kiểm tra trùng bằng `AddonDomain::listaddondomains` (`regex`).
-    `AddonDomain` là module **UAPI** (cùng `/execute/…` và token như các hàm khác), có trong đặc tả UAPI 11.138.
-    `listaddondomains` đã trả lời thật trên nick 3 (bản 138). Vì vậy không cần adapter API 2.
-    Hàm tạo (`addaddondomain`) chỉ xác minh được ở lần ghi thử đầu tiên anh duyệt.
-    Theo tài liệu: nếu đã có `<tên>.<miền chính>` thì hàm dùng lại subdomain đó. Vì vậy app dừng khi thấy nó, để không dùng thư mục cũ.
-    Nguồn: https://api.docs.cpanel.net/specifications/cpanel.openapi/addondomain/addondomain-addaddondomain.md
-    (`newdomain`, `subdomain` bắt buộc; `dir` tương đối thư mục home; `disallowdot` 0/1. Mỗi addon tạo kèm 1 tài khoản FTP, tính vào giới hạn FTP.)
+    App chọn cách tạo **theo từng miền gốc**, đọc trực tiếp từ cPanel (`DomainInfo::list_domains`), không gán cứng theo nick:
+    | Miền gốc trên cPanel | Cách tạo tên mới | Miền cha |
+    |---|---|---|
+    | miền chính | `SubDomain::addsubdomain` | chính nó |
+    | addon domain | `SubDomain::addsubdomain` | chính nó |
+    | không có trên tài khoản | addon domain (xem dưới) | miền chính |
+    | alias (parked) | **dừng**: không dùng làm miền gốc | — |
+    | subdomain | **dừng**: không rõ miền cha | — |
+    | không đọc được miền chính / document root của miền cha | **dừng** | — |
+  - **Hàm tạo addon domain: hai trang tài liệu chính thức mâu thuẫn nhau.**
+    - Trang cPanel API 2 ghi API 2 đã lỗi thời nhưng "no equivalent UAPI function exists".
+      https://api.docs.cpanel.net/cpanel-api-2/cpanel-api-2-modules-addondomain/cpanel-api-2-functions-addondomain-addaddondomain
+    - Đặc tả UAPI 11.138 (đúng bản của nick 3) lại có `AddonDomain::addaddondomain` ("The AddonDomain module for UAPI").
+      https://api.docs.cpanel.net/specifications/cpanel.openapi/addondomain/addondomain-addaddondomain.md
+    - Trên server thật: UAPI `/execute/AddonDomain/listaddondomains` trả lời; API 2 `/json-api/cpanel` (`cpanelresult`, `apiversion: 2`) cũng trả lời cho `listaddondomains`.
+      **Chưa gọi hàm tạo nào** trên hosting thật.
+    - App tách **adapter API 2** riêng (`integrations/cpanel_api2.py`) và dùng nó mặc định. UAPI là tuỳ chọn, chỉnh bằng `CPANEL_ADDON_API_N1..3` = `api2` | `uapi`.
+      Lần ghi thử đầu tiên sẽ cho biết host nhận hàm nào.
+    - API 2: `GET /json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=AddonDomain&cpanel_jsonapi_func=addaddondomain&newdomain&subdomain&dir`.
+      Phản hồi `cpanelresult.data[0].result/reason`, lỗi ở `cpanelresult.error`. Dùng cùng token: trang Manage API Tokens ghi token dùng cho "cPanel API 2 and UAPI".
+    - Dù hàm tạo trả gì, app luôn đọc lại bằng `listaddondomains`. Không thấy miền, hoặc thư mục khác `public_html/<tên>` → dừng, không ghi B.
+  - Kiểm tra trước khi ghi (chỉ đọc):
+    - tên chưa có ở dạng subdomain lẫn addon;
+    - không còn sót subdomain `<tên>.<miền chính>` (theo tài liệu, addon sẽ dùng lại subdomain đó và thư mục của nó);
+    - thư mục `public_html/<tên>` chưa tồn tại (`Fileman::list_files types=dir`).
 
 ## Pexels — ảnh cho website (ưu tiên khi có khoá)
 
