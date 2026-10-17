@@ -9,6 +9,6 @@ $launchers = $all | Where-Object { (& $isApp $_) -and $_.ExecutablePath -like "$
 $ids = @($launchers.ProcessId)
 $children = $all | Where-Object { (& $isApp $_) -and $ids -contains $_.ParentProcessId }
 $nodes = $all | Where-Object { $_.Name -eq "node.exe" -and $_.CommandLine -like "*next*start*-p*3210*" }
-$procs = @($children) + @($launchers) + @($nodes) | Where-Object { $_ }
+$procs = @(@($children) + @($launchers) + @($nodes) | Where-Object { $_ })
 foreach ($p in $procs) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
 Write-Host "Đã dừng $($procs.Count) tiến trình."
