@@ -36,7 +36,7 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "GOOGLE_TOKEN": ("google", "Quyền truy cập Google (cấp qua nút Kết nối)", True),
     "ANTHROPIC_API_KEY": ("ai", "Khoá API Anthropic", True),
     "AI_MODEL": ("ai", "Model", False),
-    "PEXELS_API_KEY": ("photos", "Khoá API Pexels", True),
+    "PIXABAY_API_KEY": ("photos", "Khoá API Pixabay", True),
     "PUBLIC_API_URL": ("server", "Địa chỉ API công khai (cho OAuth redirect)", False),
     "PUBLIC_WEB_URL": ("server", "Địa chỉ giao diện", False),
     **{f"INET_API_KEY_{n}": (f"nick:{n.lower()}", "Khoá API iNET", True) for n in NICKS},

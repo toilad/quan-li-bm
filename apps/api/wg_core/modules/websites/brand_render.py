@@ -474,13 +474,13 @@ def contact_band(c: dict, d: dict, content: dict) -> str:
 
 
 def photo_credit(d: dict) -> str:
-    """Pexels guidelines: a visible link to Pexels and credit to the photographers."""
+    """Show where the photos come from (Pixabay API rules) and credit the photographers."""
     if not d.get("credits"):
         return ""
     names = ", ".join(f'<a href="{escape(x["url"])}" target="_blank" rel="noopener" class="hover:text-white underline">{escape(x["name"])}</a>'
                       for x in d["credits"])
     return (f'<div>Photos by {names} on '
-            '<a href="https://www.pexels.com" target="_blank" rel="noopener" class="hover:text-white underline">Pexels</a></div>')
+            '<a href="https://pixabay.com/" target="_blank" rel="noopener" class="hover:text-white underline">Pixabay</a></div>')
 
 
 def footer(c: dict, d: dict, content: dict) -> str:
@@ -624,7 +624,7 @@ def render_site(company: dict, content: dict, template: str, photos: dict | None
                 credits: list[dict] | None = None) -> dict[str, bytes]:
     """company: {company, domain, phone, email (verified only), address}. content: the checked AI copy.
     photos: optional {slot: file path or {src, alt}} (files shipped with the site; URLs only in the in-app preview).
-    credits: [{name, url}] of the photographers (Pexels guidelines). → {filename: bytes}."""
+    credits: [{name, url}] of the photographers (shown in the footer). → {filename: bytes}."""
     if template not in BY_ID:
         raise ValueError(f"Unknown template {template}")
     c = dict(company)

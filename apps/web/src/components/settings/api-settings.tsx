@@ -13,7 +13,7 @@ type Msg = { tone: "ok" | "err" | "info"; text: string } | null;
 const GROUPS: { key: string; title: string; icon: typeof Bot; note: string }[] = [
   { key: "google", title: "Google Sheets & Drive", icon: FileSpreadsheet, note: "OAuth của chính anh: quyền Sheets + chỉ các file do app tạo trên Drive." },
   { key: "ai", title: "AI (Anthropic)", icon: Bot, note: "Dùng để đọc phôi scan và viết nội dung website." },
-  { key: "photos", title: "Ảnh cho website (Pexels)", icon: ImageIcon, note: "Khoá miễn phí tại pexels.com/api. Ảnh tải về và upload kèm web; chân trang ghi nguồn Pexels + tên nhiếp ảnh gia. Chưa có khoá → web dùng khung màu." },
+  { key: "photos", title: "Ảnh cho website (Pixabay)", icon: ImageIcon, note: "Khoá miễn phí: đăng nhập pixabay.com rồi mở pixabay.com/api/docs (khoá hiện ở mục Parameters). Ảnh tải về và upload kèm web; chân trang ghi nguồn Pixabay + tên tác giả. Chưa có khoá → web dùng khung màu." },
   { key: "server", title: "Máy chủ", icon: Server, note: "Địa chỉ công khai khi đưa app lên server (dùng cho OAuth redirect)." },
   { key: "nick:n1", title: "Nick iNET-1", icon: Users, note: "Khoá iNET + user/token cPanel của hosting nick này." },
   { key: "nick:n2", title: "Nick iNET-2", icon: Users, note: "Khoá iNET + user/token cPanel của hosting nick này." },
@@ -93,8 +93,8 @@ export function ApiSettings() {
                   </Btn>
                 )}
                 {g.key === "photos" && (
-                  <Btn onClick={() => run("photos", "Đang thử 1 lượt tìm ảnh Pexels", () => api.get("/api/photos/check"),
-                    (r: { found: number; remaining: string | null }) => `Khoá Pexels dùng được · còn ${r.remaining ?? "?"} lượt gọi trong tháng`)}>
+                  <Btn onClick={() => run("photos", "Đang thử 1 lượt tìm ảnh Pixabay", () => api.get("/api/photos/check"),
+                    (r: { found: number; remaining: string | null }) => `Khoá Pixabay dùng được · còn ${r.remaining ?? "?"} lượt trong phút này`)}>
                     <PlugZap className="size-4" /> Kiểm tra khoá
                   </Btn>
                 )}

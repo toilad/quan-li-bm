@@ -69,16 +69,29 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
   Vì vậy em chỉ hiện phiên bản để đối chiếu, không tự đặt ngưỡng tối thiểu.
   Nguồn: https://api.docs.cpanel.net/openapi/cpanel/operation/get_stats
 
-## Pexels — ảnh cho website
+## Pixabay — ảnh cho website
 
-Nguồn: https://www.pexels.com/api/documentation/ (tra 2026-10-17)
-- ✔ Header `Authorization: <khoá>`. `GET https://api.pexels.com/v1/search?query=&orientation=landscape|portrait|square&per_page=(≤80)&page=`.
-- ✔ Mỗi ảnh có `src`: `original`, `large2x`, `large` (940×650), `medium`, `small`, `portrait` (800×1200), `landscape` (1200×627), `tiny`.
-  Ngoài ra có `alt`, `photographer`, `photographer_url`, `url`.
-- ✔ Giới hạn 200 yêu cầu/giờ, 20.000/tháng. Header `X-Ratelimit-*` chỉ có ở phản hồi 2xx.
-- ✔ Hướng dẫn: hiện link nổi bật về Pexels và ghi tên nhiếp ảnh gia khi có thể.
-  App ghi "Photos by … on Pexels" ở chân trang mỗi web.
-- Tài liệu không nói về hot-link. App tải ảnh về và upload kèm web, chỉ phần xem trước trong app mới tải thẳng từ Pexels.
+Nguồn: https://pixabay.com/api/docs/ (tra 2026-10-17).
+Pexels đã được tích hợp trước, nhưng ngày 2026-10-17 trang khoá Pexels báo "New API key issuance is currently paused", nên app chuyển sang Pixabay.
+- ✔ `GET https://pixabay.com/api/`, các tham số:
+  - `key`, `q` (≤ 100 ký tự), `image_type=photo`;
+  - `orientation=all|horizontal|vertical`, `safesearch`, `order`;
+  - `page`, `per_page` (3–200).
+- ✔ Mỗi kết quả có:
+  - `id`, `pageURL`, `tags`;
+  - `webformatURL` (≤ 640 px, link sống 24 giờ), `largeImageURL` (≤ 1280 px);
+  - `imageWidth`, `imageHeight`, `user_id`, `user`.
+- ✔ Giới hạn 100 yêu cầu / 60 giây cho mỗi khoá.
+  Vượt giới hạn → 429 "API rate limit exceeded". Header `X-RateLimit-Reset` là số giây phải chờ.
+  Kết quả tìm phải lưu đệm 24 giờ.
+- ✔ Quy định khi dùng ảnh:
+  - **không hot-link lâu dài**, phải tải ảnh về server;
+  - không tải hàng loạt có hệ thống;
+  - hiện cho người xem biết ảnh lấy từ đâu.
+  App làm đúng như vậy: mỗi web tải 7 ảnh và upload kèm web, chân trang ghi "Photos by … on Pixabay".
+  Xem trước trong app chỉ hiển thị tạm, được phép, và kết quả được lưu đệm.
+- Tài liệu không ghi mã lỗi khi khoá sai. App coi 400/401/403 khi tìm ảnh là "khoá không hợp lệ".
+  Khoá nằm trong URL, nên app không bao giờ ghi URL vào nhật ký.
 
 ## Ảnh hưởng tới thiết kế
 

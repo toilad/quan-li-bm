@@ -1,17 +1,17 @@
-"""Photos for a generated website, from the Pexels API.
+"""Photos for a generated website, from the Pixabay API.
 
-One search per orientation needed (at most 3 API requests per site, well under 200 / hour). Which photos a site
+One search per orientation needed (at most 3 API requests per site, well under 100 / minute). Which photos a site
 gets is decided by the domain (stable seed), so two companies on the same template do not get the same pictures
-and a rebuild gets the same ones. The images are downloaded and shipped with the site as photo-<slot>.jpg.
+and a rebuild gets the same ones. The images are downloaded and shipped with the site as photo-<slot>.jpg
+(Pixabay does not allow permanent hotlinking).
 """
 import hashlib
 import random
 
-from ...integrations import pexels
+from ...integrations import pixabay
 from .templates import BY_ID
 
-# slot → which design value decides the orientation, and the Pexels `src` size used for it
-SRC = {"portrait": "portrait", "landscape": "landscape", "square": "large"}
+PROVIDER = ("Pixabay", pixabay.SITE)
 
 
 def slots(d: dict) -> dict[str, str]:
@@ -22,9 +22,8 @@ def slots(d: dict) -> dict[str, str]:
 
 def query_for(template_id: str, rng: random.Random) -> str:
     kw = list(BY_ID[template_id].photo_keywords)
-    first = kw[0]
     second = rng.choice(kw[1:]) if len(kw) > 1 else ""
-    return f"{first} {second}".strip()
+    return f"{kw[0]} {second}".strip()
 
 
 def choose(domain: str, template_id: str, d: dict) -> list[dict]:
@@ -36,16 +35,14 @@ def choose(domain: str, template_id: str, d: dict) -> list[dict]:
         need.setdefault(orient, []).append(slot)
     out, used = [], set()
     for orient, slot_list in need.items():
-        found = pexels.search(query, orient, per_page=30, page=rng.randint(1, 3))["photos"]
+        found = pixabay.search(query, orient, per_page=30, page=rng.randint(1, 3))["photos"]
         if len(found) < len(slot_list):  # small result set → first page
-            found = pexels.search(query, orient, per_page=30, page=1)["photos"]
-        pool = [p for p in found if p.get("id") not in used and (p.get("src") or {}).get(SRC[orient])]
+            found = pixabay.search(query, orient, per_page=30, page=1)["photos"]
+        pool = [p for p in found if p["id"] not in used and p["src"]]
         rng.shuffle(pool)
         for slot, p in zip(slot_list, pool):
             used.add(p["id"])
-            out.append({"slot": slot, "id": p["id"], "src": p["src"][SRC[orient]], "file": f"photo-{slot}.jpg",
-                        "alt": p.get("alt") or "", "photographer": p.get("photographer") or "",
-                        "photographer_url": p.get("photographer_url") or "", "url": p.get("url") or ""})
+            out.append({**p, "slot": slot, "file": f"photo-{slot}.jpg"})
     return out
 
 
