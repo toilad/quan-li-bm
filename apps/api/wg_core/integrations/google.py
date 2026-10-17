@@ -175,7 +175,15 @@ def _a1(tab: str, cells: str) -> str:
 
 
 COLS = "ABCDEFGHIJKL"
-FIRST_DATA_ROW = 3  # row 1 = title, row 2 = header
+FIRST_DATA_ROW = 3  # default: row 1 = title, row 2 = header (Cài đặt › "Dòng bắt đầu dữ liệu" overrides it)
+
+
+def first_row() -> int:
+    """The first Sheet row that holds data; rows above it (title, header, notes) are never read or written."""
+    try:
+        return max(1, int(cfg("SHEET_FIRST_ROW") or FIRST_DATA_ROW))
+    except ValueError:
+        return FIRST_DATA_ROW
 
 
 @dataclass
@@ -190,13 +198,14 @@ class Sheets:
         self.id, self.tab = sheet_id(), sheet_tab()
 
     def read_rows(self) -> list[SheetRow]:
+        first = first_row()
         with _client() as c:
-            data = _check(c.get(f"{SHEETS}/{self.id}/values/{_a1(self.tab, f'A{FIRST_DATA_ROW}:L')}",
+            data = _check(c.get(f"{SHEETS}/{self.id}/values/{_a1(self.tab, f'A{first}:L')}",
                                 headers=_auth(c), params={"valueRenderOption": "FORMATTED_VALUE"}), "Sheets đọc")
         rows = []
         for i, vals in enumerate(data.get("values", [])):
             cells = {col: (vals[j] if j < len(vals) else "") for j, col in enumerate(COLS)}
-            rows.append(SheetRow(FIRST_DATA_ROW + i, {k: str(v) for k, v in cells.items()}))
+            rows.append(SheetRow(first + i, {k: str(v) for k, v in cells.items()}))
         return rows
 
     def read_cell(self, cell: str) -> str:
@@ -215,7 +224,7 @@ class Sheets:
     def append_row(self, values: list[str]) -> int:
         """Append A..K (L untouched). Returns the sheet row number written."""
         with _client() as c:
-            data = _check(c.post(f"{SHEETS}/{self.id}/values/{_a1(self.tab, f'A{FIRST_DATA_ROW}:K')}:append",
+            data = _check(c.post(f"{SHEETS}/{self.id}/values/{_a1(self.tab, f'A{first_row()}:K')}:append",
                                  headers=_auth(c), params={"valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"},
                                  json={"values": [values]}), "Sheets thêm dòng")
         rng = data.get("updates", {}).get("updatedRange", "")

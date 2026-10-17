@@ -57,6 +57,8 @@ def put_setting(body: PutSetting):
         raise HTTPException(422, "Không có trường cài đặt này")
     if body.name in runtime_config.SET_ONLY_BY_SERVER and body.value.strip():
         raise HTTPException(422, "Trường này chỉ được ghi qua nút Kết nối Google")
+    if body.name == "SHEET_FIRST_ROW" and body.value.strip() and not (body.value.strip().isdigit() and 1 <= int(body.value) <= 1000):
+        raise HTTPException(422, "Dòng bắt đầu dữ liệu phải là số từ 1 đến 1000")
     if body.name == "GOOGLE_OAUTH_CLIENT_JSON" and body.value.strip():
         try:
             data = json.loads(body.value)
@@ -143,5 +145,5 @@ def google_check():
             if not out["drive"]["folder_ok"]:
                 out["drive"]["folder_problem"] = ("app không truy cập được thư mục này (quyền drive.file chỉ thấy thư mục do app tạo) — "
                                                   "để trống “ID thư mục Drive” để app tự tạo")
-        out["sheet"]["data_starts_at_row"] = google.FIRST_DATA_ROW
+        out["sheet"]["data_starts_at_row"] = google.first_row()
     return out

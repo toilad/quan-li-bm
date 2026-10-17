@@ -86,3 +86,19 @@ def test_google_check_is_read_only(client, monkeypatch):
     assert writes == []
     assert r["sheet"]["data_starts_at_row"] == 3 and r["sheet"]["header_rows"] == [["Title"], ["A", "B"]]
     assert r["drive"]["folder_ok"] is False and "drive.file" in r["drive"]["folder_problem"]  # a hand-made folder is flagged
+
+
+def test_first_data_row_is_a_setting(client, monkeypatch):
+    from tests.mocks import FakeSheet
+    from wg_core.integrations.google import Sheets
+
+    assert client.put("/api/settings", json={"name": "SHEET_FIRST_ROW", "value": "0"}).status_code == 422
+    assert client.put("/api/settings", json={"name": "SHEET_FIRST_ROW", "value": "abc"}).status_code == 422
+    assert client.put("/api/settings", json={"name": "SHEET_FIRST_ROW", "value": "2"}).status_code == 200
+    sheet = FakeSheet({3: {"A": "Row Three LLC"}})
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        Sheets().read_rows()
+        Sheets().append_row(["X"] * 11)
+        ranges = [str(c.request.url) for c in m.calls if "spreadsheets/TESTSHEET/values" in str(c.request.url)]
+    assert any("A2%3AL" in u for u in ranges) and any("A2%3AK" in u and ":append" in u for u in ranges)

@@ -31,6 +31,7 @@ NICKS = ("N1", "N2", "N3")
 FIELDS: dict[str, tuple[str, str, bool]] = {
     "SHEET_ID": ("google", "ID Google Sheet", False),
     "SHEET_TAB": ("google", "Tab ghi dữ liệu", False),
+    "SHEET_FIRST_ROW": ("google", "Dòng bắt đầu dữ liệu (trên đó là tiêu đề / ghi chú, app bỏ qua)", False),
     "DRIVE_FOLDER_ID": ("google", "ID thư mục Drive (trống → app tự tạo)", False),
     "GOOGLE_OAUTH_CLIENT_JSON": ("google", "OAuth client (file JSON từ Google Cloud)", True),
     "GOOGLE_TOKEN": ("google", "Quyền truy cập Google (cấp qua nút Kết nối)", True),
@@ -45,7 +46,7 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     **{f"CPANEL_TOKEN_{n}": (f"nick:{n.lower()}", "API token cPanel", True) for n in NICKS},
 }
 SET_ONLY_BY_SERVER = {"GOOGLE_TOKEN"}
-DEFAULTS = {"SHEET_TAB": "Phoi US", "AI_MODEL": "claude-opus-5-5", "PUBLIC_API_URL": "http://localhost:8000", "PUBLIC_WEB_URL": "http://localhost:3210"}  # written by the OAuth callback, never typed in
+DEFAULTS = {"SHEET_TAB": "Phoi US", "SHEET_FIRST_ROW": "3", "AI_MODEL": "claude-opus-5-5", "PUBLIC_API_URL": "http://localhost:8000", "PUBLIC_WEB_URL": "http://localhost:3210"}  # written by the OAuth callback, never typed in
 
 _cache: dict[str, tuple[str | None, float]] = {}
 _TTL = 3.0
