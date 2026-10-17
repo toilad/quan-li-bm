@@ -18,7 +18,7 @@ const DEMO_ROW = {
   detection: { template: undefined as never, keyword: null },
 } as unknown as WebRow;
 
-/** The 15 legacy templates. Clicking one applies it to the ticked rows (manual choice). */
+/** The 15 templates (names from the legacy app, new design). Clicking one applies it to the ticked rows (manual choice). */
 export function TemplateGallery({ state, dispatch }: { state: WebState; dispatch: WebDispatch }) {
   const groups = ["Tất cả", ...Array.from(new Set(TEMPLATES.map((t) => t.group)))] as ("Tất cả" | TemplateGroup)[];
   const [group, setGroup] = useState<(typeof groups)[number]>("Tất cả");
@@ -35,7 +35,7 @@ export function TemplateGallery({ state, dispatch }: { state: WebState; dispatch
         <div className="flex items-start gap-3">
           <span className="grid size-10 place-items-center rounded-xl bg-fuchsia-500/15 text-fuchsia-200"><LayoutTemplate className="size-5" /></span>
           <div>
-            <h2 className="text-[16px] font-semibold">15 mẫu website (từ app cũ)</h2>
+            <h2 className="text-[16px] font-semibold">15 mẫu website</h2>
             <p className="text-[12.5px] text-fg-muted">
               {targets.length
                 ? <>Bấm một mẫu để áp cho <b className="text-fg">{targets.length} dòng đang chọn</b> (thành “chọn tay”).</>

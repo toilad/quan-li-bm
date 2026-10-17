@@ -21,7 +21,7 @@ TEMPLATES = [
     Template("hr-management", "HR Management", "Doanh nghiệp & Dịch vụ", "#0d9488", "#5eead4", "stacked-cards", ("people", "office", "teamwork", "handshake"), ("hr", "staffing", "recruit", "workforce")),
     Template("misbah-architecture", "Misbah Architecture Blocks", "Xây dựng & Kiến trúc", "#d97706", "#fcd34d", "image-banner", ("architecture", "building", "modern", "interior"), ("construction", "builder", "carpentry", "architecture", "roofing", "concrete")),
     Template("blockskit-digital", "Blockskit Digital Agency Firm", "Công nghệ", "#7c3aed", "#c4b5fd", "split-right", ("technology", "office", "startup", "design"), ("tech", "software", "digital", "data", "systems", "cloud")),
-    Template("daily-soap-tv", "Daily SOAP TV", "Truyền thông", "#c026d3", "#f0abfc", "centered", ("studio", "media", "broadcasting", "camera"), ("media", "film", "tv", "broadcast", "production")),
+    Template("daily-soap-tv", "Daily SOAP TV", "Truyền thông", "#ff4d1c", "#fda4af", "centered", ("studio", "media", "broadcasting", "camera"), ("media", "film", "tv", "broadcast", "production")),
     Template("dermatologist-clinic", "Dermatologist Clinic", "Y tế & Làm đẹp", "#e11d48", "#fda4af", "split-left", ("skincare", "dermatology", "spa", "beauty"), ("dermat", "skin", "salon", "spa", "beauty", "wellness", "clinic", "medic", "health", "pharm")),
     Template("fse-dental", "FSE Dental Clinic", "Y tế & Làm đẹp", "#0284c7", "#7dd3fc", "minimal", ("dental", "dentist", "smile", "teeth"), ("dental", "dds", "dentist", "orthodont")),
     Template("lawyer-legal", "Lawyer Legal Firm", "Pháp lý & Tài chính", "#1e3a8a", "#a5b4fc", "split-right", ("law", "courthouse", "justice", "books"), ("law", "legal", "attorney", "counsel")),

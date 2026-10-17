@@ -67,10 +67,10 @@ def test_ai_model_check_uses_models_api(client):
     assert route.called and r["id"] == "claude-opus-5-5" and r["max_input_tokens"] == 1000000
 
 
-def test_website_preview_is_the_real_legacy_output(client):
+def test_website_preview_is_the_real_build_output(client):
     r = client.get("/api/websites/preview", params={"template": "lawyer-legal", "domain": "acme.example.com", "company": "Acme LLC"})
     assert r.status_code == 200 and r.text.startswith("<!DOCTYPE html>")
-    assert "cdn.tailwindcss.com" in r.text and "law,courthouse,justice,books" in r.text and "Acme LLC" in r.text
+    assert "cdn.tailwindcss.com" in r.text and "#1e3a8a" in r.text and "Acme LLC" in r.text
     assert client.get("/api/websites/preview", params={"template": "lawyer-legal", "page": "about.html"}).status_code == 200
     assert client.get("/api/websites/preview", params={"template": "lawyer-legal", "page": "../x"}).status_code == 404
 

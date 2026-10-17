@@ -392,8 +392,8 @@ PREVIEW_COPY = {
 @app.get("/api/websites/preview", response_class=HTMLResponse)
 def web_preview(template: str, domain: str = "example.com", company: str = "Example Company LLC", phone: str = "",
                 address: str = "", page: str = "index.html"):
-    """The real legacy template output for this domain (same design the build will use), with placeholder copy."""
-    from wg_core.modules.websites.legacy_render import render_site
+    """The real template output for this domain (same renderer and design the build will use), with placeholder copy."""
+    from wg_core.modules.websites.brand_render import render_site
 
     files = render_site({"company": company, "domain": domain.lower(), "phone": phone, "email": "", "address": address},
                         PREVIEW_COPY, template)

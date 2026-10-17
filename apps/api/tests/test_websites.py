@@ -63,7 +63,8 @@ def test_full_build_uses_chosen_template_and_reported_docroot():
     req = upload.calls[0].request
     assert req.url.params["dir"] == "sites/acme" and req.url.params["overwrite"] == "0"
     body = req.content.decode("utf-8", "ignore")
-    assert "loremflickr.com" in body and "law,courthouse,justice,books" in body  # chosen theme (Lawyer Legal Firm) drives the photos
+    assert "#1e3a8a" in body and "Playfair Display" in body  # the chosen template (Lawyer Legal Firm) drives colours and fonts
+    assert "loremflickr" not in body  # no hot-linked random photo service
     assert "cdn.tailwindcss.com" in body and body.count('filename="index.html"') == 1 and 'filename="sitemap.xml"' in body
     for claim in ("What Our Customers Say", "Trusted by", "100%", "24/7", "A Look at Our Work"):
         assert claim not in body, claim

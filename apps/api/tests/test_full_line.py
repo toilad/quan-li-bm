@@ -123,5 +123,5 @@ def test_pdf_to_domain_to_website_on_one_sheet():
     assert [w[0] for w in writes][-2:] == [f"B{row}", f"C{row}"]  # B only by Domain Manager, C only after HTTPS works
     assert ai.call_count == 1 and upload.call_count == 1
     body = upload.calls[0].request.content.decode("utf-8", "ignore")
-    assert 'action="mailto:contato@acme.example"' in body  # verified email → the legacy contact form is shown
+    assert 'action="mailto:contato@acme.example"' in body  # verified email → the contact form is shown
     assert "Acme Plumbing LLC" in body and "(11) 3251-4400" in body

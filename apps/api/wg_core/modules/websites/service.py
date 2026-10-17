@@ -12,7 +12,8 @@ from ...integrations.google import Sheets
 from ...jobs import JobContext, enqueue, handler
 from ...models import Nick, RootDomain, SheetWrite
 from .content_check import problems
-from .legacy_render import render_site, theme_name
+from .brand_render import render_site
+from .legacy_render import theme_name
 from .templates import BY_ID, detect
 
 

@@ -14,7 +14,7 @@ const PAGES = [
 ] as const;
 
 /**
- * The real output of the backend renderer (recovered legacy template, same design the build will use for this
+ * The real output of the backend renderer (brand_render.py, same design the build will use for this
  * domain) — only the AI-written text is replaced by bracketed placeholders.
  */
 export function SitePreview({ r, onClose }: { r: WebRow; onClose: () => void }) {
