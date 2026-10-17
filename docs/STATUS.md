@@ -1,24 +1,73 @@
-# Trạng thái: chạy thật, mô phỏng hay còn thiếu
+# Trạng thái Công Việc A (Quản Lí BM): chạy thật, chỉ giả lập, hay còn chờ quyền
 
-Cập nhật 2026-10-17. Đã có backend thật (FastAPI + PostgreSQL + worker). Giao diện gọi backend thật;
-dịch vụ nào chưa cấu hình / chưa khả dụng thì màn hình **ghi rõ**, không báo thành công giả.
-Chưa thao tác lên tài khoản thật nào (chưa có khoá). Mọi dịch vụ ngoài trong kiểm thử đều là mock.
+Cập nhật 2026-10-17 (rà soát toàn bộ). Công Việc B (XMDN Meta) **chưa làm**, không có giao diện hay chức năng nào cho nó.
+Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, ảnh). Chưa có khoá nào được nhập.
 
-## Từng chức năng
+## 1. Đã chạy thật trên máy này (không cần dịch vụ ngoài)
 
-| Chức năng | Chạy thật (đã kiểm) | Có code, chờ cấu hình để chạy thật | Chưa khả dụng / còn thiếu |
-|---|---|---|---|
-| PDF Manager | Upload lên server, chống trùng md5, **nhận diện + trích xuất Brazil CNPJ từ lớp chữ** (đúng trên 3 phôi thật, kiểm số kiểm tra CNPJ), xem PDF gốc, sửa ô, kiểm tra hợp lệ ở server. **Luồng lưu chạy xuyên suốt giao diện → API → worker → PostgreSQL** với Google giả lập: kiểm trùng (DB + Sheet) → Drive (tìm theo md5 trước, không upload 2 lần) → md5 → Drive ID → dòng A, D–J (B, C trống) → K = “Xem phôi”; Sheet lỗi → chỉ ghi lại Sheet; tạm dừng/tiếp tục. Ô tick **“email liên hệ chính thức (đã xác minh)”** trên thẻ CNPJ | Ghi Google thật — cần OAuth của anh; bản scan (California): AI nhận diện + đọc ô, **đối chiếu số hồ sơ và tên với bản in lại ở trang sau** (khác số → chặn lưu tới khi anh sửa tay) — cần ANTHROPIC_API_KEY | Wyoming: **chưa có phôi thật để kiểm** |
-| Tạo miền | 25 miền gốc của 3 nick, **tích chọn lưu trong database**, kiểm tra nick chỉ đọc (cPanel `DomainInfo::list_domains` + **phiên bản cPanel**; iNET `GET /domain`), chặn miền tạm ngưng / Cloudflare, khoá bỏ chọn miền đang có tác vụ, từ chối dòng gán miền chưa tích. **Tạo bản ghi A qua iNET** (`PATCH /record`, 1 mục ACTION_ADD) chạy xuyên suốt giao diện → API → worker trên iNET/cPanel/Google giả lập: công tắc TẮT mặc định → chạy thử đúng 1 miền anh chỉ định → hàng loạt; mỗi lượt phải **kiểm tra qua API (chỉ đọc) rồi xác nhận** | Mọi bước trên tài khoản thật — cần khoá iNET (`write`), token cPanel, Google; **anh bật công tắc + chỉ định miền thử** | Miền dùng DNS của hosting cPanel (`DNS::mass_edit_zone`) hoặc Cloudflare: nhận diện được, **chưa ghi** |
-| SSL + Tạo web | **15 mẫu đổi sang giao diện mới theo trang tham khảo anh chọn (2026-10-17)** (`brand_render.py`): đầu trang gradient + mảng cong + khung ảnh, thẻ thông tin nổi (chỉ dữ kiện thật), khối "Who we are", dải tràn có thẻ thông tin (điện thoại / địa chỉ / dịch vụ / giờ), thẻ dịch vụ gradient, khối liên hệ gradient, chân trang đen. Mỗi mẫu có dải màu + font tiêu đề riêng; chi tiết bố cục đổi theo tên miền. 6 trang + robots/sitemap; xem trước = đúng HTML sẽ dựng. **Email chỉ hiện khi đã xác minh**. Bản đồ = link Google Maps theo đúng địa chỉ, không ghim đoán. **Ảnh từ Pexels API (có khoá) hoặc Pixabay API**: mỗi web 7 ảnh chọn theo ngành của mẫu + tên miền (≤ 3 lượt tìm/web), tải về và upload kèm web (`photo-*.jpg`, không hot-link), chân trang ghi “Photos by … on Pexels/Pixabay”; chưa có khoá → khung gradient (loremflickr của app cũ đang lỗi 500 nên đã bỏ). Mẫu cũ khôi phục từ EXE vẫn giữ trong repo (`legacy/`), không còn dùng để dựng | Ảnh thật: anh dán khoá Pexels (đã có, ở pexels.com/api/key) hoặc Pixabay vào Cài đặt | Quét Sheet (B có, C trống) — cần Google; document root đọc từ cPanel, nội dung AI + kiểm tra không bịa, upload `overwrite=0`, AutoSSL, kiểm HTTPS, đọc lại C rồi ghi — cần token cPanel + ANTHROPIC_API_KEY | — |
-| Cài đặt API | Trang **Cài đặt API**: Google, AI, máy chủ, iNET/cPanel × 3 nick. Khoá **mã hoá ở server** (Fernet, khoá chủ `data/master.key` hoặc `QLBM_MASTER_KEY`), không bao giờ trả về giao diện hay ghi log. Nút **Kết nối Google** (OAuth web, PKCE) + kiểm tra Google chỉ đọc | OAuth client loại *Web application* + redirect URI của server | — |
-| Tổng quan | Giao diện | — | Vẫn là **dữ liệu mẫu** (có nhãn “Dữ liệu mẫu”) |
-| Nền tảng | Hàng đợi PostgreSQL (chống chạy trùng, một việc/nick, thử lại có giãn cách, chạy tiếp từ bước dở, tạm dừng/tiếp tục), nhật ký từng việc, bảng `sheet_writes`, sao lưu/khôi phục `pg_dump`; **khởi động lại API + worker giữ nguyên dữ liệu và việc dở**. **Đăng nhập**: mọi màn hình + mọi `/api/*` cần phiên (cookie HttpOnly), mật khẩu scrypt, chặn sai mật khẩu nhiều lần, chặn yêu cầu ghi từ nguồn lạ; tài khoản đầu tiên tạo tại máy hoặc bằng `scripts/create_user.py` | Docker Compose (db, api, worker, web, backup), cổng chỉ mở trên 127.0.0.1 — **chưa chạy thử** (máy này chưa có Docker) | Chỉ 1 vai trò (chủ); HTTPS + reverse proxy khi đưa lên server; GitHub Private (chưa có remote) |
+- **Nền tảng**:
+  - backend FastAPI + PostgreSQL nhúng + worker, giao diện Next.js;
+  - **một lệnh bật/tắt**: `scripts/start-local.ps1` / `stop-local.ps1`.
+- **Khởi động lại** (kiểm trên database riêng, API + worker bị tắt đột ngột giữa chừng): giữ nguyên
+  - phiên đăng nhập;
+  - khoá đã mã hoá: trong DB chỉ có bản mã, khoá chủ nằm ở `data/master.key`, ngoài DB;
+  - miền gốc đã tích;
+  - việc đang chạy dở: tự chạy tiếp từ bước dở, nhận lại trong khoảng 1 phút nhờ nhịp tim của worker.
+- **Lần chạy đầu** trên database trống: API và worker khởi động cùng lúc không còn lỗi. Trước đây API chết vì trùng khoá; Docker cũng sẽ gặp lỗi này.
+- **Đăng nhập**:
+  - mọi màn hình và mọi `/api/*` đều cần phiên đăng nhập (cookie HttpOnly, SameSite=Lax);
+  - mật khẩu băm scrypt;
+  - sai mật khẩu nhiều lần thì bị chặn;
+  - yêu cầu ghi từ nguồn lạ bị chặn;
+  - tài khoản đầu tiên chỉ tạo được tại máy (hoặc bằng `scripts/create_user.py`).
+- **Khoá API**: lưu mã hoá ở server; không bao giờ trả về giao diện, không ghi vào log; Git và log đã quét sạch.
+- **PDF Manager**:
+  - upload, chống trùng md5;
+  - **trích xuất Brazil CNPJ từ lớp chữ**: đúng trên 3 phôi thật, có kiểm số kiểm tra CNPJ;
+  - xem PDF gốc, sửa ô, kiểm tra hợp lệ;
+  - tick "email đã xác minh".
+- **Tạo miền**:
+  - danh sách miền gốc của 3 nick; tích chọn lưu trong DB;
+  - công tắc ghi DNS (mặc định TẮT), miền thử, khung xem trước có kiểm tra qua API;
+  - tên miền phụ chuyển chữ có dấu về không dấu ("ç" thành "c") và bỏ LTDA/EIRELI/ME.
+- **Tạo web**:
+  - dựng 6 trang của 15 mẫu giao diện mới;
+  - xem trước trong app = đúng HTML sẽ dựng;
+  - chưa có khoá ảnh thì dùng khung màu.
 
-Kiểm thử: `apps/api` **115 test** (gồm đăng nhập, 15 mẫu web mới × 10 tên miền, ảnh Pexels + Pixabay giả lập), mọi API ngoài đều mock (iNET là tài khoản giả có trạng thái, theo đúng cấu trúc tài liệu).
-Gồm **1 test toàn tuyến** trên cùng một Sheet giả: lưu PDF → chạy thử → xem trước → tạo miền (B) → dựng web (C).
-E2E giao diện trên backend giả lập (chặn mọi lời gọi ra ngoài): đăng nhập 21/21, ghi DNS (tắt → chạy thử → hàng loạt) 16/16, xem trước 15 mẫu 15/15.
-Trên backend dev: các màn 14/14, Cài đặt 11/11, xác minh email 6/6, xem trước 15 mẫu 15/15.
+## 2. Đã có code, chỉ chạy với dịch vụ giả lập (đúng cấu trúc tài liệu chính thức)
+
+| Luồng | Đã kiểm bằng giả lập | Lần đầu chạy thật cần xác nhận |
+|---|---|---|
+| PDF → Drive → Sheet | Kiểm trùng (DB + Sheet) → Drive (tìm theo md5, không upload 2 lần) → so md5 → ghi A, D–J (B, C trống) → K = "Xem phôi". **Mất phản hồi khi ghi Sheet → không ghi trùng dòng.** Lỗi mạng Google → tự thử lại | Bố cục Sheet thật: app đọc dữ liệu **từ dòng 3** (dòng 1 tiêu đề, dòng 2 tên cột). Nút "Kiểm tra Google" hiện dòng 1–2 để anh đối chiếu |
+| California (bản scan) | AI đọc + đối chiếu số hồ sơ / tên với trang 2 | Gọi AI thật |
+| Sheet → miền iNET → B | Kiểm tra qua API (chỉ đọc) → xác nhận → bản ghi A (1 mục ACTION_ADD, không sửa/xoá bản ghi cũ) → miền phụ trên cPanel → chờ DNS (tối đa 12 giờ, hỏi 2 resolver) → **ghi B chỉ khi ô A vẫn đúng công ty và B vẫn trống**. Chạy lại không tạo trùng bản ghi / miền phụ | IP hosting mà cPanel báo (`DomainInfo.ip`) có thể là IP nội bộ nếu server sau NAT: lần kiểm tra đầu sẽ cho thấy |
+| B → web → cPanel → SSL → C | Mẫu + nội dung AI (kiểm không bịa) → 7 ảnh Pexels/Pixabay tải kèm → **không ghi đè file có sẵn trong thư mục** (chạy lại chỉ thay file của chính web) → AutoSSL (chờ tối đa 24 giờ, gửi lại mỗi 2 giờ) → kiểm HTTPS → **ghi C chỉ khi C vẫn trống** | Một số host tắt quyền `start_autossl_check` của user: nếu vậy lần chạy thử sẽ báo rõ |
+| Toàn tuyến | 1 test PDF → B → C trên cùng một Sheet giả; **128 test** tự động; E2E giao diện: đăng nhập 21/21, ghi DNS 16/16, Cài đặt ảnh 8/8, xem trước 15 mẫu 15/15 | — |
+
+## 3. Cần anh cấp quyền / tự cấu hình (em không tự làm được)
+
+1. **Tạo tài khoản chủ**: mở http://localhost:3210, điền form "Tạo tài khoản chủ".
+2. **Google**:
+   - Google Cloud → OAuth client loại *Web application*, bật Sheets API + Drive API;
+   - Redirect URI lấy ở trang Cài đặt; chuyển app sang *In production* (ở chế độ Testing, quyền chỉ giữ được 7 ngày);
+   - dán JSON vào Cài đặt → bấm **Kết nối Google** (tick đủ quyền Sheets và Drive) → nhập `SHEET_ID` của **bản sao** Sheet để thử → bấm **Kiểm tra Google**.
+3. **AI**: `ANTHROPIC_API_KEY`.
+4. **Ảnh**: khoá Pexels (anh đã có) hoặc Pixabay.
+5. **cPanel**: user + API token cho từng nick (Security › Manage API Tokens).
+6. **iNET**: khoá API cho từng nick, `read` trước; `write` khi anh duyệt chạy thử ghi DNS.
+7. **Miền thử**: một miền phụ dưới miền gốc đã tích; anh tự bật công tắc "Ghi DNS thật".
+8. **GitHub Private**: tạo repo trống rồi gửi URL (xem README).
+
+## 4. Chưa làm / ngoài phạm vi hiện tại
+
+- Ghi DNS cho miền dùng nameserver của hosting cPanel (`DNS::mass_edit_zone`) hoặc Cloudflare: nhận diện được, chưa ghi.
+- Wyoming: chưa có phôi thật để kiểm.
+- Màn Tổng quan vẫn là dữ liệu mẫu (có nhãn).
+- Docker Compose chưa chạy thử (máy chưa có Docker); khi đưa lên server cần HTTPS + reverse proxy.
+- Công Việc B (XMDN Meta).
+
+## Chi tiết
 
 ### Ghi DNS thật — các lớp bảo vệ
 1. Công tắc **Ghi DNS thật** (Cài đặt) mặc định TẮT. Khi tắt, việc tạo miền dừng ở "Chưa khả dụng" trước mọi thao tác ghi.
@@ -39,21 +88,13 @@ Trên backend dev: các màn 14/14, Cài đặt 11/11, xác minh email 6/6, xem 
 
 | Dịch vụ | Đã dùng (theo tài liệu chính thức) | Thiếu |
 |---|---|---|
+| DNS công khai | Cloudflare + Google DNS-over-HTTPS (JSON) | — |
 | Google | OAuth 2.0 của chủ tài khoản (web PKCE từ trang Cài đặt; script Desktop chỉ để phát triển), quyền `spreadsheets` + `drive.file`. Sheets v4 `values.get/update/append`, Drive v3 upload multipart + `appProperties` | Gmail cá nhân: service account không upload được vào Drive → dùng OAuth |
-| cPanel UAPI | `SubDomain::addsubdomain/listsubdomains`, `DomainInfo::single_domain_data/list_domains`, `Fileman::upload_files`, `SSL::start_autossl_check/is_autossl_check_in_progress/get_autossl_problems`, `StatsBar::get_stats` (cpanelversion), `DNS::has_local_authority` | `DNS::mass_edit_zone` chưa làm (không miền gốc nào dùng NS cPanel) |
+| cPanel UAPI | `SubDomain::addsubdomain/listsubdomains`, `DomainInfo::single_domain_data/list_domains`, `Fileman::upload_files/list_files`, `SSL::start_autossl_check/is_autossl_check_in_progress/get_autossl_problems`, `StatsBar::get_stats` (cpanelversion), `DNS::has_local_authority` | `DNS::mass_edit_zone` chưa làm (không miền gốc nào dùng NS cPanel) |
 | iNET | `GET /domain`, `GET /domain/{id}`, `GET /domain/{id}/record`, `PATCH /domain/{id}/record` (chỉ ACTION_ADD) | — (cần khoá; ghi thật chờ anh bật công tắc) |
 | Pexels | `GET /v1/search` (orientation, per_page, page), khoá trong header; tải ảnh từ images.pexels.com; 200 lượt/giờ; ghi nguồn | — (cần khoá) |
 | Pixabay | `GET /api/` (q, image_type=photo, orientation, safesearch, per_page, page) + tải `largeImageURL` từ pixabay.com; 100 lượt/phút; lưu đệm 24 giờ; không hot-link; ghi nguồn | — (cần khoá) |
 | AI | Anthropic Messages (SDK `anthropic` 1.15, `claude-opus-5-5`, JSON schema, khối `document` cho PDF scan, fallback khi từ chối); `/api/ai/check` | — (cần khoá) |
-
-## Tối thiểu để kiểm thử thật
-
-1. **Google**: OAuth client loại **Web application** (bật Sheets API + Drive API), redirect URI = `PUBLIC_API_URL/api/google/oauth/callback`
-   (trang Cài đặt hiện sẵn). Dán JSON client ở trang Cài đặt → bấm **Kết nối Google**. `SHEET_ID` của **bản sao Sheet để thử**.
-2. **AI**: `ANTHROPIC_API_KEY`. **Ảnh web**: khoá Pexels (pexels.com/api/key) hoặc Pixabay (pixabay.com/api/docs) ở Cài đặt › Ảnh cho website; có cả hai thì dùng Pexels.
-3. **cPanel**: user + API token cho 3 tài khoản.
-4. **iNET**: khoá API — `read` để kiểm tra nick; `write` chỉ khi anh duyệt bật tạo bản ghi A.
-5. Mỗi lần thử thật đầu tiên trên một dịch vụ: em chỉ chạy **thao tác đọc** trước, anh duyệt rồi mới ghi.
 
 ## Quy tắc đã chốt
 
