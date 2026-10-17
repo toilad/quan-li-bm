@@ -55,7 +55,7 @@ type Action =
   | { type: "strategy"; strategy: Strategy; root?: string }
   | { type: "message"; text: string | null }
   // server actions (handled by the hook wrapper)
-  | { type: "start" }
+  | { type: "start"; token: string }
   | { type: "retry"; row: number }
   | { type: "retryAll" }
   | { type: "pickRoots"; roots: string[]; on: boolean }
@@ -288,9 +288,8 @@ export function useDomainQueue() {
           .finally(refresh);
         return;
       case "start": {
-        const items = s.rows.filter((r) => r.checked && r.status === "idle" && !r.jobId && !previewIssue(r, s)).slice(0, s.batchLimit)
-          .map((r) => ({ row: r.row, company: r.company.A, root: r.root, label: labelOf(r, s.rule) }));
-        api.post<{ queued: unknown[]; refused: Record<string, string> }>("/api/domains/run", { items })
+        // Runs exactly the plan the owner confirmed after the read-only API check (single-use token).
+        api.post<{ queued: unknown[]; refused: Record<string, string> }>("/api/domains/run", { token: a.token })
           .then((r) => say(`Đã đưa ${r.queued.length} dòng vào hàng đợi backend${Object.keys(r.refused).length ? ` · từ chối ${Object.keys(r.refused).length}: ${Object.values(r.refused).join("; ")}` : ""}`))
           .catch((e) => say(errorText(e)))
           .finally(refresh);
@@ -336,3 +335,8 @@ export function useDomainQueue() {
 }
 
 export { DOMAIN_STEPS };
+
+/** Rows the preview would run, in the shape the backend checks (POST /api/domains/preview). */
+export const runItems = (s: DomainState) =>
+  s.rows.filter((r) => r.checked && r.status === "idle" && !r.jobId && !previewIssue(r, s)).slice(0, s.batchLimit)
+    .map((r) => ({ row: r.row, company: r.company.A, root: r.root, label: labelOf(r, s.rule) }));

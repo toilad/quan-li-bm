@@ -44,6 +44,8 @@ export const api = {
     request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: json === undefined ? undefined : JSON.stringify(json) }),
   put: <T>(f: { name: string }, value: string) =>
     request<T>("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: f.name, value }) }),
+  putJson: <T>(path: string, json: unknown) =>
+    request<T>(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) }),
   patch: <T>(path: string, json: unknown) =>
     request<T>(path, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) }),
   upload: <T>(path: string, files: File[]) => {

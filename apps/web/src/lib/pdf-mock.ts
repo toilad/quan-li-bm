@@ -236,10 +236,9 @@ export function validate(fields: Fields, t: DocType): Partial<Record<FieldKey, I
 
     // California: compare with the copy printed on a later page (gone once the owner edits the box)
     if (fld.check && out[m.key]?.level !== "error") {
-      if (fld.check.match === false)
-        m.key === "J"
-          ? set("error", "format", `Khác số in lại ở trang sau (${fld.check.other}) — đối chiếu PDF rồi sửa tay`)
-          : set("warn", "review", `Tên ở trang sau ghi “${fld.check.other}” — đối chiếu lại`);
+      if (fld.check.match === false && m.key === "J")
+        set("error", "format", `Khác số in lại ở trang sau (${fld.check.other}) — đối chiếu PDF rồi sửa tay`);
+      else if (fld.check.match === false) set("warn", "review", `Tên ở trang sau ghi “${fld.check.other}” — đối chiếu lại`);
       else if (fld.check.match === null && m.key === "J")
         set("warn", "review", "Không thấy số in lại ở trang sau để đối chiếu — kiểm tra bằng mắt");
     }

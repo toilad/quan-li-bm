@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
 import { KeyRound, Save, Trash2, ShieldCheck, FileSpreadsheet, Bot, Server, Users, Link2, PlugZap, CheckCircle2, AlertCircle, Copy } from "lucide-react";
 import { API_URL, api, errorText } from "@/lib/api";
+import { DnsWriteCard } from "./dns-write";
 
 type Field = { name: string; group: string; label: string; secret: boolean; set: boolean; source: "app" | "env" | "none"; updated_at: string | null; server_only: boolean; value?: string; default?: string };
 type Settings = { fields: Field[]; google: { mode: string | null; client_type: string | null; redirect_uri: string; connected: boolean } };
@@ -92,8 +93,8 @@ export function ApiSettings() {
                 )}
                 {g.key.startsWith("nick:") && (
                   <Btn onClick={() => run(g.key, "Đang đọc cPanel + iNET (chỉ đọc)", () => api.post(`/api/domains/check/${g.key.slice(5)}`),
-                    (r: { cpanel: { ok: boolean; error?: string; on_hosting?: string[]; missing?: string[] }; inet: { ok: boolean; error?: string } }) =>
-                      `cPanel: ${r.cpanel.ok ? `${r.cpanel.on_hosting?.length} miền gốc có trên hosting, ${r.cpanel.missing?.length} chưa có` : r.cpanel.error} · iNET: ${r.inet.ok ? "đọc được danh sách miền" : r.inet.error}`)}>
+                    (r: { cpanel: { ok: boolean; error?: string; on_hosting?: string[]; missing?: string[]; version?: string }; inet: { ok: boolean; error?: string; note?: string } }) =>
+                      `cPanel: ${r.cpanel.ok ? `${r.cpanel.version ? `bản ${r.cpanel.version}, ` : ""}${r.cpanel.on_hosting?.length} miền gốc có trên hosting, ${r.cpanel.missing?.length} chưa có` : r.cpanel.error} · iNET: ${r.inet.ok ? r.inet.note : r.inet.error}`)}>
                     <PlugZap className="size-4" /> Kiểm tra hosting (chỉ đọc)
                   </Btn>
                 )}
@@ -107,6 +108,7 @@ export function ApiSettings() {
           );
         })}
       </div>
+      <DnsWriteCard />
     </div>
   );
 }
