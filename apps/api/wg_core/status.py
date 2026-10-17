@@ -37,7 +37,7 @@ def integration_status(s: Session) -> dict:
         "ai": ai,
         "nicks": nicks,
         "unavailable": [
-            {"what": "Tạo bản ghi A qua API iNET", "why": "Tài liệu iNET chưa có cấu trúc dữ liệu gửi lên cho PATCH /domain/{id}/record"},
-            {"what": "Đọc danh sách tên miền qua API iNET", "why": "GET /domain có trong tài liệu nhưng chưa có cấu trúc trả về — cần 1 lần gọi thật (chỉ đọc) để đối chiếu"},
+            {"what": "Bản ghi A cho miền dùng DNS của hosting cPanel", "why": "DNS::mass_edit_zone có trong tài liệu cPanel nhưng chưa triển khai"},
+            {"what": "Bản ghi A cho miền dùng DNS Cloudflare", "why": "Chưa có API Cloudflare được cấu hình — không gọi nhầm API iNET"},
         ],
     }

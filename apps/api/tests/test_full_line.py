@@ -1,19 +1,19 @@
 """The whole line on ONE in-memory Sheet, every external service mocked:
 PDF saved (Drive + A, D–K) → domain created (B) → website built and HTTPS-checked (C).
 
-The iNET DNS write is the only step replaced by a stub (Inet.create_a_record): the code still refuses to write
-DNS until the owner approves it. Everything else runs the real job handlers through the real queue."""
+iNET is an in-memory account following the documented API. The domain step goes the way the owner will run it:
+trial subdomain named → switch on → read-only preview → confirmed plan → job. Real job handlers, real queue."""
 import hashlib
 
 import httpx
 import respx
 from tests.conftest import drain
-from tests.mocks import FakeSheet, anthropic_json, cp_ok, install_doh, install_drive
+from tests.mocks import FakeInet, FakeSheet, anthropic_json, cp_ok, install_doh, install_drive
 from tests.test_websites import GOOD
 
 from wg_core.db import session_scope
-from wg_core.integrations.inet import Inet
 from wg_core.models import Job, PdfDocument, SheetWrite
+from wg_core.modules.domains import dns_plan
 from wg_core.modules.domains import service as domains
 from wg_core.modules.pdf import service as pdf
 from wg_core.modules.pdf.fields import field
@@ -50,7 +50,8 @@ def _cpanel(m, answers):
         answers[FQDN] = [IP]  # the stubbed A record "propagates" once the host exists
         return cp_ok(None)
 
-    m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"result": {"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life", "type": "addon_domain"}}})
+    m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"result": {"status": 1, "data": {
+        "documentroot": "/home/u1/public_html/huxma.life", "type": "addon_domain", "ip": IP}}})
     m.get(f"{CP}/SubDomain/listsubdomains").mock(side_effect=listsub)
     add = m.get(f"{CP}/SubDomain/addsubdomain").mock(side_effect=addsub)
     upload = m.post(f"{CP}/Fileman/upload_files").mock(return_value=cp_ok({"succeeded": 8, "failed": 0, "uploads": []}))
@@ -60,9 +61,8 @@ def _cpanel(m, answers):
     return add, upload
 
 
-def test_pdf_to_domain_to_website_on_one_sheet(monkeypatch):
-    dns_calls = []
-    monkeypatch.setattr(Inet, "create_a_record", lambda self, d, label, ip: dns_calls.append((d, label, ip)) or "created")
+def test_pdf_to_domain_to_website_on_one_sheet():
+    inet = FakeInet({"huxma.life": {"id": 501, "ns": ["ns1.inet.vn", "ns2.inet.vn"], "records": [{"id": 1, "name": "@", "type": "A", "data": IP, "ttl": 300}]}})
     sheet = FakeSheet({3: {"A": "Existing Co", "B": "old.example.com", "C": "https://old.example.com", "J": "2024-000000001"}})
     answers: dict[str, list[str]] = {}
     with respx.mock(assert_all_called=False) as m:
@@ -70,6 +70,7 @@ def test_pdf_to_domain_to_website_on_one_sheet(monkeypatch):
         install_drive(m)
         install_doh(m, answers)
         add, upload = _cpanel(m, answers)
+        patch = inet.install(m)
         m.get(f"https://{FQDN}/").mock(return_value=httpx.Response(200, text="<title>Acme Plumbing LLC</title>"))
         ai = m.post("https://api.anthropic.com/v1/messages").mock(return_value=anthropic_json(GOOD))
 
@@ -84,13 +85,21 @@ def test_pdf_to_domain_to_website_on_one_sheet(monkeypatch):
         assert sheet.rows[row]["A"] == "Acme Plumbing LLC" and sheet.rows[row]["B"] == "" and sheet.rows[row]["C"] == ""
         assert sheet.rows[row]["K"].startswith("=HYPERLINK(")
 
-        # 2 · Domain Manager: only a ticked root is used → A record (stub) + cPanel subdomain → DNS verified → B
+        # 2 · Domain Manager: ticked root → trial named + switch on → preview (read-only) → confirmed plan →
+        #     A record (ACTION_ADD) + cPanel subdomain → DNS verified → B
         with session_scope() as s:
             assert domains.set_selected(s, ["huxma.life"], True)["changed"] == ["huxma.life"]
-            q = domains.enqueue_rows(s, [{"row": row, "company": "Acme Plumbing LLC", "root": "huxma.life", "label": "acme"}])
+            dns_plan.set_switch(s, enabled=True, trial_fqdn=FQDN)
+        with session_scope() as s:
+            plan = dns_plan.preview(s, [{"row": row, "company": "Acme Plumbing LLC", "root": "huxma.life", "label": "acme"}])
+            assert plan["token"] and plan["rows"][0]["action"] == "add" and plan["rows"][0]["ip"] == IP and not patch.called
+        with session_scope() as s:
+            q = domains.enqueue_rows(s, dns_plan.take_plan(s, plan["token"]))
             assert not q["refused"]
         drain()
-        assert dns_calls == [("huxma.life", "acme", IP)]
+        assert inet.patches == [{"recordList": [{"domainId": 501, "name": "acme", "type": "A", "data": IP, "ttl": "300", "action": "ACTION_ADD"}]}]
+        with session_scope() as s:
+            assert dns_plan.mode(dns_plan.get_switch(s)) == "batch"  # the trial passed
         assert add.call_count == 1 and add.calls[0].request.url.params["dir"] == f"public_html/{FQDN}"
         assert sheet.rows[row]["B"] == FQDN and sheet.rows[row]["C"] == ""
 

@@ -106,3 +106,52 @@ def anthropic_json(payload: dict):
         "stop_reason": "end_turn", "stop_sequence": None,
         "usage": {"input_tokens": 10, "output_tokens": 10},
     })
+
+
+INET = "https://developers.inet.vn/api/gateway/v1"
+
+
+class FakeInet:
+    """In-memory iNET account following the documented shapes. PATCH applies each recordList item as one
+    operation (ACTION_ADD / ACTION_DELETE). `drop_on_add` simulates a server that loses other records."""
+
+    def __init__(self, domains: dict[str, dict] | None = None, drop_on_add: bool = False):
+        # {name: {"id": int, "ns": [...], "records": [{id, name, type, data, ttl}]}}
+        self.domains = domains or {}
+        self.patches, self.drop_on_add, self._next = [], drop_on_add, 9000
+
+    def install(self, mock):
+        by_id = lambda i: next(d for d in self.domains.values() if d["id"] == i)  # noqa: E731
+
+        def list_(request):
+            name = request.url.params.get("name")
+            items = [{"id": d["id"], "name": n, "status": "active"} for n, d in self.domains.items() if not name or n == name]
+            return httpx.Response(200, json={"content": items, "totalPages": 1, "totalElements": len(items), "size": 100, "number": 0})
+
+        def detail(request):
+            i = int(request.url.path.rstrip("/").split("/")[-1])
+            d = by_id(i)
+            return httpx.Response(200, json={"id": i, "nsList": [{"id": k, "hostname": h} for k, h in enumerate(d["ns"])]})
+
+        def records(request):
+            i = int(request.url.path.split("/")[-2])
+            return httpx.Response(200, json={"id": i, "recordList": by_id(i)["records"]})
+
+        def patch(request):
+            i = int(request.url.path.split("/")[-2])
+            d, body = by_id(i), json.loads(request.content)
+            self.patches.append(body)
+            for it in body["recordList"]:
+                if it["action"] == "ACTION_ADD":
+                    self._next += 1
+                    if self.drop_on_add:
+                        d["records"] = d["records"][1:]
+                    d["records"].append({"id": self._next, "name": it["name"], "type": it["type"], "data": it["data"], "ttl": int(it["ttl"])})
+                elif it["action"] == "ACTION_DELETE":
+                    d["records"] = [r for r in d["records"] if r["id"] != it["id"]]
+            return httpx.Response(200, json={"id": i, "status": "active", "recordList": d["records"]})
+
+        mock.get(url__regex=rf"^{re.escape(INET)}/domain(\?.*)?$").mock(side_effect=list_)
+        mock.get(url__regex=rf"^{re.escape(INET)}/domain/\d+$").mock(side_effect=detail)
+        mock.get(url__regex=rf"^{re.escape(INET)}/domain/\d+/record$").mock(side_effect=records)
+        return mock.patch(url__regex=rf"^{re.escape(INET)}/domain/\d+/record$").mock(side_effect=patch)

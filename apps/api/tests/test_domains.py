@@ -51,50 +51,15 @@ def _routes(m, sheet, ips):
     return m.get(f"{CP}/SubDomain/addsubdomain").mock(return_value=cp_ok(None))
 
 
-def test_real_dns_step_is_blocked_until_inet_documents_it():
+def test_b_filled_meanwhile_is_conflict_not_overwrite():
+    from tests.test_dns_write import batch_mode, fake_inet
+
     _tick("huxma.life")
-    sheet = FakeSheet({ROW: {"A": "Acme LLC"}})
-    with respx.mock(assert_all_called=False) as m:
-        add = _routes(m, sheet, {})
-        with session_scope() as s:
-            job_id = domains.enqueue_rows(s, [{"row": ROW, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])["queued"][0]["job_id"]
-        drain()
-    with session_scope() as s:
-        j = s.get(Job, job_id)
-        assert j.status == "blocked" and "PATCH /domain/{id}/record" in j.last_error
-        assert not j.state.get("dns_created")
-    assert not add.called and sheet.writes == []  # nothing created, B untouched
-
-
-def test_full_flow_with_dns_adapter_mocked(monkeypatch):
-    monkeypatch.setattr(Inet, "create_a_record", lambda self, d, label, ip: None)
-    _tick("huxma.life")
-    sheet = FakeSheet({ROW: {"A": "Acme LLC", "C": ""}})
-    with respx.mock(assert_all_called=False) as m:
-        add = _routes(m, sheet, {"acme.huxma.life": []})
-        with session_scope() as s:
-            job_id = domains.enqueue_rows(s, [{"row": ROW, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])["queued"][0]["job_id"]
-        drain()
-        with session_scope() as s:  # DNS not propagated yet → retry later, created steps kept
-            j = s.get(Job, job_id)
-            assert j.status == "queued" and j.state["dns_created"] and j.state["host_created"]
-            j.run_after = j.created_at
-        install_doh(m, {"acme.huxma.life": ["103.75.187.26"]})
-        drain()
-    with session_scope() as s:
-        j = s.get(Job, job_id)
-        assert j.status == "done" and j.state["written_b"] == "acme.huxma.life"
-    assert add.call_count == 1  # cPanel subdomain created once, not on retry
-    assert sheet.writes == [(f"B{ROW}", "acme.huxma.life")]  # only B, never C
-    assert add.calls[0].request.url.params["dir"] == "public_html/acme.huxma.life"
-
-
-def test_b_filled_meanwhile_is_conflict_not_overwrite(monkeypatch):
-    monkeypatch.setattr(Inet, "create_a_record", lambda self, d, label, ip: None)
-    _tick("huxma.life")
+    batch_mode()
     sheet = FakeSheet({ROW: {"A": "Acme LLC"}})
     with respx.mock(assert_all_called=False) as m:
         _routes(m, sheet, {"acme.huxma.life": []})
+        fake_inet().install(m)
         with session_scope() as s:
             job_id = domains.enqueue_rows(s, [{"row": ROW, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])["queued"][0]["job_id"]
         drain()
@@ -110,8 +75,11 @@ def test_b_filled_meanwhile_is_conflict_not_overwrite(monkeypatch):
 
 
 def test_unticked_root_stops_a_queued_job_before_creating(monkeypatch):
-    monkeypatch.setattr(Inet, "create_a_record", lambda self, d, label, ip: (_ for _ in ()).throw(AssertionError("must not run")))
+    from tests.test_dns_write import batch_mode
+
+    monkeypatch.setattr(Inet, "create_a_record", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
     _tick("huxma.life")
+    batch_mode()
     with session_scope() as s:
         job_id = domains.enqueue_rows(s, [{"row": ROW, "company": "Acme", "root": "huxma.life", "label": "acme"}])["queued"][0]["job_id"]
         s.get(RootDomain, "huxma.life").selected = False  # e.g. edited directly in DB
@@ -132,20 +100,22 @@ def test_busy_root_cannot_be_unticked():
     assert res["refused"] == {"huxma.life": "Đang có tác vụ trên miền này — bỏ chọn sau khi xong"}
 
 
-def test_read_only_nick_check_marks_roots_on_hosting_and_keeps_inet_raw():
+def test_read_only_nick_check_marks_roots_on_hosting_and_in_inet():
     import httpx
 
     with respx.mock(assert_all_called=False) as m:
         m.get(f"{CP}/DomainInfo/list_domains").mock(return_value=cp_ok({
             "main_domain": "levantoan.000web.com", "addon_domains": ["sustainlife.io.vn", "huxma.life"], "sub_domains": ["a.huxma.life"], "parked_domains": []}))
         ver = m.get(f"{CP}/StatsBar/get_stats").mock(return_value=cp_ok([{"name": "cpanelversion", "id": "cpanelversion", "count": "11.130.0.15", "item": "cPanel Version"}]))
-        inet = m.get("https://developers.inet.vn/api/gateway/v1/domain").mock(return_value=httpx.Response(200, json={"content": [{"x": 1}]}))
+        inet = m.get(url__startswith="https://developers.inet.vn/api/gateway/v1/domain").mock(return_value=httpx.Response(200, json={
+            "content": [{"id": 1, "name": "huxma.life"}, {"id": 2, "name": "sustainlife.io.vn"}], "totalPages": 1}))
         with session_scope() as s:
             out = domains.check_nick(s, "n1")
     assert out["cpanel"]["ok"] and set(out["cpanel"]["on_hosting"]) == {"sustainlife.io.vn", "huxma.life"}
     assert "yhawt.press" in out["cpanel"]["missing"]
     assert out["cpanel"]["version"] == "11.130.0.15" and ver.calls[0].request.url.params["display"] == "cpanelversion"
-    assert out["inet"]["ok"] and out["inet"]["top_level"] == ["content"] and inet.calls[0].request.method == "GET"
+    assert out["inet"]["ok"] and out["inet"]["domains"] == 2 and "yhawt.press" in out["inet"]["missing"]
+    assert all(c.request.method == "GET" for c in inet.calls)
     # a root not on the hosting can no longer be ticked; one on it can
     res = _tick("yhawt.press", "huxma.life")
     assert res["changed"] == ["huxma.life"] and "cPanel" in res["refused"]["yhawt.press"]

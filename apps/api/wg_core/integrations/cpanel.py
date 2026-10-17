@@ -6,6 +6,7 @@ Used (all documented, see docs/API-RESEARCH.md):
   Fileman::upload_files (POST multipart, file-0…), SSL::start_autossl_check,
   SSL::is_autossl_check_in_progress, SSL::get_autossl_problems,
   StatsBar::get_stats (display=cpanelversion, read-only; docs checked against API version 11.138)
+  DNS::has_local_authority (read-only: is this server authoritative for the domain's DNS?)
 Responses: result.status 1 = ok, 0 = failed (errors in result.errors).
 """
 import re
@@ -68,6 +69,13 @@ class CPanel:
             return self._call("DomainInfo", "single_domain_data", {"domain": domain})
         except Permanent:
             return None
+
+    def has_local_authority(self, domain: str) -> dict:
+        """DNS::has_local_authority → {domain, local_authority: 1|0, nameservers, zone, error?}."""
+        for d in self._call("DNS", "has_local_authority", {"domain": domain}) or []:
+            if (d.get("domain") or "").lower() == domain.lower():
+                return d
+        return {}
 
     def list_domains(self) -> dict:
         """DomainInfo::list_domains → {main_domain, addon_domains, sub_domains, parked_domains} (read-only)."""

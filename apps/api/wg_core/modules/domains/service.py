@@ -18,6 +18,7 @@ from ...integrations.errors import Conflict, NotAvailable, Permanent, Transient
 from ...integrations.google import Sheets
 from ...integrations.inet import Inet
 from ...jobs import JobContext, enqueue, handler
+from . import dns_plan
 from ...models import AppSetting, Job, Nick, RootDomain, SheetWrite
 
 LABEL_RX = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
@@ -67,7 +68,7 @@ def cpanel_domains(s: Session, nick_id: str) -> set[str] | None:
 
 
 def check_nick(s: Session, nick_id: str) -> dict:
-    """Read-only: which roots exist on the cPanel account, and the raw iNET domain list (shape undocumented)."""
+    """Read-only: which roots exist on the cPanel account and in the nick's iNET account."""
     from datetime import datetime, timezone
 
     from ...integrations.errors import IntegrationError
@@ -90,10 +91,12 @@ def check_nick(s: Session, nick_id: str) -> dict:
     except IntegrationError as e:
         out["cpanel"] = {"ok": False, "error": str(e)}
     try:
-        raw = Inet(nick.id).list_domains_raw()
-        s.merge(AppSetting(key=f"inet_raw:{nick.id}", value={"raw": raw, "at": datetime.now(timezone.utc).isoformat()}))
-        out["inet"] = {"ok": True, "note": "Đã lưu dữ liệu trả về để đối chiếu cấu trúc (tài liệu chưa mô tả) — chưa dùng để đổi danh sách miền",
-                       "top_level": sorted(raw.keys()) if isinstance(raw, dict) else f"list[{len(raw)}]"}
+        inet_names = sorted({(d.get("name") or "").lower() for d in Inet(nick.id).list_domains() if d.get("name")})
+        s.merge(AppSetting(key=f"inet_domains:{nick.id}", value={"domains": inet_names, "at": datetime.now(timezone.utc).isoformat()}))
+        roots = [r.name for r in s.scalars(select(RootDomain).where(RootDomain.nick_id == nick.id))]
+        missing = [r for r in roots if r not in inet_names]
+        out["inet"] = {"ok": True, "domains": len(inet_names), "missing": missing,
+                       "note": f"{len(inet_names)} miền trong tài khoản" + (f", không thấy {', '.join(missing)}" if missing else ", có đủ các miền gốc")}
     except IntegrationError as e:
         out["inet"] = {"ok": False, "error": str(e)}
     return out
@@ -145,9 +148,9 @@ def scan(s: Session) -> dict:
             "tab": Sheets().tab}
 
 
-def enqueue_rows(s: Session, items: list[dict]) -> dict:
-    """items: [{row, company, root, label}] — validated again here; the UI is never trusted."""
-    queued, refused = [], {}
+def validate_items(s: Session, items: list[dict]) -> tuple[list[dict], dict]:
+    """items: [{row, company, root, label, …}] — the UI is never trusted: only ticked, usable roots, valid labels."""
+    ok, refused = [], {}
     taken = set()
     for it in items:
         label, root = (it.get("label") or "").lower(), it.get("root") or ""
@@ -168,9 +171,19 @@ def enqueue_rows(s: Session, items: list[dict]) -> dict:
             refused[it.get("row")] = why
             continue
         taken.add(fqdn)
-        job, created = enqueue(s, "domain_create", f"domain:{fqdn}",
-                               {"row": it["row"], "company": it.get("company", ""), "root": root, "label": label, "fqdn": fqdn, "nick_id": r.nick_id},
-                               resource=f"nick:{r.nick_id}")
+        ok.append({**it, "row": it["row"], "company": it.get("company", ""), "root": root, "label": label, "fqdn": fqdn, "nick_id": r.nick_id})
+    return ok, refused
+
+
+def enqueue_rows(s: Session, items: list[dict]) -> dict:
+    """One job per subdomain. Normally fed by a confirmed preview plan (dns_plan.take_plan)."""
+    ok, refused = validate_items(s, items)
+    queued = []
+    for it in ok:
+        payload = {k: it[k] for k in ("row", "company", "root", "label", "fqdn", "nick_id")}
+        if it.get("domain_id") is not None:
+            payload["domain_id"] = it["domain_id"]  # iNET ID seen in the preview — must still match when writing
+        job, created = enqueue(s, "domain_create", f"domain:{it['fqdn']}", payload, resource=f"nick:{it['nick_id']}")
         queued.append({"row": it["row"], "job_id": job.id, "created": created})
     return {"queued": queued, "refused": refused}
 
@@ -197,22 +210,28 @@ def _create(ctx: JobContext):
         if sheets.read_cell(cell).strip():
             raise Conflict(f"Ô {cell} đã có dữ liệu — không tạo miền, không ghi đè")
         cp = CPanel(nick.id, nick.cpanel_host)
-        if not cp.domain_data(p["root"]):
+        dd = cp.domain_data(p["root"])
+        if not dd:
             raise Permanent(f"Miền gốc {p['root']} chưa có trên tài khoản cPanel của {nick.name} — thêm miền gốc vào hosting trước")
+        if dd.get("ip") and dd["ip"] != nick.ip:
+            raise Permanent(f"IP hosting của {p['root']} trên cPanel ({dd['ip']}) khác IP của {nick.name} ({nick.ip}) — dừng")
         if cp.subdomain(fqdn):
             raise Permanent(f"{fqdn} đã tồn tại trên cPanel — không tạo lại. Đổi tên hoặc miền gốc")
         existing = net.resolve_a(fqdn)
-        if existing:
+        if existing and set(existing) != {nick.ip}:
             raise Permanent(f"{fqdn} đã có bản ghi A ({', '.join(existing)}) — không ghi đè")
-        ctx.log("Không trùng: Sheet, cPanel, DNS", "ok")
+        if existing:  # e.g. added by an earlier attempt that stopped before saving its progress
+            ctx.log(f"DNS công khai: {fqdn} đã trỏ {nick.ip} — iNET sẽ được kiểm tra, chỉ thêm nếu chưa có", "warn")
+        ctx.log(f"Không trùng: Sheet, cPanel, DNS · {fqdn} → {nick.name} ({nick.ip})", "ok")
 
         ctx.step("Tạo bản ghi A")
-        if root.dns_host == "inet":
-            Inet(nick.id).create_a_record(p["root"], p["label"], nick.ip)  # blocked until iNET documents the body
-        else:
-            raise NotAvailable("DNS cPanel", "chưa triển khai DNS::mass_edit_zone (không miền gốc nào đang dùng NS cPanel)")
-        ctx.checkpoint(dns_created=True)
-        ctx.log(f"Tạo bản ghi A {fqdn} → {nick.ip}", "ok")
+        if why := dns_plan.gate(dns_plan.get_switch(s), [fqdn]):
+            raise NotAvailable("Ghi DNS thật", why)
+        if root.dns_host != "inet":
+            raise NotAvailable("DNS", f"{p['root']} không dùng DNS iNET — chưa có API nhà cung cấp DNS này")
+        rec = Inet(nick.id, log=ctx.log).create_a_record(p["root"], p["label"], nick.ip, expect_domain_id=p.get("domain_id"))
+        ctx.checkpoint(dns_created=True, dns_record=rec)
+        ctx.log(f"Bản ghi A {fqdn} → {nick.ip}: " + ("đã có sẵn, không gửi lại" if rec["result"] == "exists" else "đã thêm trên iNET"), "ok")
 
     if not st.get("host_created"):
         ctx.step("Tạo miền trên cPanel")
@@ -237,3 +256,5 @@ def _create(ctx: JobContext):
     s.add(SheetWrite(tab=sheets.tab, range=cell, old_value="", new_value=fqdn, job_id=ctx.job.id))
     ctx.checkpoint(written_b=fqdn)
     ctx.log(f"Ghi {cell} = {fqdn} · cột C giữ nguyên", "ok")
+    if dns_plan.mark_trial(s, fqdn, ctx.job.id):
+        ctx.log(f"Chạy thử thành công trên {fqdn} — từ giờ được chạy hàng loạt (vẫn phải xem trước và xác nhận)", "ok")

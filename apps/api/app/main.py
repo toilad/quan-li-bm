@@ -16,6 +16,7 @@ from wg_core.db import session_scope
 from wg_core.integrations.errors import Conflict, NotAvailable, NotConfigured, Permanent, Transient
 from wg_core.models import Job, JobLog, Nick, PdfDocument, RootDomain
 from wg_core.modules.domains import service as domains
+from wg_core.modules.domains import dns_plan
 from wg_core.modules.pdf import service as pdf
 from wg_core.modules.pdf.fields import FIELD_KEYS, validate
 from wg_core.modules.websites import service as websites
@@ -314,15 +315,52 @@ def domain_rows(s: Session = Depends(db)):
     return domains.scan(s)
 
 
-class RunBody(BaseModel):
+class PreviewBody(BaseModel):
     items: list[dict]
+
+
+@app.post("/api/domains/preview")
+def domain_preview(body: PreviewBody, s: Session = Depends(db)):
+    """Read-only check over the APIs of every subdomain about to be created; returns a single-use plan token."""
+    if not any(r.selected for r in s.scalars(select(RootDomain))):
+        raise HTTPException(422, "Chưa tích chọn miền gốc nào — không bắt đầu")
+    return dns_plan.preview(s, body.items)
+
+
+class RunBody(BaseModel):
+    token: str
 
 
 @app.post("/api/domains/run")
 def domain_run(body: RunBody, s: Session = Depends(db)):
-    if not any(r.selected for r in s.scalars(select(RootDomain))):
-        raise HTTPException(422, "Chưa tích chọn miền gốc nào — không bắt đầu")
-    return domains.enqueue_rows(s, body.items)
+    """Runs exactly the plan the owner confirmed in the preview — nothing else."""
+    try:
+        items = dns_plan.take_plan(s, body.token)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+    if why := dns_plan.gate(dns_plan.get_switch(s), [i["fqdn"] for i in items]):
+        raise HTTPException(409, why)
+    return domains.enqueue_rows(s, items)
+
+
+class DnsWriteBody(BaseModel):
+    enabled: bool | None = None
+    trial_fqdn: str | None = None
+
+
+@app.get("/api/domains/dns-write")
+def dns_write_get(s: Session = Depends(db)):
+    sw = dns_plan.get_switch(s)
+    return {**sw, "mode": dns_plan.mode(sw)}
+
+
+@app.put("/api/domains/dns-write")
+def dns_write_put(body: DnsWriteBody, s: Session = Depends(db)):
+    try:
+        sw = dns_plan.set_switch(s, enabled=body.enabled, trial_fqdn=body.trial_fqdn)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {**sw, "mode": dns_plan.mode(sw)}
 
 
 # ───────── Websites ─────────

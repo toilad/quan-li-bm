@@ -23,7 +23,7 @@ def test_status_reports_configuration(client):
     assert n1["cpanel"]["configured"] and n1["inet_key"]
     n2 = next(n for n in r["nicks"] if n["id"] == "n2")
     assert not n2["cpanel"]["configured"] and "CPANEL_TOKEN_N2" in n2["cpanel"]["missing"]
-    assert any("PATCH" in u["why"] for u in r["unavailable"])
+    assert any("mass_edit_zone" in u["why"] for u in r["unavailable"]) and not any("PATCH" in u["why"] for u in r["unavailable"])
 
 
 def test_sheet_not_configured_returns_503_not_fake_data(client, monkeypatch):
