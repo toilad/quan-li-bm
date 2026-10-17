@@ -105,7 +105,10 @@ def test_read_only_nick_check_marks_roots_on_hosting_and_in_inet():
 
     with respx.mock(assert_all_called=False) as m:
         m.get(f"{CP}/DomainInfo/list_domains").mock(return_value=cp_ok({
-            "main_domain": "levantoan.000web.com", "addon_domains": ["sustainlife.io.vn", "huxma.life"], "sub_domains": ["a.huxma.life"], "parked_domains": []}))
+            "main_domain": "levantoan.000web.com", "addon_domains": ["sustainlife.io.vn", "huxma.life"],
+            "sub_domains": ["sustainlife.io.vn.levantoan.000web.com", "huxma.life.levantoan.000web.com", "a.huxma.life"], "parked_domains": []}))
+        m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([
+            {"domain": d, "subdomain": d, "rootdomain": "levantoan.000web.com", "basedir": f"public_html/{d}"} for d in ("sustainlife.io.vn", "huxma.life")]))
         ver = m.get(f"{CP}/StatsBar/get_stats").mock(return_value=cp_ok([{"name": "cpanelversion", "id": "cpanelversion", "count": "11.130.0.15", "item": "cPanel Version"}]))
         inet = m.get(url__startswith="https://developers.inet.vn/api/gateway/v1/domain").mock(return_value=httpx.Response(200, json={
             "content": [{"id": 1, "name": "huxma.life"}, {"id": 2, "name": "sustainlife.io.vn"}], "totalPages": 1}))
@@ -113,12 +116,15 @@ def test_read_only_nick_check_marks_roots_on_hosting_and_in_inet():
             out = domains.check_nick(s, "n1")
     assert out["cpanel"]["ok"] and set(out["cpanel"]["on_hosting"]) == {"sustainlife.io.vn", "huxma.life"}
     assert "yhawt.press" in out["cpanel"]["missing"]
+    c = out["cpanel"]
+    assert (c["main"], c["addon"], c["subdomain"], c["parked"], c["addon_docroot_pattern"]) == ("levantoan.000web.com", 2, 1, 0, 2)
+    assert c["modes"]["huxma.life"] == "subdomain" and c["modes"]["yhawt.press"] == "addon"  # per root, read live
     assert out["cpanel"]["version"] == "11.130.0.15" and ver.calls[0].request.url.params["display"] == "cpanelversion"
     assert out["inet"]["ok"] and out["inet"]["domains"] == 2 and "yhawt.press" in out["inet"]["missing"]
     assert all(c.request.method == "GET" for c in inet.calls)
-    # a root not on the hosting can no longer be ticked; one on it can
+    # a root that is not on the hosting can be ticked too: its names are created as addon domains
     res = _tick("yhawt.press", "huxma.life")
-    assert res["changed"] == ["huxma.life"] and "cPanel" in res["refused"]["yhawt.press"]
+    assert res["changed"] == ["yhawt.press", "huxma.life"] and res["refused"] == {}
 
 
 def test_nick_check_without_keys_reports_each_service():

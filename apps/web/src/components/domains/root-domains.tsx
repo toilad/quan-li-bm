@@ -196,8 +196,8 @@ function DnsCell({ r }: { r: RootDomain }) {
     <div>
       <div className={r.dnsHost === "inet" || r.dnsHost === "cpanel" ? "text-fg-muted" : "text-rose-300"}>{ns}</div>
       <div className="text-fg-subtle">{r.apexOnHosting ? "Miền gốc đã trỏ hosting" : "Miền gốc chưa trỏ (không ảnh hưởng miền phụ)"}</div>
-      {r.onCpanel === true && <div className="text-emerald-300/90">Có trên cPanel</div>}
-      {r.onCpanel === false && <div className="text-rose-300">Chưa có trên cPanel — không tạo được miền phụ</div>}
+      {r.onCpanel === true && <div className="text-emerald-300/90">Có trên cPanel → tạo kiểu subdomain</div>}
+      {r.onCpanel === false && <div className="text-sky-300/90">Không nằm trên cPanel → tạo kiểu addon domain (như các miền đang có)</div>}
     </div>
   );
 }

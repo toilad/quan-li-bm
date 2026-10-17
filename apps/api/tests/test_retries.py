@@ -74,6 +74,7 @@ def test_subdomain_created_by_a_lost_attempt_is_not_created_again_and_b_waits_fo
         install_doh(m, {"acme.huxma.life": ["103.75.187.26"]})
         m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"result": {"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life"}}})
         m.get(f"{CP}/SubDomain/listsubdomains").mock(side_effect=listsub)
+        m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))  # not an addon domain
         add = m.get(f"{CP}/SubDomain/addsubdomain").mock(return_value=cp_ok(None))
         fake_inet().install(m)
         with session_scope() as s:
@@ -123,6 +124,7 @@ def _web(m, sheet, files=None, https_body="<title>Acme Plumbing LLC</title>"):
     sheet.install(m)
     install_doh(m, {DOMAIN: ["103.75.187.26"]})
     m.get(f"{CP}/SubDomain/listsubdomains").mock(return_value=cp_ok([{"domain": DOMAIN, "basedir": "sites/acme"}]))
+    m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))  # not an addon domain
     m.get(f"{CP}/Fileman/list_files").mock(return_value=cp_ok({"files": [{"file": f, "type": "file"} for f in (files or [])], "dirs": []}))
     m.get(f"{CP}/SSL/start_autossl_check").mock(return_value=cp_ok(None))
     m.get(f"{CP}/SSL/is_autossl_check_in_progress").mock(return_value=cp_ok(0))

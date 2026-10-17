@@ -33,6 +33,7 @@ def _routes(m, sheet, docroot="sites/acme", https_body="<title>Acme Plumbing LLC
     sheet.install(m)
     install_doh(m, {DOMAIN: ["103.75.187.26"]})
     m.get(f"{CP}/SubDomain/listsubdomains").mock(return_value=cp_ok([{"domain": DOMAIN, "basedir": docroot, "dir": f"/home/u1/{docroot}"}] if docroot else []))
+    m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))  # not an addon domain
     m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"result": {"status": 0, "errors": ["not found"]}})
     m.get(f"{CP}/Fileman/list_files").mock(return_value=cp_ok({"files": [{"file": "old-notes.txt", "type": "file"}], "dirs": []}))
     upload = m.post(f"{CP}/Fileman/upload_files").mock(return_value=cp_ok({"succeeded": 6, "failed": 0, "uploads": []}))

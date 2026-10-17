@@ -90,7 +90,13 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
     922 miền đang chạy được tạo dạng **addon domain** theo đúng một mẫu.
     Ví dụ: `newdomain` = `subdomain` = `ten.namecheapp.site`; thư mục `public_html/ten.namecheapp.site`; gắn vào `toandao.site`.
     Vì vậy `SubDomain::addsubdomain(rootdomain=namecheapp.site)` và `DomainInfo::single_domain_data(namecheapp.site)` sẽ báo không có miền.
-    Bước tạo miền của app phải đổi sang `AddonDomain::addaddondomain`. Kiểm tra trùng thì dùng `AddonDomain::listaddondomains` (`regex`).
+    App chọn cách tạo **theo từng miền gốc**, đọc trực tiếp từ cPanel, không gán cứng theo nick:
+    - miền gốc có trên tài khoản (`single_domain_data` trả về) → `SubDomain::addsubdomain`;
+    - miền gốc không có → `AddonDomain::addaddondomain` trên miền chính, kiểm tra trùng bằng `AddonDomain::listaddondomains` (`regex`).
+    `AddonDomain` là module **UAPI** (cùng `/execute/…` và token như các hàm khác), có trong đặc tả UAPI 11.138.
+    `listaddondomains` đã trả lời thật trên nick 3 (bản 138). Vì vậy không cần adapter API 2.
+    Hàm tạo (`addaddondomain`) chỉ xác minh được ở lần ghi thử đầu tiên anh duyệt.
+    Theo tài liệu: nếu đã có `<tên>.<miền chính>` thì hàm dùng lại subdomain đó. Vì vậy app dừng khi thấy nó, để không dùng thư mục cũ.
     Nguồn: https://api.docs.cpanel.net/specifications/cpanel.openapi/addondomain/addondomain-addaddondomain.md
     (`newdomain`, `subdomain` bắt buộc; `dir` tương đối thư mục home; `disallowdot` 0/1. Mỗi addon tạo kèm 1 tài khoản FTP, tính vào giới hạn FTP.)
 

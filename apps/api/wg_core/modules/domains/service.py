@@ -1,4 +1,5 @@
-"""Domain Manager: rows with an empty B → subdomain under a ticked root domain → verify → write B.
+"""Domain Manager: rows with an empty B → new name under a ticked root domain → verify → write B.
+On cPanel the name is a subdomain when the root is on the account, otherwise an addon domain (decided per root, read live).
 
 Rules: only ticked, usable roots are ever used (checked at enqueue AND before every creating step);
 B is written only after A record + cPanel subdomain + DNS points to the hosting IP + B still empty at write time.
@@ -79,12 +80,17 @@ def check_nick(s: Session, nick_id: str) -> dict:
         raise Permanent("Không có nick này")
     out: dict = {"nick": nick.name}
     try:
-        d = CPanel(nick.id, nick.cpanel_host).list_domains()
-        names = sorted({x.lower() for x in [d.get("main_domain") or ""] + (d.get("addon_domains") or []) + (d.get("parked_domains") or []) if x})
-        s.merge(AppSetting(key=f"cpanel_domains:{nick.id}", value={"domains": names, "at": datetime.now(timezone.utc).isoformat()}))
+        inv = CPanel(nick.id, nick.cpanel_host).inventory()
+        names = inv.pop("names")
+        s.merge(AppSetting(key=f"cpanel_domains:{nick.id}", value={"domains": names, "main": inv["main"], "at": datetime.now(timezone.utc).isoformat()}))
         roots = [r.name for r in s.scalars(select(RootDomain).where(RootDomain.nick_id == nick.id))]
-        out["cpanel"] = {"ok": True, "on_hosting": [r for r in roots if r in names], "missing": [r for r in roots if r not in names],
-                         "subdomains": len(d.get("sub_domains") or [])}
+        # how a new name under each root gets created on this account — read per root, not assumed per nick
+        modes = {r: ("subdomain" if r in names else "addon") for r in roots}
+        out["cpanel"] = {"ok": True, **inv, "subdomains": inv["subdomain"], "modes": modes,
+                         "on_hosting": [r for r in roots if r in names], "missing": [r for r in roots if r not in names],
+                         "note": (f"Miền chính {inv['main']}: {inv['addon']} addon, {inv['subdomain']} subdomain, {inv['parked']} alias. "
+                                  f"Tạo mới: {sum(m == 'subdomain' for m in modes.values())} miền gốc theo kiểu subdomain, "
+                                  f"{sum(m == 'addon' for m in modes.values())} theo kiểu addon domain")}
         try:
             out["cpanel"]["version"] = CPanel(nick.id, nick.cpanel_host).version()
         except IntegrationError as e:
@@ -112,8 +118,6 @@ def set_selected(s: Session, names: list[str], on: bool) -> dict:
             continue
         if on and (why := root_issue(r, s.get(Nick, r.nick_id))):
             refused[name] = why
-        elif on and (known := cpanel_domains(s, r.nick_id)) is not None and name not in known:
-            refused[name] = "Miền gốc chưa có trên tài khoản cPanel của nick (kiểm tra hosting gần nhất) — thêm vào hosting trước"
         elif not on and root_busy(s, name):
             refused[name] = "Đang có tác vụ trên miền này — bỏ chọn sau khi xong"
         else:
@@ -218,13 +222,20 @@ def _create(ctx: JobContext):
         if sheets.read_cell(cell).strip():
             raise Conflict(f"Ô {cell} đã có dữ liệu — không tạo miền, không ghi đè")
         cp = CPanel(nick.id, nick.cpanel_host)
-        dd = cp.domain_data(p["root"])
-        if not dd:
-            raise Permanent(f"Miền gốc {p['root']} chưa có trên tài khoản cPanel của {nick.name} — thêm miền gốc vào hosting trước")
-        if dd.get("ip") and dd["ip"] != nick.ip:
-            raise Permanent(f"IP hosting của {p['root']} trên cPanel ({dd['ip']}) khác IP của {nick.name} ({nick.ip}) — dừng")
+        how = cp.creation_mode(p["root"])
+        if how["ip"] and how["ip"] != nick.ip:
+            where = p["root"] if how["mode"] == "subdomain" else f"miền chính {how.get('main')}"
+            raise Permanent(f"IP hosting của {where} trên cPanel ({how['ip']}) khác IP của {nick.name} ({nick.ip}) — dừng")
         if cp.subdomain(fqdn):
             raise Permanent(f"{fqdn} đã tồn tại trên cPanel — không tạo lại. Đổi tên hoặc miền gốc")
+        if how["mode"] == "addon":
+            if cp.addon(fqdn):
+                raise Permanent(f"{fqdn} đã là addon domain trên cPanel — không tạo lại. Đổi tên hoặc miền gốc")
+            if cp.subdomain(f"{fqdn}.{how['main']}"):  # addaddondomain would silently reuse it (and its folder)
+                raise Permanent(f"Đã có subdomain {fqdn}.{how['main']} trên cPanel — addon sẽ dùng lại thư mục cũ, dừng")
+        ctx.checkpoint(host_mode=how["mode"], host_main=how.get("main"))
+        ctx.log(f"cPanel: {p['root']} " + ("có trên tài khoản → tạo subdomain (SubDomain::addsubdomain)" if how["mode"] == "subdomain"
+                else f"không có trên tài khoản → tạo addon domain trên {how['main']} (AddonDomain::addaddondomain)"), "ok")
         existing = net.resolve_a(fqdn)
         if existing and set(existing) != {nick.ip}:
             raise Permanent(f"{fqdn} đã có bản ghi A ({', '.join(existing)}) — không ghi đè")
@@ -245,11 +256,21 @@ def _create(ctx: JobContext):
         ctx.step("Tạo miền trên cPanel")
         _gate(s, p["root"])
         cp = CPanel(nick.id, nick.cpanel_host)
-        if cp.subdomain(fqdn):  # created by an earlier attempt whose answer was lost (before it, the pre-check found none)
+        want = f"public_html/{fqdn}"
+        if st.get("host_mode") == "addon":
+            # an earlier attempt whose answer was lost may have created it (the pre-check found none before it)
+            if found := cp.addon(fqdn):
+                if (found.get("basedir") or "").strip("/") != want:
+                    raise Conflict(f"{fqdn} đã có trên cPanel với thư mục {found.get('basedir')} (không phải {want}) — không ghi đè, B giữ trống")
+                ctx.log(f"cPanel: addon {fqdn} đã có từ lượt trước → không tạo lại", "warn")
+            else:
+                cp.add_addon(fqdn, want)
+                ctx.log(f"cPanel: đã tạo addon domain {fqdn} → {want}", "ok")
+        elif cp.subdomain(fqdn):  # created by an earlier attempt whose answer was lost (before it, the pre-check found none)
             ctx.log(f"cPanel: {fqdn} đã có từ lượt trước → không tạo lại", "warn")
         else:
-            cp.add_subdomain(p["label"], p["root"], f"public_html/{fqdn}")
-            ctx.log(f"cPanel: đã tạo {fqdn}", "ok")
+            cp.add_subdomain(p["label"], p["root"], want)
+            ctx.log(f"cPanel: đã tạo subdomain {fqdn}", "ok")
         ctx.checkpoint(host_created=True)
 
     ctx.step("Xác minh DNS trỏ đúng IP")

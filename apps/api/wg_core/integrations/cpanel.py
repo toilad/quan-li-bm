@@ -2,7 +2,8 @@
 
 Auth:  Authorization: cpanel <user>:<token>   →  https://<host>:2083/execute/<Module>/<function>
 Used (all documented, see docs/API-RESEARCH.md):
-  SubDomain::addsubdomain, SubDomain::listsubdomains, DomainInfo::single_domain_data,
+  SubDomain::addsubdomain, SubDomain::listsubdomains, DomainInfo::single_domain_data, DomainInfo::list_domains,
+  AddonDomain::addaddondomain, AddonDomain::listaddondomains (UAPI module, documented for 11.138; listing checked live),
   Fileman::upload_files (POST multipart, file-0…), SSL::start_autossl_check,
   SSL::is_autossl_check_in_progress, SSL::get_autossl_problems,
   StatsBar::get_stats (display=cpanelversion, read-only; docs checked against API version 11.138)
@@ -89,8 +90,46 @@ class CPanel:
     def add_subdomain(self, label: str, rootdomain: str, dir_: str) -> None:
         self._call("SubDomain", "addsubdomain", {"domain": label, "rootdomain": rootdomain, "dir": dir_})
 
+    def addon(self, fqdn: str) -> dict | None:
+        """Entry from AddonDomain::listaddondomains for exactly this domain (domain, subdomain, rootdomain, basedir, dir)."""
+        rx = "^" + re.escape(fqdn) + "$"
+        for d in self._call("AddonDomain", "listaddondomains", {"regex": rx}) or []:
+            if d.get("domain", "").lower() == fqdn.lower():
+                return d
+        return None
+
+    def add_addon(self, fqdn: str, dir_: str) -> None:
+        """AddonDomain::addaddondomain (UAPI, documented for 11.138). Same shape as the 922 addons already on nick 3:
+        subdomain label = the whole new domain (dots kept, disallowdot=0), parked on the primary domain."""
+        self._call("AddonDomain", "addaddondomain", {"newdomain": fqdn, "subdomain": fqdn, "dir": dir_, "disallowdot": 0})
+
+    def creation_mode(self, root: str) -> dict:
+        """How a new name under `root` is created on this account, read from cPanel (never assumed per nick):
+        root is on the account (main / addon / parked) → subdomain of it; otherwise → addon domain on the primary domain.
+        Returns {mode, ip, main?}. The IP is the root's (subdomain) or the primary domain's (addon)."""
+        dd = self.domain_data(root)
+        if dd:
+            return {"mode": "subdomain", "ip": (dd.get("ip") or "").strip()}
+        main = (self.list_domains().get("main_domain") or "").lower()
+        if not main:
+            raise Permanent("cPanel không cho biết tên miền chính của tài khoản")
+        md = self.domain_data(main) or {}
+        return {"mode": "addon", "ip": (md.get("ip") or "").strip(), "main": main}
+
+    def inventory(self) -> dict:
+        """Read-only: domains on the account by type, and the document roots of addon domains."""
+        d = self.list_domains()
+        addons = self._call("AddonDomain", "listaddondomains") or []
+        return {"main": d.get("main_domain") or "", "addon": len(addons), "parked": len(d.get("parked_domains") or []),
+                "subdomain": len(d.get("sub_domains") or []) - len(addons),  # every addon also has its own subdomain
+                "addon_docroot_pattern": sum(1 for a in addons if a.get("basedir") == f"public_html/{a.get('domain')}"),
+                "names": sorted({x.lower() for x in [d.get("main_domain") or ""] + (d.get("addon_domains") or []) + (d.get("parked_domains") or []) if x})}
+
     def document_root(self, domain: str) -> tuple[str, str] | None:
         """(path relative to home, API used) — read from cPanel, never assumed."""
+        add = self.addon(domain)
+        if add and (add.get("basedir") or add.get("dir")):
+            return add.get("basedir") or add.get("dir"), "AddonDomain::listaddondomains"
         sub = self.subdomain(domain)
         if sub:
             return sub.get("basedir") or sub.get("dir"), "SubDomain::listsubdomains"

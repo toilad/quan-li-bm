@@ -90,19 +90,23 @@ def _check_one(it: dict, nick: Nick, cache: dict, log: list) -> dict:
         cp = CPanel(nick.id, nick.cpanel_host)
         key = ("cp", root)
         if key not in cache:
-            cache[key] = cp.domain_data(root)
-        dd = cache[key]
-        if not dd:
-            out["reason"] = f"Miền gốc {root} chưa có trên tài khoản cPanel của {nick.name}"
-            return out
-        host_ip = (dd.get("ip") or "").strip()
-        out["hosting_ip"] = host_ip
+            cache[key] = cp.creation_mode(root)
+        how = cache[key]
+        host_ip = how["ip"]
+        out["hosting_ip"], out["host_mode"] = host_ip, how["mode"]
+        where = root if how["mode"] == "subdomain" else f"miền chính {how['main']}"
         if host_ip and host_ip != ip:
-            out["reason"] = f"IP hosting của {root} trên cPanel là {host_ip}, khác IP cấu hình cho {nick.name} ({ip}) — sửa cấu hình trước"
+            out["reason"] = f"IP hosting của {where} trên cPanel là {host_ip}, khác IP cấu hình cho {nick.name} ({ip}) — sửa cấu hình trước"
             return out
-        ok(f"cPanel: {root} có trên tài khoản" + (f", IP {host_ip}" if host_ip else ", cPanel không báo IP"))
-        if cp.subdomain(fqdn):
+        if how["mode"] == "subdomain":
+            ok(f"cPanel: {root} có trên tài khoản" + (f", IP {host_ip}" if host_ip else ", cPanel không báo IP") + " → tạo subdomain")
+        else:
+            ok(f"cPanel: {root} không nằm trên tài khoản → tạo addon domain trên {how['main']}" + (f" (IP {host_ip})" if host_ip else ""))
+        if cp.subdomain(fqdn) or (how["mode"] == "addon" and cp.addon(fqdn)):
             out["reason"] = f"{fqdn} đã có trên cPanel — không tạo lại"
+            return out
+        if how["mode"] == "addon" and cp.subdomain(f"{fqdn}.{how['main']}"):
+            out["reason"] = f"Đã có subdomain {fqdn}.{how['main']} — addon sẽ dùng lại thư mục cũ, không tạo"
             return out
 
         key = ("inet", nick.id, root)

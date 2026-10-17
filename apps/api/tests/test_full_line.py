@@ -53,6 +53,7 @@ def _cpanel(m, answers):
     m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"result": {"status": 1, "data": {
         "documentroot": "/home/u1/public_html/huxma.life", "type": "addon_domain", "ip": IP}}})
     m.get(f"{CP}/SubDomain/listsubdomains").mock(side_effect=listsub)
+    m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))  # not an addon domain
     add = m.get(f"{CP}/SubDomain/addsubdomain").mock(side_effect=addsub)
     m.get(f"{CP}/Fileman/list_files").mock(return_value=cp_ok({"files": [], "dirs": []}))
     upload = m.post(f"{CP}/Fileman/upload_files").mock(return_value=cp_ok({"succeeded": 8, "failed": 0, "uploads": []}))

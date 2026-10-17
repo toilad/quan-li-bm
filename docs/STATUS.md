@@ -42,6 +42,11 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - **50 dòng chờ tạo miền** (B trống);
   - **105 dòng chờ tạo web** (B có, C trống). Trong đó 70 dòng thuộc iNET-1/iNET-3. 35 dòng chưa biết hosting: lusterteas.com 22, th-ntp.com 7, zentrivo.top 2, và 4 dòng có **tên công ty ở cột B** thay vì tên miền.
 - Chưa ghi gì lên Sheet hay Drive.
+- **cPanel nick 3** (đọc qua phiên SSO từ OnePortal, chưa có token cho app):
+  - user `vdcspksihosting`; host `turboweb-082302.000nethost.com`; ID dịch vụ hosting iNET 4575817; cPanel 138.
+  - Miền chính `toandao.site`: 922 addon, 76 subdomain, 2 alias.
+  - Chỉ `toandao.site` nằm trên tài khoản. 10 miền gốc còn lại tạo theo kiểu addon domain.
+  - Nick 1 và 2 chưa có phiên đăng nhập iNET trong trình duyệt.
 - **Mạng của máy này**: IPv6 không đi ra ngoài được, và DNS-over-HTTPS bị chặn. App đã chuyển sang IPv4 và dùng thêm DNS hệ thống.
 
 ## 2. Đã có code, chỉ chạy với dịch vụ giả lập (đúng cấu trúc tài liệu chính thức)
@@ -50,9 +55,9 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
 |---|---|---|
 | PDF → Drive → Sheet | Kiểm trùng (DB + Sheet) → Drive (tìm theo md5, không upload 2 lần) → so md5 → ghi A, D–J (B, C trống) → K = "Xem phôi". **Mất phản hồi khi ghi Sheet → không ghi trùng dòng.** Lỗi mạng Google → tự thử lại | Dòng bắt đầu dữ liệu là một ô trong Cài đặt (mặc định 3). Sheet anh đưa (bản sao “NL 2026 (New)”, tab Phoi US) không có dòng tên cột, nên đã đặt **2**. Nút "Kiểm tra Google" hiện dòng 1–2 để đối chiếu |
 | California (bản scan) | AI đọc + đối chiếu số hồ sơ / tên với trang 2 | Gọi AI thật |
-| Sheet → miền iNET → B | Kiểm tra qua API (chỉ đọc) → xác nhận → bản ghi A (1 mục ACTION_ADD, không sửa/xoá bản ghi cũ) → miền phụ trên cPanel → chờ DNS (tối đa 12 giờ, hỏi 2 resolver) → **ghi B chỉ khi ô A vẫn đúng công ty và B vẫn trống**. Chạy lại không tạo trùng bản ghi / miền phụ | IP hosting mà cPanel báo (`DomainInfo.ip`) có thể là IP nội bộ nếu server sau NAT: lần kiểm tra đầu sẽ cho thấy |
+| Sheet → miền iNET → B | Kiểm tra qua API (chỉ đọc) → xác nhận → bản ghi A (1 mục ACTION_ADD, không sửa/xoá bản ghi cũ) → trên cPanel tạo **subdomain** nếu miền gốc có trên tài khoản, nếu không thì **addon domain** (đọc từng miền gốc) → chờ DNS (tối đa 12 giờ, hỏi 2 resolver) → **ghi B chỉ khi ô A vẫn đúng công ty và B vẫn trống**. Chạy lại không tạo trùng bản ghi / miền phụ | IP hosting mà cPanel báo (`DomainInfo.ip`) có thể là IP nội bộ nếu server sau NAT: lần kiểm tra đầu sẽ cho thấy |
 | B → web → cPanel → SSL → C | Mẫu + nội dung AI (kiểm không bịa) → 7 ảnh Pexels/Pixabay tải kèm → **không ghi đè file có sẵn trong thư mục** (chạy lại chỉ thay file của chính web) → AutoSSL (chờ tối đa 24 giờ, gửi lại mỗi 2 giờ) → kiểm HTTPS → **ghi C chỉ khi C vẫn trống** | Một số host tắt quyền `start_autossl_check` của user: nếu vậy lần chạy thử sẽ báo rõ |
-| Toàn tuyến | 1 test PDF → B → C trên cùng một Sheet giả; **128 test** tự động; E2E giao diện: đăng nhập 21/21, ghi DNS 16/16, Cài đặt ảnh 8/8, xem trước 15 mẫu 15/15 | — |
+| Toàn tuyến | 1 test PDF → B → C trên cùng một Sheet giả; **142 test** tự động (có test riêng addon / subdomain / lỗi token, quyền); E2E giao diện: đăng nhập 21/21, ghi DNS 16/16, Cài đặt ảnh 8/8, xem trước 15 mẫu 15/15 | — |
 
 ## 3. Cần anh cấp quyền / tự cấu hình (em không tự làm được)
 
