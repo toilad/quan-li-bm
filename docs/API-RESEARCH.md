@@ -78,6 +78,21 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
   - `SSL::get_autossl_problems` báo khoảng 11 200 dòng, chủ yếu "is unmanaged": các miền cũ không trỏ DNS về server.
     Miền mới có bản ghi A về 202.92.7.88 thì AutoSSL xác thực qua HTTP được.
   - Đã có sẵn 1 token tên `taomien` (toàn quyền, không hết hạn). Có thể của công cụ cũ. Nên tạo token riêng cho app.
+  - Các loại ID của nick 3, không lẫn với nhau:
+    | Loại | Giá trị | Nguồn |
+    |---|---|---|
+    | Username cPanel (`CPANEL_USER_N3`) | `vdcspksihosting` | cPanel "Current User" và OnePortal "Tên tài khoản" |
+    | Hostname cPanel (`cpanel_host`) | `turboweb-082302.000nethost.com` (= `turboweb-082302.inet.vn`, cùng IP) | OnePortal "Đường dẫn quản lý"; StatsBar `hostname` |
+    | ID dịch vụ hosting iNET | `4575817` | Đường dẫn OnePortal `/list-service/hosting/toandao.site/4575817`. Trang không ghi nhãn "ID". App không dùng. |
+    | Gói / loại hosting | Gói C (`GOI_C`), Turbo Hosting, hết hạn 08/05/2027 | OnePortal và StatsBar `hostingpackage` |
+    | ID BM Facebook | không liên quan cPanel; app hiện không đọc hay ghi | (Công Việc B) |
+  - ⚠ Miền gốc của nick 3 (namecheapp.site, zentrivo.my, …) **không nằm trên tài khoản cPanel**. Chỉ có `toandao.site` (miền chính).
+    922 miền đang chạy được tạo dạng **addon domain** theo đúng một mẫu.
+    Ví dụ: `newdomain` = `subdomain` = `ten.namecheapp.site`; thư mục `public_html/ten.namecheapp.site`; gắn vào `toandao.site`.
+    Vì vậy `SubDomain::addsubdomain(rootdomain=namecheapp.site)` và `DomainInfo::single_domain_data(namecheapp.site)` sẽ báo không có miền.
+    Bước tạo miền của app phải đổi sang `AddonDomain::addaddondomain`. Kiểm tra trùng thì dùng `AddonDomain::listaddondomains` (`regex`).
+    Nguồn: https://api.docs.cpanel.net/specifications/cpanel.openapi/addondomain/addondomain-addaddondomain.md
+    (`newdomain`, `subdomain` bắt buộc; `dir` tương đối thư mục home; `disallowdot` 0/1. Mỗi addon tạo kèm 1 tài khoản FTP, tính vào giới hạn FTP.)
 
 ## Pexels — ảnh cho website (ưu tiên khi có khoá)
 
