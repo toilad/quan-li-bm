@@ -134,3 +134,45 @@ def test_api2_object_data_with_result_0_is_a_failure_even_with_http_200(cp):
         m.get(f"https://{HOST}:2083/json-api/cpanel").mock(return_value=httpx.Response(200, json=denied))
         with pytest.raises(Permanent, match="Access denied"):
             CPanelApi2(cp).add_addon("new.example", "public_html/new.example")
+
+
+@pytest.mark.parametrize("code", [500, 502, 503])
+def test_server_error_is_temporary(cp, code):
+    from wg_core.integrations.errors import Transient
+
+    with respx.mock() as m:
+        m.get(f"{CP}/StatsBar/get_stats").respond(code)
+        with pytest.raises(Transient):
+            cp.version()
+
+
+def test_server_errors_are_retried_a_limited_number_of_times_then_the_job_fails():
+    """A cPanel that keeps answering 503: the domain job is retried, then stops as failed — never an endless loop."""
+    from tests.conftest import drain
+    from tests.mocks import FakeSheet, install_doh
+    from tests.test_dns_write import batch_mode, fake_inet
+    from tests.test_domains import ROW, _tick
+    from wg_core.db import session_scope
+    from wg_core.models import Job
+    from wg_core.modules.domains import service as domains
+
+    _tick("huxma.life")
+    batch_mode()
+    with respx.mock(assert_all_called=False) as m:
+        FakeSheet({ROW: {"A": "Acme LLC"}}).install(m)
+        install_doh(m, {})
+        fake_inet().install(m)
+        busy = m.route(url__startswith=CP).respond(503)
+        with session_scope() as s:
+            job_id = domains.enqueue_rows(s, [{"row": ROW, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])["queued"][0]["job_id"]
+        for _ in range(10):
+            with session_scope() as s:
+                j = s.get(Job, job_id)
+                if j.status != "queued":
+                    break
+                j.run_after = j.created_at
+            drain()
+    with session_scope() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "failed" and "503" in j.last_error and j.attempts == j.max_attempts == 5
+    assert busy.call_count == 5  # one cPanel call per attempt, then it stops
