@@ -102,7 +102,9 @@ def test_pdf_to_domain_to_website_on_one_sheet():
         drain()
         assert inet.patches == [{"recordList": [{"domainId": 501, "name": "acme", "type": "A", "data": IP, "ttl": "300", "action": "ACTION_ADD"}]}]
         with session_scope() as s:
-            assert dns_plan.mode(dns_plan.get_switch(s)) == "batch"  # the trial passed
+            sw = dns_plan.get_switch(s)
+            assert sw["trial_passed"] and dns_plan.mode(sw) == "off"  # the trial passed, then locked itself again
+            dns_plan.set_switch(s, enabled=True)  # the owner reopens for the website step
         assert add.call_count == 1 and add.calls[0].request.url.params["dir"] == f"public_html/{FQDN}"
         assert sheet.rows[row]["B"] == FQDN and sheet.rows[row]["C"] == ""
 

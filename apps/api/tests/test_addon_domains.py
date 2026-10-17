@@ -31,7 +31,12 @@ def api2_ok(domain=FQDN):
                                                       "event": {"result": 1}, "data": [{"result": 1, "reason": f"{domain} created", "domain": domain}]}})
 
 
-def _addon_account(m, addons=None, subs=None, dirs=(), main_docroot="/home/u1/public_html", entry=ADDON):
+def stats(version="138.0 (build 15)"):
+    """StatsBar::get_stats as answered live by cPanel 138: the version is in `value`, `count` is null."""
+    return cp_ok([{"id": "cpanelversion", "name": "cpanelversion", "item": "cPanel Version", "value": version, "count": None}])
+
+
+def _addon_account(m, addons=None, subs=None, dirs=(), main_docroot="/home/u1/public_html", entry=ADDON, version="138.0 (build 15)"):
     """huxma.life is NOT on the account (single_domain_data fails for it, list_domains does not list it)."""
     def one(request):
         d = request.url.params["domain"]
@@ -40,6 +45,7 @@ def _addon_account(m, addons=None, subs=None, dirs=(), main_docroot="/home/u1/pu
         return cp_err(f"Unable to locate the domain: {d}")
 
     cp_account(m, CP, main=MAIN, addon=("sustainlife.io.vn",), dirs=dirs)
+    m.get(f"{CP}/StatsBar/get_stats").mock(return_value=stats(version))
     m.get(f"{CP}/DomainInfo/single_domain_data").mock(side_effect=one)
     m.get(f"{CP}/SubDomain/listsubdomains").mock(side_effect=subs or (lambda r: cp_ok([])))
     routes = {"api2": m.get(API2).mock(return_value=api2_ok()),
@@ -58,14 +64,14 @@ def _job():
         return domains.enqueue_rows(s, [{"row": ROW, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])["queued"][0]["job_id"]
 
 
-def _run(addons=None, subs=None, dirs=(), api2=None, entry=ADDON):
+def _run(addons=None, subs=None, dirs=(), api2=None, entry=ADDON, version="138.0 (build 15)"):
     _tick("huxma.life")
     batch_mode()
     sheet, inet = FakeSheet({ROW: {"A": "Acme LLC"}}), fake_inet()
     with respx.mock(assert_all_called=False) as m:
         sheet.install(m)
         install_doh(m, {FQDN: [IP]})
-        routes = _addon_account(m, addons, subs, dirs, entry=entry)
+        routes = _addon_account(m, addons, subs, dirs, entry=entry, version=version)
         if api2 is not None:
             routes["api2"].mock(return_value=api2)
         inet.install(m)
@@ -78,31 +84,46 @@ def _run(addons=None, subs=None, dirs=(), api2=None, entry=ADDON):
 
 # ───────── creating the addon ─────────
 
-def test_root_not_on_the_account_becomes_an_addon_via_the_api2_adapter_by_default():
+def test_cpanel_138_creates_the_addon_with_the_uapi_function():
+    # official spec 11.138.0.10: x-cpanel-api-version UAPI, x-cpanel-available-version "cPanel 138"
     j, routes, sheet, inet = _run()
     assert j.status == "done", j.last_error
     assert j.state["host_mode"] == "addon" and j.state["host_main"] == MAIN
-    assert routes["api2"].call_count == 1 and not routes["uapi"].called and not routes["sub"].called
-    q = routes["api2"].calls[0].request.url.params
-    assert (q["cpanel_jsonapi_apiversion"], q["cpanel_jsonapi_module"], q["cpanel_jsonapi_func"]) == ("2", "AddonDomain", "addaddondomain")
-    assert (q["newdomain"], q["subdomain"], q["dir"]) == (FQDN, FQDN, f"public_html/{FQDN}")
-    assert routes["api2"].calls[0].request.headers["Authorization"] == "cpanel u1:t1"  # nick 1's own token
+    assert routes["uapi"].call_count == 1 and not routes["api2"].called and not routes["sub"].called
+    q = routes["uapi"].calls[0].request.url.params
+    assert (q["newdomain"], q["subdomain"], q["dir"], q["disallowdot"]) == (FQDN, FQDN, f"public_html/{FQDN}", "0")
+    assert routes["uapi"].calls[0].request.headers["Authorization"] == "cpanel u1:t1"  # nick 1's own token
     assert sheet.writes == [(f"B{ROW}", FQDN)] and len(inet.patches) == 1
 
 
-def test_owner_can_pick_the_uapi_function_per_nick():
-    runtime_config.put("CPANEL_ADDON_API_N1", "uapi")
+@pytest.mark.parametrize("version", ["136.0 (build 7)", "11.130.0.15"])
+def test_older_cpanel_uses_the_api2_adapter(version):
+    j, routes, sheet, _ = _run(version=version)
+    assert j.status == "done", j.last_error
+    assert routes["api2"].call_count == 1 and not routes["uapi"].called
+    q = routes["api2"].calls[0].request.url.params
+    assert (q["cpanel_jsonapi_apiversion"], q["cpanel_jsonapi_module"], q["cpanel_jsonapi_func"]) == ("2", "AddonDomain", "addaddondomain")
+    assert (q["newdomain"], q["subdomain"], q["dir"]) == (FQDN, FQDN, f"public_html/{FQDN}")
+    assert sheet.writes == [(f"B{ROW}", FQDN)]
+
+
+def test_unreadable_version_stops_before_creating():
+    j, routes, sheet, _ = _run(version="")
+    assert j.status == "failed" and "phiên bản cPanel" in j.last_error
+    assert not routes["api2"].called and not routes["uapi"].called and sheet.writes == []
+
+
+def test_owner_override_wins_over_the_version():
+    runtime_config.put("CPANEL_ADDON_API_N1", "api2")
     j, routes, *_ = _run()
     assert j.status == "done", j.last_error
-    assert routes["uapi"].call_count == 1 and not routes["api2"].called
-    q = routes["uapi"].calls[0].request.url.params
-    assert (q["newdomain"], q["subdomain"], q["dir"], q["disallowdot"]) == (FQDN, FQDN, f"public_html/{FQDN}", "0")
+    assert routes["api2"].call_count == 1 and not routes["uapi"].called
 
 
 def test_api2_failure_reason_is_shown_and_b_stays_empty():
     fail = httpx.Response(200, json={"cpanelresult": {"apiversion": 2, "event": {"result": 1},
                                                       "data": [{"result": 0, "reason": "Sorry, the domain is already in use."}]}})
-    j, _, sheet, _ = _run(api2=fail)
+    j, _, sheet, _ = _run(api2=fail, version="136.0 (build 7)")
     assert j.status == "failed" and "already in use" in j.last_error and sheet.writes == []
 
 
@@ -120,7 +141,7 @@ def test_api2_error_field_and_wrong_shape_are_failures():
 def test_create_that_reports_success_but_is_not_listed_stops():
     j, routes, sheet, _ = _run(addons=lambda r: cp_ok([]))
     assert j.status == "failed" and "không liệt kê" in j.last_error
-    assert routes["api2"].call_count == 1 and sheet.writes == []
+    assert routes["uapi"].call_count == 1 and sheet.writes == []
 
 
 def test_created_addon_with_another_document_root_is_a_conflict():
@@ -277,14 +298,21 @@ def test_trial_allows_only_the_approved_name_and_the_approved_operations():
 
 # ───────── response format, auth, tokens ─────────
 
-def test_uapi_answer_is_read_at_the_top_level_and_a_wrapped_answer_is_rejected():
+def test_both_documented_uapi_envelopes_are_read_and_anything_else_is_refused():
+    item = {"name": "cpanelversion", "value": "138.0 (build 15)", "count": None}
     with respx.mock() as m:
         m.get(f"{CP}/StatsBar/get_stats").mock(side_effect=[
-            httpx.Response(200, json={"messages": None, "status": 1, "metadata": {"transformed": 1}, "errors": None,
-                                      "data": [{"name": "cpanelversion", "count": "138.0 (build 15)"}], "warnings": None}),
-            httpx.Response(200, json={"result": {"status": 1, "data": []}})])
+            # what /execute/ answered live (top level)
+            httpx.Response(200, json={"messages": None, "status": 1, "metadata": {"transformed": 1}, "errors": None, "data": [item], "warnings": None}),
+            # what the spec documents for this older function (the `uapi` command-line envelope)
+            httpx.Response(200, json={"apiversion": 3, "func": "get_stats", "module": "StatsBar",
+                                      "result": {"status": 1, "data": [item], "errors": None, "messages": None, "metadata": {}, "warnings": None}}),
+            httpx.Response(200, json={"apiversion": 3, "result": {"status": 0, "data": None, "errors": ["Access denied"]}}),
+            httpx.Response(200, json={"data": [item]})])
         cp = CPanel("n1", HOST)
-        assert cp.version() == "138.0 (build 15)"
+        assert cp.version() == "138.0 (build 15)" and cp.version() == "138.0 (build 15)"
+        with pytest.raises(Permanent, match="Access denied"):
+            cp.version()
         with pytest.raises(Permanent, match="không phải định dạng UAPI"):
             cp.version()
 
@@ -341,3 +369,76 @@ def test_cpanel_token_is_stored_encrypted_and_never_returned(client):
     assert raw and "SECRET-TOKEN-XYZ" not in raw  # Fernet ciphertext, not the token
     assert client.put("/api/settings", json={"name": "CPANEL_ADDON_API_N2", "value": "soap"}).status_code == 422
     assert client.put("/api/settings", json={"name": "CPANEL_ADDON_API_N2", "value": "uapi"}).status_code == 200
+
+
+# ───────── locks itself again ─────────
+
+@pytest.mark.real_guard
+@pytest.mark.parametrize("status", ["done", "failed", "conflict", "blocked"])
+def test_trial_job_locks_everything_again_when_it_ends(status):
+    from wg_core import write_guard
+    from wg_core.modules.domains import dns_plan
+
+    _tick("huxma.life")
+    with session_scope() as s:
+        dns_plan.set_switch(s, enabled=True, trial_fqdn=FQDN, ops=["dns", "host"])
+        why = write_guard.after_job(s, "domain_create", status, {"fqdn": FQDN})
+    assert why and FQDN in why
+    sw = write_guard.load()
+    assert not sw["enabled"] and sw["locked_reason"] == why
+    with pytest.raises(NotAvailable, match="KHOÁ"):
+        write_guard.check("host", FQDN)
+
+
+@pytest.mark.real_guard
+def test_any_failed_write_job_locks_again_even_in_batch_mode_but_a_done_one_does_not():
+    from wg_core import write_guard
+    from wg_core.modules.domains import dns_plan
+
+    _tick("huxma.life")
+    with session_scope() as s:
+        dns_plan.set_switch(s, enabled=True, trial_fqdn=FQDN, ops=["dns", "host"])
+        dns_plan.mark_trial(s, FQDN, 1)  # batch
+        assert write_guard.after_job(s, "domain_create", "done", {"fqdn": "beta.huxma.life"}) is None
+        assert write_guard.after_job(s, "pdf_save", "failed", {}) is None  # not a hosting write
+    assert write_guard.load()["enabled"]
+    with session_scope() as s:
+        assert write_guard.after_job(s, "web_build", "failed", {"domain": "beta.huxma.life"})
+    assert not write_guard.load()["enabled"]
+
+
+@pytest.mark.real_guard
+def test_a_restart_locks_again():
+    from wg_core import registry, write_guard
+    from wg_core.modules.domains import dns_plan
+
+    _tick("huxma.life")
+    with session_scope() as s:
+        dns_plan.set_switch(s, enabled=True, trial_fqdn=FQDN, ops=["dns", "host"])
+    assert write_guard.load()["enabled"]
+    registry.setup()  # what the API and the worker run when they start
+    sw = write_guard.load()
+    assert not sw["enabled"] and "khởi động lại" in sw["locked_reason"] and sw["trial_fqdn"] == FQDN
+
+
+@pytest.mark.real_guard
+def test_job_runner_relocks_after_the_trial_job():
+    """End to end through the real runner: the trial domain job finishes, the lock closes by itself."""
+    from wg_core import write_guard
+    from wg_core.modules.domains import dns_plan
+
+    _tick("huxma.life")
+    with session_scope() as s:
+        dns_plan.set_switch(s, enabled=True, trial_fqdn=FQDN, ops=["dns", "host"])
+    sheet, inet = FakeSheet({ROW: {"A": "Acme LLC"}}), fake_inet()
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        install_doh(m, {FQDN: [IP]})
+        _addon_account(m)
+        inet.install(m)
+        job_id = _job()
+        drain()
+    with session_scope() as s:
+        assert s.get(Job, job_id).status == "done"
+    sw = write_guard.load()
+    assert sw["trial_passed"] and not sw["enabled"] and "đã xong" in sw["locked_reason"]

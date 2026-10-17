@@ -9,6 +9,8 @@ State = AppSetting "dns_write" (the owner's switch on the Settings page):
   trial_passed      the domain trial (A record + cPanel + DNS + B) finished → dns/host for other names
   web_trial_passed  the website trial (upload + SSL + C) finished on the trial name → upload/ssl for other names
 Until the matching trial has passed, a write is allowed only for the trial name.
+It locks itself again (after_job, relock): when the trial job ends (done or not), when any write job fails / conflicts /
+is blocked, and whenever the API or the worker starts.
 """
 from datetime import datetime, timezone
 
@@ -17,7 +19,7 @@ from .integrations.errors import NotAvailable
 KEY = "dns_write"
 OPS = {"dns": "Thêm bản ghi A (iNET)", "host": "Tạo miền trên cPanel", "upload": "Tải website lên hosting", "ssl": "Chạy AutoSSL"}
 DEFAULT = {"enabled": False, "trial_fqdn": "", "ops": [], "trial_passed": False, "trial_job": None,
-           "web_trial_passed": False, "web_trial_job": None, "changed_at": None}
+           "web_trial_passed": False, "web_trial_job": None, "changed_at": None, "locked_reason": None}
 
 
 def load(s=None) -> dict:
@@ -61,3 +63,40 @@ def mark_web_trial(s, fqdn: str, job_id: int) -> bool:
         s.merge(AppSetting(key=KEY, value=sw))
         return True
     return False
+
+
+WRITE_JOBS = {"domain_create": "fqdn", "web_build": "domain"}  # job kind → payload key holding the name it writes
+
+
+def relock(s, reason: str) -> bool:
+    """Lock again (keeps the trial results, so the owner can reopen later). True if it was open."""
+    from .models import AppSetting
+
+    sw = load(s)
+    if not sw["enabled"]:
+        return False
+    sw.update(enabled=False, locked_reason=reason, changed_at=datetime.now(timezone.utc).isoformat())
+    s.merge(AppSetting(key=KEY, value=sw))
+    return True
+
+
+def after_job(s, kind: str, status: str, payload: dict) -> str | None:
+    """Called by the job runner when a job stops. Locks again when:
+    - a write job ended in failed / conflict / blocked (whatever the mode: nothing spreads after a problem);
+    - the trial job ended in any final state (done too): the next step needs the owner to reopen it.
+    Returns the reason when it locked."""
+    if kind not in WRITE_JOBS or status not in ("done", "failed", "conflict", "blocked"):
+        return None
+    sw = load(s)
+    if not sw["enabled"]:
+        return None
+    name = (payload.get(WRITE_JOBS[kind]) or "").lower()
+    trial = name == (sw["trial_fqdn"] or "").lower()
+    if status != "done":
+        reason = f"Tự khoá: việc {kind} cho {name} kết thúc “{status}”"
+    elif trial:
+        reason = f"Tự khoá: việc thử {kind} cho {name} đã xong — anh mở lại nếu muốn làm bước tiếp"
+    else:
+        return None
+    relock(s, reason)
+    return reason

@@ -1,0 +1,54 @@
+{
+ "_about": "Real cPanel answers, read-only, nick 3 (cPanel 138.0 build 15), 2026-10-17. Taken through the owner's logged-in cPanel session in the browser (same /execute and /json-api endpoints the app calls with a token), except the two *_no_auth samples (plain request, no credentials). Sanitised: domain names -> dN.example, cPanel user -> cpuser, IPs -> 203.0.113.10, domainkey / reseller values replaced, lists cut to 2 items, a long Perl error trimmed. Structure, keys, types and values like status/null/0 are unchanged.",
+ "uapi_get_stats_cpanelversion": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "metadata": {"transformed": 1}, "messages": null, "status": 1, "warnings": null, "errors": null,
+  "data": [{"id": "cpanelversion", "module": "Version", "is_maxed": 0, "percent20": 0, "_maxed": 0, "percent": 0, "item": "cPanel Version",
+            "value": "138.0 (build 15)", "phrase": "[asis,cPanel] Version", "count": null, "percent5": 0, "name": "cpanelversion", "percent10": 0, "max": ""}]}},
+ "uapi_list_domains": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "metadata": {}, "messages": null, "status": 1, "warnings": null, "errors": null,
+  "data": {"main_domain": "d1.example", "parked_domains": ["d2.example", "d3.example"], "sub_domains": ["d4.d1.example", "d17.example.d1.example"],
+           "addon_domains": ["d17.example", "d7.example"]}}},
+ "uapi_single_domain_data_main": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "metadata": {}, "messages": null, "status": 1, "warnings": null, "errors": null,
+  "data": {"customlog": [{"target": "/etc/apache2/logs/domlogs/d1.example", "format": "combined"}], "servername": "d1.example", "hascgi": "1",
+           "owner": "reseller", "scriptalias": [{"path": "/home/cpuser/public_html/cgi-bin", "url": "/cgi-bin/"}], "domain": "d1.example",
+           "phpopenbasedirprotect": "1", "ip": "203.0.113.10", "usecanonicalname": "Off", "status": "not redirected", "serveradmin": "webmaster@d1.example",
+           "documentroot": "/home/cpuser/public_html", "group": "cpuser", "port": "18080", "user": "cpuser", "serveralias": "d2.example d3.example",
+           "userdirprotect": "", "ssl": "1", "homedir": "/home/cpuser", "type": "main_domain"}}},
+ "uapi_single_domain_data_not_on_account": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "warnings": null, "data": null, "errors": ["Unable to locate the domain: d15.example"], "metadata": {}, "status": 0, "messages": null}},
+ "uapi_listaddondomains_one": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "messages": null, "status": 1, "metadata": {"transformed": 1}, "errors": null, "warnings": null,
+  "data": [{"fullsubdomain": "d17.example.d1.example", "basedir": "public_html/d17.example", "web_subdomain_aliases": ["www", "mail"],
+            "domainkey": "sanitised_domainkey", "domain": "d17.example", "reldir": "home:public_html/d17.example", "status": "not redirected",
+            "dir": "/home/cpuser/public_html/d17.example", "rootdomain": "d1.example", "subdomain": "d17.example"}]}},
+ "uapi_listaddondomains_none": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "warnings": null, "data": [], "errors": null, "metadata": {"transformed": 1}, "status": 1, "messages": null}},
+ "uapi_listsubdomains_one": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "metadata": {"transformed": 1}, "messages": null, "status": 1, "warnings": null, "errors": null,
+  "data": [{"status": "not redirected", "dir": "/home/cpuser/public_html/d4.d1.example", "reldir": "home:public_html/d4.d1.example", "subdomain": "d4",
+            "rootdomain": "d1.example", "domain": "d4.d1.example", "domainkey": "sanitised_domainkey", "web_subdomain_aliases": ["www"],
+            "basedir": "public_html/d4.d1.example"}]}},
+ "uapi_list_files_dirs": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "messages": null, "status": 1, "metadata": {"transformed": 1}, "errors": null, "warnings": null,
+  "data": [{"path": "/home/cpuser/public_html", "gid": 65534, "type": "dir", "uid": 3157, "exists": 1, "humansize": "198 bytes", "file": "d17.example",
+            "size": "198", "fullpath": "/home/cpuser/public_html/d17.example", "ctime": 1792104473, "mode": 16872, "mtime": 1783394792,
+            "absdir": "/home/cpuser/public_html", "nicemode": "0750"},
+           {"gid": 65534, "path": "/home/cpuser/public_html", "type": "dir", "size": "198", "file": "d7.example", "humansize": "198 bytes", "exists": 1,
+            "uid": 3157, "fullpath": "/home/cpuser/public_html/d7.example", "mode": 16872, "ctime": 1792104473, "mtime": 1783394671,
+            "absdir": "/home/cpuser/public_html", "nicemode": "0750"}]}},
+ "uapi_is_autossl_check_in_progress": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "messages": null, "status": 1, "metadata": {}, "errors": null, "data": 0, "warnings": null}},
+ "uapi_unknown_module": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "warnings": null, "errors": ["Failed to load module “NoSuchModule”: … Can't locate Cpanel/API/NoSuchModule.pm in @INC … (trimmed)"],
+  "data": null, "metadata": {}, "messages": null, "status": 0}},
+ "api2_listaddondomains_one": {"http": 200, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "cpanelresult": {"data": [{"fullsubdomain": "d17.example.d1.example", "basedir": "public_html/d17.example", "status": "not redirected",
+                             "dir": "/home/cpuser/public_html/d17.example", "reldir": "home:public_html/d17.example", "subdomain": "d17.example",
+                             "rootdomain": "d1.example", "domain": "d17.example", "domainkey": "sanitised_domainkey", "web_subdomain_aliases": ["www", "mail"]}],
+                   "preevent": {"result": 1}, "module": "AddonDomain", "postevent": {"result": 1}, "func": "listaddondomains", "event": {"result": 1},
+                   "apiversion": 2}}},
+ "api2_no_auth": {"http": 403, "content_type": "application/json; charset=\"utf-8\"", "body": {
+  "cpanelresult": {"apiversion": "2", "error": "Access denied", "data": {"reason": "Access denied", "result": "0"}, "type": "text"}}},
+ "uapi_no_auth": {"http": 200, "content_type": "text/html; charset=\"utf-8\"", "body_html": "<!DOCTYPE html><html><head><title>cPanel Login</title></head><body><form id=\"login_form\" action=\"/login/\" method=\"post\">…</form></body></html>"}
+}

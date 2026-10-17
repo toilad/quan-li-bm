@@ -188,7 +188,11 @@ def test_preview_shows_subdomain_root_nick_ip_then_trial_then_batch(client):
             for j in s.query(Job):
                 j.run_after = j.created_at
         drain()
-        assert client.get("/api/domains/dns-write").json()["mode"] == "batch"  # trial passed
+        sw = client.get("/api/domains/dns-write").json()
+        assert sw["trial_passed"] and sw["mode"] == "off" and "đã xong" in sw["locked_reason"]  # trial passed → locked again
+        p = _preview(client, [(8, "beta")])
+        assert p["token"] is None and "KHOÁ" in p["blocked"]  # nothing spreads to other names by itself
+        assert client.put("/api/domains/dns-write", json={"enabled": True}).json()["mode"] == "batch"  # the owner reopens
         p = _preview(client, [(8, "beta")])
         assert p["token"] and p["mode"] == "batch"
     assert sheet.rows[7]["B"] == "acme.huxma.life" and not sheet.rows[8].get("B")

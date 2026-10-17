@@ -24,5 +24,8 @@ def setup():
             init_db()
             with session_scope() as s:
                 domains.seed(s)
+                from . import write_guard
+
+                write_guard.relock(s, "Tự khoá: tiến trình vừa khởi động lại")  # a restart never keeps real writes open
         finally:
             lock.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": SETUP_LOCK})

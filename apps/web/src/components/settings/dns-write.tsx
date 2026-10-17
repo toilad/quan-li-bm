@@ -8,7 +8,7 @@ import { api, errorText } from "@/lib/api";
 export type WriteOp = "dns" | "host" | "upload" | "ssl";
 export type DnsWrite = {
   enabled: boolean; trial_fqdn: string; ops: WriteOp[]; trial_passed: boolean; trial_job: number | null;
-  web_trial_passed: boolean; web_trial_job: number | null; changed_at: string | null; mode: "off" | "trial" | "batch";
+  web_trial_passed: boolean; web_trial_job: number | null; changed_at: string | null; locked_reason: string | null; mode: "off" | "trial" | "batch";
   op_labels: Record<WriteOp, string>;
 };
 
@@ -90,6 +90,7 @@ export function DnsWriteCard() {
           </button>
         )}
       </div>
+      {!sw.enabled && sw.locked_reason && <p className="mt-3 text-[12px] text-fg-muted">{sw.locked_reason}</p>}
       {sw.trial_passed && <p className="mt-3 text-[12px] text-emerald-300">Miền thử đã tạo xong{sw.trial_job ? ` (việc #${sw.trial_job})` : ""}. Đổi miền thử sẽ quay về chế độ chạy thử.</p>}
       {sw.web_trial_passed && <p className="mt-1 text-[12px] text-emerald-300">Web thử đã chạy xong{sw.web_trial_job ? ` (việc #${sw.web_trial_job})` : ""}.</p>}
       {msg && (

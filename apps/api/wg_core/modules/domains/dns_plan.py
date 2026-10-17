@@ -57,6 +57,7 @@ def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None =
         if enabled and not sw["trial_passed"] and not sw["trial_fqdn"]:
             raise ValueError("Chỉ định miền thử trước khi bật ghi DNS thật")
         sw["enabled"] = enabled
+        sw["locked_reason"] = None if enabled else "Anh khoá"
     sw["changed_at"] = datetime.now(timezone.utc).isoformat()
     s.merge(AppSetting(key=KEY, value=sw))
     return sw

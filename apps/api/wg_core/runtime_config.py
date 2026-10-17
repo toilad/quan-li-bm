@@ -46,10 +46,10 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     **{f"INET_API_KEY_{n}": (f"nick:{n.lower()}", "Khoá API iNET", True) for n in NICKS},
     **{f"CPANEL_USER_{n}": (f"nick:{n.lower()}", "User cPanel", True) for n in NICKS},
     **{f"CPANEL_TOKEN_{n}": (f"nick:{n.lower()}", "API token cPanel", True) for n in NICKS},
-    **{f"CPANEL_ADDON_API_{n}": (f"nick:{n.lower()}", "API tạo addon domain: api2 (mặc định) hoặc uapi — xem docs/API-RESEARCH.md", False) for n in NICKS},
+    **{f"CPANEL_ADDON_API_{n}": (f"nick:{n.lower()}", "API tạo addon domain: auto (mặc định: cPanel ≥ 138 dùng UAPI, thấp hơn dùng API 2), uapi hoặc api2", False) for n in NICKS},
 }
 SET_ONLY_BY_SERVER = {"GOOGLE_TOKEN"}
-DEFAULTS = {**{f"CPANEL_ADDON_API_{n}": "api2" for n in NICKS}, "SHEET_TAB": "Phoi US", "SHEET_FIRST_ROW": "3", "AI_MODEL": "claude-opus-5-5", "PUBLIC_API_URL": "http://localhost:8000", "PUBLIC_WEB_URL": "http://localhost:3210"}  # written by the OAuth callback, never typed in
+DEFAULTS = {**{f"CPANEL_ADDON_API_{n}": "auto" for n in NICKS}, "SHEET_TAB": "Phoi US", "SHEET_FIRST_ROW": "3", "AI_MODEL": "claude-opus-5-5", "PUBLIC_API_URL": "http://localhost:8000", "PUBLIC_WEB_URL": "http://localhost:3210"}  # written by the OAuth callback, never typed in
 
 _cache: dict[str, tuple[str | None, float]] = {}
 _TTL = 3.0

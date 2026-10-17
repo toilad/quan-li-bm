@@ -181,6 +181,10 @@ def run_one() -> bool:
             ctx.log(job.last_error, "err")
             ctx.log(traceback.format_exc(limit=3), "info")
         job.locked_by = None
+        from . import write_guard
+
+        if why := write_guard.after_job(s, job.kind, job.status, job.payload or {}):
+            ctx.log(why, "warn")
         return True
 
 

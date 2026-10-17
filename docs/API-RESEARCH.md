@@ -44,6 +44,18 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
 - ✔ **Định dạng phản hồi thật của `/execute/`** (đọc trên nick 3, cPanel 138, ngày 2026-10-17):
   `{"status": 1|0, "data", "errors", "messages", "warnings", "metadata"}` nằm ngay ở cấp ngoài cùng, **không** bọc trong `"result"`.
   Code cũ đọc `result.status` nên mọi lệnh cPanel thật đều sẽ báo lỗi; test giả lập dùng sai định dạng nên không bắt được. Đã sửa cả code lẫn test.
+  - Đặc tả chính thức (`cpanel.openapi.json`, `info.version` 11.138.0.10) mô tả **hai dạng phản hồi**:
+    - hàm cũ (`StatsBar::get_stats`, `DomainInfo::*`, `SubDomain::addsubdomain`, `Fileman::upload_files`, `SSL::start_autossl_check`)
+      có `apiversion, func, module, result{status, data, errors…}`. Đây là dạng in ra của lệnh `uapi` trên máy chủ;
+    - hàm mới bản 138 (`AddonDomain::*`) có `status, data, errors, messages, metadata, warnings` ở cấp ngoài.
+    - Qua HTTP `/execute/`, server thật trả **cấp ngoài cho cả hàm cũ**.
+    - Parser (`CPanel._envelope`) nhận cả hai dạng, dạng khác thì từ chối.
+  - Mẫu phản hồi thật đã làm sạch: `apps/api/tests/fixtures/cpanel_live_samples.json`; test theo từng dạng ở `tests/test_cpanel_live_samples.py`.
+  - Mẫu lấy qua phiên đăng nhập cPanel trong trình duyệt (cùng endpoint với app). **Chưa lấy được qua token của app**, vì chưa nick nào có token.
+  - Không có thông tin đăng nhập:
+    - UAPI trả HTTP 200 kèm trang HTML "cPanel Login". App coi là lỗi token (`NotConfigured`), không thử lại mãi;
+    - API 2 trả HTTP 403 với `{"cpanelresult": {"apiversion": "2", "error": "Access denied", "data": {"reason", "result": "0"}}}`.
+  - `get_stats` thật: phiên bản nằm ở `value` ("138.0 (build 15)"), còn `count` = null.
   `/execute/<Module>` nạp module Perl `Cpanel::API::<Module>` (thấy trong thông báo lỗi khi gọi module không tồn tại).
   Token tạo ở Security › Manage API Tokens, mặc định hết hạn sau 1 năm. Nhà cung cấp hosting có thể ẩn tính năng này.
   Nguồn: https://api.docs.cpanel.net/cpanel/tokens/ · https://docs.cpanel.net/cpanel/security/manage-api-tokens-in-cpanel/
@@ -103,15 +115,21 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
     | alias (parked) | **dừng**: không dùng làm miền gốc | — |
     | subdomain | **dừng**: không rõ miền cha | — |
     | không đọc được miền chính / document root của miền cha | **dừng** | — |
-  - **Hàm tạo addon domain: hai trang tài liệu chính thức mâu thuẫn nhau.**
+  - ✔ **Đã chốt (2026-10-17):** trong đặc tả 11.138.0.10, `/AddonDomain/addaddondomain` có `x-cpanel-api-version: UAPI` và `x-cpanel-available-version: cPanel 138`.
+    - Máy chủ: `https://{host}:{port}/execute`. Mẫu lệnh: `uapi … AddonDomain addaddondomain newdomain=… subdomain=…`.
+    - Tham số: `newdomain` (bắt buộc), `subdomain` (bắt buộc), `dir`, `disallowdot` (0/1, mặc định 0), `force` (bị bỏ qua với tài khoản thường).
+    - Phản hồi: `data.domain`.
+    - Nick 3 chạy bản 138.0 (build 15), nên **dùng UAPI**.
+    - Trang API 2 ("no equivalent UAPI function") đúng cho các bản **trước 138**.
+    - App tự chọn: `CPANEL_ADDON_API_N* = auto` (mặc định) → bản ≥ 138 dùng UAPI, bản < 138 dùng adapter API 2. Không đọc được phiên bản → dừng.
+  - Lịch sử: trước khi đọc đặc tả gốc, hai trang tài liệu trông như mâu thuẫn nhau:
     - Trang cPanel API 2 ghi API 2 đã lỗi thời nhưng "no equivalent UAPI function exists".
       https://api.docs.cpanel.net/cpanel-api-2/cpanel-api-2-modules-addondomain/cpanel-api-2-functions-addondomain-addaddondomain
     - Đặc tả UAPI 11.138 (đúng bản của nick 3) lại có `AddonDomain::addaddondomain` ("The AddonDomain module for UAPI").
       https://api.docs.cpanel.net/specifications/cpanel.openapi/addondomain/addondomain-addaddondomain.md
     - Trên server thật: UAPI `/execute/AddonDomain/listaddondomains` trả lời; API 2 `/json-api/cpanel` (`cpanelresult`, `apiversion: 2`) cũng trả lời cho `listaddondomains`.
       **Chưa gọi hàm tạo nào** trên hosting thật.
-    - App tách **adapter API 2** riêng (`integrations/cpanel_api2.py`) và dùng nó mặc định. UAPI là tuỳ chọn, chỉnh bằng `CPANEL_ADDON_API_N1..3` = `api2` | `uapi`.
-      Lần ghi thử đầu tiên sẽ cho biết host nhận hàm nào.
+    - Adapter API 2 vẫn để riêng (`integrations/cpanel_api2.py`), chỉ dùng cho cPanel < 138 hoặc khi anh chọn `api2`.
     - API 2: `GET /json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=AddonDomain&cpanel_jsonapi_func=addaddondomain&newdomain&subdomain&dir`.
       Phản hồi `cpanelresult.data[0].result/reason`, lỗi ở `cpanelresult.error`. Dùng cùng token: trang Manage API Tokens ghi token dùng cho "cPanel API 2 and UAPI".
     - Dù hàm tạo trả gì, app luôn đọc lại bằng `listaddondomains`. Không thấy miền, hoặc thư mục khác `public_html/<tên>` → dừng, không ghi B.

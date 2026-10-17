@@ -273,7 +273,8 @@ def _create(ctx: JobContext):
             if found := cp.addon(fqdn):
                 ctx.log(f"cPanel: addon {fqdn} đã có từ lượt trước → không tạo lại", "warn")
             else:
-                used = cpanel_api2.add_addon(cp, fqdn, want, cfg(f"CPANEL_ADDON_API_{nick.id.upper()}") or "api2")
+                api = cpanel_api2.choose(cp, cfg(f"CPANEL_ADDON_API_{nick.id.upper()}") or "auto")
+                used = cpanel_api2.add_addon(cp, fqdn, want, api)
                 found = cp.addon(fqdn)  # confirm with the read API whatever the create call answered
                 if not found:
                     raise Permanent(f"{used} không báo lỗi nhưng cPanel không liệt kê {fqdn} — kiểm tra trên cPanel trước khi chạy lại")

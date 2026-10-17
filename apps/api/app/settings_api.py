@@ -59,8 +59,8 @@ def put_setting(body: PutSetting):
         raise HTTPException(422, "Trường này chỉ được ghi qua nút Kết nối Google")
     if body.name == "GOOGLE_CLIENT_ID" and body.value.strip() and not body.value.strip().endswith(".apps.googleusercontent.com"):
         raise HTTPException(422, "Client ID có dạng …apps.googleusercontent.com")
-    if body.name.startswith("CPANEL_ADDON_API_") and body.value.strip() not in ("", "api2", "uapi"):
-        raise HTTPException(422, "Chỉ nhận api2 hoặc uapi")
+    if body.name.startswith("CPANEL_ADDON_API_") and body.value.strip() not in ("", "auto", "api2", "uapi"):
+        raise HTTPException(422, "Chỉ nhận auto, uapi hoặc api2")
     if body.name == "SHEET_FIRST_ROW" and body.value.strip() and not (body.value.strip().isdigit() and 1 <= int(body.value) <= 1000):
         raise HTTPException(422, "Dòng bắt đầu dữ liệu phải là số từ 1 đến 1000")
     if body.name == "GOOGLE_OAUTH_CLIENT_JSON" and body.value.strip():

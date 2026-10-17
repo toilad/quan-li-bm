@@ -3,13 +3,19 @@
 Auth:  Authorization: cpanel <user>:<token>   →  https://<host>:2083/execute/<Module>/<function>
 Used (all documented, see docs/API-RESEARCH.md):
   SubDomain::addsubdomain, SubDomain::listsubdomains, DomainInfo::single_domain_data, DomainInfo::list_domains,
-  AddonDomain::listaddondomains (read), AddonDomain::addaddondomain (only when CPANEL_ADDON_API_<nick> = uapi;
-  the default is the cPanel API 2 adapter in cpanel_api2.py — see there why),
+  AddonDomain::listaddondomains (read), AddonDomain::addaddondomain (UAPI, available from cPanel 138 — the official
+  spec 11.138.0.10 says x-cpanel-api-version UAPI, x-cpanel-available-version "cPanel 138"; older servers use the
+  cPanel API 2 adapter in cpanel_api2.py),
   Fileman::list_files, Fileman::upload_files (POST multipart, file-0…), SSL::start_autossl_check,
   SSL::is_autossl_check_in_progress, SSL::get_autossl_problems,
   StatsBar::get_stats (display=cpanelversion), DNS::has_local_authority (read-only).
-Response of /execute/ (checked live on nick 3, cPanel 138): a top-level object
-  {"status": 1|0, "data": …, "errors": [..]|null, "messages", "warnings", "metadata"} — not wrapped in "result".
+Response envelope — two shapes are documented, both are read by _envelope():
+  - top level {"status": 1|0, "data", "errors", "messages", "warnings", "metadata"}: what /execute/ actually answers
+    over HTTP (checked live on nick 3 for old and new functions alike, tests/fixtures/cpanel_live_samples.json), and
+    what the spec gives for functions added in 138 (AddonDomain::*);
+  - {"apiversion": 3, "func", "module", "result": {"status", "data", "errors", …}}: what the spec gives for older
+    functions (StatsBar::get_stats, DomainInfo::*, SubDomain::*, Fileman::*, SSL::*) — the `uapi` command-line output.
+  Anything else is refused (never guessed).
 Every write goes through write_guard.check first (locked unless the owner allowed it).
 """
 import re
@@ -56,25 +62,40 @@ class CPanel:
         try:
             body = r.json()
         except ValueError:
+            # without valid credentials /execute/ answers HTTP 200 with the cPanel login page (checked live)
+            if "html" in r.headers.get("content-type", "") and "login" in r.text[:50000].lower():
+                raise NotConfigured(f"cPanel {self.user}", [f"token được chấp nhận — cPanel trả trang đăng nhập cho {what}"]) from None
             raise Transient(f"cPanel {what}: trả về không phải JSON (HTTP {r.status_code}) — có thể đang bảo trì / tường lửa") from None
         if not isinstance(body, dict):
             raise Permanent(f"cPanel {what}: phản hồi không đúng định dạng")
         return body
 
+    @staticmethod
+    def _envelope(body: dict, what: str) -> dict:
+        if "status" in body:
+            return body
+        inner = body.get("result")
+        if isinstance(inner, dict) and "status" in inner:
+            return inner
+        raise Permanent(f"cPanel {what}: phản hồi không có “status” (cũng không có “result.status”) — không phải định dạng UAPI")
+
     def _call(self, module: str, fn: str, params: dict | None = None, files: dict | None = None):
-        res = self.request(f"execute/{module}/{fn}", f"{module}::{fn}", params, files)
-        if "status" not in res:
-            raise Permanent(f"cPanel {module}::{fn}: phản hồi không có “status” — không phải định dạng UAPI")
+        res = self._envelope(self.request(f"execute/{module}/{fn}", f"{module}::{fn}", params, files), f"{module}::{fn}")
         if res.get("status") != 1:
             raise Permanent(f"cPanel {module}::{fn}: {'; '.join(res.get('errors') or ['lỗi không rõ'])}")
         return res.get("data")
 
     def version(self) -> str:
-        """StatsBar::get_stats display=cpanelversion → item `count` = the server's cPanel version."""
+        """StatsBar::get_stats display=cpanelversion. Live (138): `value` = "138.0 (build 15)", `count` = null."""
         for item in self._call("StatsBar", "get_stats", {"display": "cpanelversion"}) or []:
             if item.get("name") == "cpanelversion" or item.get("id") == "cpanelversion":
-                return str(item.get("count") or item.get("value") or "")
+                return str(item.get("value") or item.get("count") or "")
         return ""
+
+    def major_version(self) -> int | None:
+        """138 for "138.0 (build 15)" or "11.138.0.15"; None when it cannot be read."""
+        m = re.match(r"\s*(?:11\.)?(\d+)", self.version())
+        return int(m.group(1)) if m else None
 
     # ── domains (read) ──
     def subdomain(self, fqdn: str) -> dict | None:
