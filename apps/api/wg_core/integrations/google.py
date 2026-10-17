@@ -69,7 +69,11 @@ def token_file() -> Path:
 
 
 def oauth_client() -> dict | None:
-    """OAuth client config: pasted on the settings page (stored encrypted) or GOOGLE_OAUTH_CLIENT_FILE."""
+    """OAuth client config: Client ID + Client secret typed on the settings page (secret stored encrypted), or the
+    whole JSON pasted there, or GOOGLE_OAUTH_CLIENT_FILE."""
+    cid, secret = (cfg("GOOGLE_CLIENT_ID") or "").strip(), (cfg("GOOGLE_CLIENT_SECRET") or "").strip()
+    if cid and secret:
+        return {"client_id": cid, "client_secret": secret, "redirect_uris": [], "javascript_origins": [], "kind": "web"}
     raw = cfg("GOOGLE_OAUTH_CLIENT_JSON")
     if not raw:
         f = settings().google_oauth_client_file

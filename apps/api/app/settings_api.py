@@ -41,7 +41,7 @@ def get_settings():
     oc = google.oauth_client()
     return {
         "fields": runtime_config.describe(),
-        "google": {"mode": google.auth_mode(), "client_type": ("web" if oc and oc.get("redirect_uris") and "javascript_origins" in oc else "desktop/khác") if oc else None,
+        "google": {"mode": google.auth_mode(), "client_type": ("web" if oc and (oc.get("kind") == "web" or (oc.get("redirect_uris") and "javascript_origins" in oc)) else "desktop/khác") if oc else None,
                    "redirect_uri": redirect_uri(), "connected": bool(google.refresh_token())},
     }
 
@@ -57,6 +57,8 @@ def put_setting(body: PutSetting):
         raise HTTPException(422, "Không có trường cài đặt này")
     if body.name in runtime_config.SET_ONLY_BY_SERVER and body.value.strip():
         raise HTTPException(422, "Trường này chỉ được ghi qua nút Kết nối Google")
+    if body.name == "GOOGLE_CLIENT_ID" and body.value.strip() and not body.value.strip().endswith(".apps.googleusercontent.com"):
+        raise HTTPException(422, "Client ID có dạng …apps.googleusercontent.com")
     if body.name == "SHEET_FIRST_ROW" and body.value.strip() and not (body.value.strip().isdigit() and 1 <= int(body.value) <= 1000):
         raise HTTPException(422, "Dòng bắt đầu dữ liệu phải là số từ 1 đến 1000")
     if body.name == "GOOGLE_OAUTH_CLIENT_JSON" and body.value.strip():

@@ -102,3 +102,20 @@ def test_first_data_row_is_a_setting(client, monkeypatch):
         Sheets().append_row(["X"] * 11)
         ranges = [str(c.request.url) for c in m.calls if "spreadsheets/TESTSHEET/values" in str(c.request.url)]
     assert any("A2%3AL" in u for u in ranges) and any("A2%3AK" in u and ":append" in u for u in ranges)
+
+
+def test_client_id_and_secret_fields_are_enough_to_connect(client):
+    assert client.put("/api/settings", json={"name": "GOOGLE_CLIENT_ID", "value": "not-an-id"}).status_code == 422
+    assert client.put("/api/settings", json={"name": "GOOGLE_CLIENT_ID", "value": "123-abc.apps.googleusercontent.com"}).status_code == 200
+    assert client.put("/api/settings", json={"name": "GOOGLE_CLIENT_SECRET", "value": "secret-value-xyz"}).status_code == 200
+    body = client.get("/api/settings").text
+    assert "secret-value-xyz" not in body  # never returned
+    r = client.get("/api/google/oauth/start")
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(r.headers["location"]).query)
+    assert r.status_code == 302 and q["client_id"] == ["123-abc.apps.googleusercontent.com"]
+    with respx.mock(assert_all_called=False) as m:
+        tok = m.post("https://oauth2.googleapis.com/token").mock(return_value=httpx.Response(200, json={
+            "access_token": "a", "refresh_token": "1//r", "scope": "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file"}))
+        back = client.get("/api/google/oauth/callback", params={"state": q["state"][0], "code": "c"})
+    assert back.headers["location"].endswith("google=connected")
+    assert urllib.parse.parse_qs(tok.calls[0].request.content.decode())["client_secret"] == ["secret-value-xyz"]
