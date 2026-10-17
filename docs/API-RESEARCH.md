@@ -29,6 +29,11 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
     - `GET /domain?name=&status=&page=&pageSize=` → `{content: [{id, name, status, …}], totalPages, totalElements, size, number}`.
     - `GET /domain/{domainId}` → `{…, nsList: [{id, hostname}]}`, dùng để kiểm tra miền có dùng ns1/ns2.inet.vn không.
   - Không có file OpenAPI/Postman công khai. `/api/gateway/v1/*` trả 401 khi chưa có khoá.
+  - **Ý nghĩa của PATCH /record (đối chiếu):** tài liệu ghi "Thêm hoặc xóa DNS records" và "Mỗi item là 1 thao tác thêm hoặc xóa".
+    Sửa được mô tả là 1 DELETE + 1 ADD. Tức là mỗi mục là một thao tác, không phải gửi lại cả danh sách bản ghi.
+    Gửi 1 mục ACTION_ADD nghĩa là thêm đúng 1 bản ghi.
+    App vẫn kiểm tra thêm khi chạy: danh sách iNET trả về sau PATCH phải còn đủ mọi bản ghi có trước đó (so theo id).
+    Thiếu bản ghi nào thì dừng ngay, báo lỗi, không làm bước tiếp.
 - ✔ Hosting: `GET/POST /hosting/{hostingId}/addon`, `DELETE /hosting/{hostingId}/addon/{id}`, `POST /hosting/{hostingId}/addon/sync`.
   Tài liệu **không có** endpoint subdomain, SSL hay upload file cho hosting.
 - iNET còn có OnePanel (panel riêng). Cần xác nhận hosting thực tế là cPanel hay OnePanel.
@@ -53,6 +58,11 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
   - Miền chính / addon: `DomainInfo::single_domain_data` (`domain` bắt buộc, không dùng alias) → `result.data.documentroot`, `result.data.type`.
     Nguồn: https://api.docs.cpanel.net/specifications/cpanel.openapi/domain-information/domaininfo-single_domain_data.md
   - Không tìm thấy miền trên tài khoản → dừng, không upload, C giữ trống.
+- ✔ IP hosting: `DomainInfo::single_domain_data` trả về `result.data.ip` ("The domain's IP address").
+  Phải khớp IP cấu hình của nick, nếu không thì không tạo bản ghi A.
+- ✔ `DNS::has_local_authority` (`domain` bắt buộc) → `local_authority` 1/0, `nameservers`, `zone`, chỉ đọc.
+  Dùng để biết miền có đang dùng DNS của hosting cPanel không.
+  Nguồn: https://api.docs.cpanel.net/specifications/cpanel.openapi/dns/dns-has_local_authority.md
 - Giới hạn tốc độ của UAPI: chưa có trong tài liệu.
 - ✔ Phiên bản cPanel (chỉ đọc): `StatsBar::get_stats` với `display=cpanelversion` → mục `count` là phiên bản máy chủ.
   Nút "Kiểm tra nick" gọi hàm này. Các trang tài liệu đã tra ứng với API bản 11.138; tài liệu không ghi các hàm trên có từ bản nào.
@@ -63,7 +73,7 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
 
 | Bước | Khả năng |
 |---|---|
-| Bản ghi A | Nameserver ở host cPanel → `DNS::mass_edit_zone` ✔. Nameserver iNET → `PATCH /domain/{id}/record` (ACTION_ADD). Tài liệu đã đủ (2026-10-17). Trong code **vẫn chặn**, chờ anh duyệt bật ghi DNS thật |
+| Bản ghi A | Nameserver ở host cPanel → `DNS::mass_edit_zone` ✔. Nameserver iNET → `PATCH /domain/{id}/record` (ACTION_ADD), **đã tích hợp**, sau công tắc mặc định TẮT + chạy thử 1 miền + xem trước/xác nhận. NS hosting cPanel (`DNS::has_local_authority`) / Cloudflare / khác → nhận diện và không gọi API iNET; `DNS::mass_edit_zone` chưa triển khai |
 | Miền phụ trên hosting | `SubDomain::addsubdomain` ✔ (cần token và vai trò Web Server) |
 | SSL | Gọi được bằng API. Cấp chứng chỉ được hay không tuỳ AutoSSL bật ở WHM và DNS đã trỏ đúng |
 | Upload | `Fileman::upload_files` hoặc FTPS |

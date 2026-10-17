@@ -9,22 +9,39 @@ Chưa thao tác lên tài khoản thật nào (chưa có khoá). Mọi dịch v�
 | Chức năng | Chạy thật (đã kiểm) | Có code, chờ cấu hình để chạy thật | Chưa khả dụng / còn thiếu |
 |---|---|---|---|
 | PDF Manager | Upload lên server, chống trùng md5, **nhận diện + trích xuất Brazil CNPJ từ lớp chữ** (đúng trên 3 phôi thật, kiểm số kiểm tra CNPJ), xem PDF gốc, sửa ô, kiểm tra hợp lệ ở server. **Luồng lưu chạy xuyên suốt giao diện → API → worker → PostgreSQL** với Google giả lập: kiểm trùng (DB + Sheet) → Drive (tìm theo md5 trước, không upload 2 lần) → md5 → Drive ID → dòng A, D–J (B, C trống) → K = “Xem phôi”; Sheet lỗi → chỉ ghi lại Sheet; tạm dừng/tiếp tục. Ô tick **“email liên hệ chính thức (đã xác minh)”** trên thẻ CNPJ | Ghi Google thật — cần OAuth của anh; bản scan (California): AI nhận diện + đọc ô, **đối chiếu số hồ sơ và tên với bản in lại ở trang sau** (khác số → chặn lưu tới khi anh sửa tay) — cần ANTHROPIC_API_KEY | Wyoming: **chưa có phôi thật để kiểm** |
-| Tạo miền | 25 miền gốc của 3 nick, **tích chọn lưu trong database**, kiểm tra nick chỉ đọc (cPanel `DomainInfo::list_domains` + **phiên bản cPanel**; iNET `GET /domain`), chặn miền tạm ngưng / Cloudflare, khoá bỏ chọn miền đang có tác vụ, từ chối dòng gán miền chưa tích | Quét Sheet (B trống) — cần Google; kiểm trùng cPanel + DNS, tạo miền phụ trên cPanel, xác minh DNS, đọc lại B rồi ghi — cần token cPanel | **Tạo bản ghi A qua iNET**: tài liệu chính thức nay **đã có** cấu trúc `PATCH /domain/{id}/record` (ACTION_ADD). Code **vẫn chặn**, chờ anh duyệt bật ghi DNS thật |
+| Tạo miền | 25 miền gốc của 3 nick, **tích chọn lưu trong database**, kiểm tra nick chỉ đọc (cPanel `DomainInfo::list_domains` + **phiên bản cPanel**; iNET `GET /domain`), chặn miền tạm ngưng / Cloudflare, khoá bỏ chọn miền đang có tác vụ, từ chối dòng gán miền chưa tích. **Tạo bản ghi A qua iNET** (`PATCH /record`, 1 mục ACTION_ADD) chạy xuyên suốt giao diện → API → worker trên iNET/cPanel/Google giả lập: công tắc TẮT mặc định → chạy thử đúng 1 miền anh chỉ định → hàng loạt; mỗi lượt phải **kiểm tra qua API (chỉ đọc) rồi xác nhận** | Mọi bước trên tài khoản thật — cần khoá iNET (`write`), token cPanel, Google; **anh bật công tắc + chỉ định miền thử** | Miền dùng DNS của hosting cPanel (`DNS::mass_edit_zone`) hoặc Cloudflare: nhận diện được, **chưa ghi** |
 | SSL + Tạo web | **Mẫu web gốc của app cũ đã khôi phục** từ EXE và dùng để dựng 6 trang + robots/sitemap; xem trước = đúng HTML sẽ dựng. **Email chỉ hiện khi đã xác minh**; chưa xác minh/không có → không có link email, không có form gửi thư (thay bằng gọi điện/địa chỉ) | Quét Sheet (B có, C trống) — cần Google; document root đọc từ cPanel, nội dung AI + kiểm tra không bịa, upload `overwrite=0`, AutoSSL, kiểm HTTPS, đọc lại C rồi ghi — cần token cPanel + ANTHROPIC_API_KEY | — |
 | Cài đặt API | Trang **Cài đặt API**: Google, AI, máy chủ, iNET/cPanel × 3 nick. Khoá **mã hoá ở server** (Fernet, khoá chủ `data/master.key` hoặc `QLBM_MASTER_KEY`), không bao giờ trả về giao diện hay ghi log. Nút **Kết nối Google** (OAuth web, PKCE) + kiểm tra Google chỉ đọc | OAuth client loại *Web application* + redirect URI của server | — |
 | Tổng quan | Giao diện | — | Vẫn là **dữ liệu mẫu** (có nhãn “Dữ liệu mẫu”) |
 | Nền tảng | Hàng đợi PostgreSQL (chống chạy trùng, một việc/nick, thử lại có giãn cách, chạy tiếp từ bước dở, tạm dừng/tiếp tục), nhật ký từng việc, bảng `sheet_writes`, sao lưu/khôi phục `pg_dump`; **khởi động lại API + worker giữ nguyên dữ liệu và việc dở** | Docker Compose (db, api, worker, web, backup) — **chưa chạy thử** (máy này chưa có Docker) | **API chưa có đăng nhập/phân quyền** — không được mở ra Internet trước khi có; GitHub Private (chưa có remote) |
 
-Kiểm thử: `apps/api` **67 test**, mọi API ngoài đều mock, gồm **1 test toàn tuyến** trên cùng một Sheet giả: lưu PDF → tạo miền (B) → dựng web (C).
-Trong test này chỉ bước ghi DNS iNET là hàm giả. E2E giao diện trên backend dev: các màn 14/14, Cài đặt 11/11, xác minh email 6/6, xem trước 15 mẫu 15/15.
+Kiểm thử: `apps/api` **74 test**, mọi API ngoài đều mock (iNET là tài khoản giả có trạng thái, theo đúng cấu trúc tài liệu).
+Gồm **1 test toàn tuyến** trên cùng một Sheet giả: lưu PDF → chạy thử → xem trước → tạo miền (B) → dựng web (C).
+E2E giao diện: ghi DNS (tắt → chạy thử → hàng loạt) 16/16 trên backend giả lập, có chặn mọi lời gọi ra ngoài.
+Trên backend dev: các màn 14/14, Cài đặt 11/11, xác minh email 6/6, xem trước 15 mẫu 15/15.
+
+### Ghi DNS thật — các lớp bảo vệ
+1. Công tắc **Ghi DNS thật** (Cài đặt) mặc định TẮT. Khi tắt, việc tạo miền dừng ở "Chưa khả dụng" trước mọi thao tác ghi.
+2. Bật được chỉ khi đã chỉ định **miền thử** (miền phụ dưới miền gốc đã tích). Chạy thử thì mỗi lượt chỉ được đúng miền đó.
+   Miền thử xong trọn vẹn (A + cPanel + DNS trỏ đúng + ghi B) thì mới được chạy hàng loạt.
+3. Mỗi lượt: **Kiểm tra qua API (chỉ đọc)** cho từng dòng:
+   - miền gốc có trên cPanel và IP hosting (`DomainInfo.ip`) khớp IP của nick;
+   - miền nằm trong **đúng tài khoản iNET của nick** (ID miền);
+   - nameserver là iNET;
+   - bản ghi đang dùng tên đó;
+   - DNS công khai.
+   Anh xem rồi bấm xác nhận. Lượt chạy chỉ lấy đúng kế hoạch vừa kiểm tra (dùng 1 lần, hạn 30 phút).
+4. Khi ghi: kiểm tra lại ID miền và nameserver. Bản ghi giống hệt đã có thì không gửi lại. Tên đã có bản ghi khác thì xung đột, không ghi đè/sửa/xoá.
+   Sau PATCH, mọi bản ghi cũ phải còn, nếu không thì dừng.
+5. Nhật ký từng việc ghi mọi lời gọi API (phương thức, đường dẫn, thao tác, mã HTTP, không có khoá) và trạng thái từng bước để chạy tiếp khi lỗi.
 
 ## API
 
 | Dịch vụ | Đã dùng (theo tài liệu chính thức) | Thiếu |
 |---|---|---|
 | Google | OAuth 2.0 của chủ tài khoản (web PKCE từ trang Cài đặt; script Desktop chỉ để phát triển), quyền `spreadsheets` + `drive.file`. Sheets v4 `values.get/update/append`, Drive v3 upload multipart + `appProperties` | Gmail cá nhân: service account không upload được vào Drive → dùng OAuth |
-| cPanel UAPI | `SubDomain::addsubdomain/listsubdomains`, `DomainInfo::single_domain_data/list_domains`, `Fileman::upload_files`, `SSL::start_autossl_check/is_autossl_check_in_progress/get_autossl_problems`, `StatsBar::get_stats` (cpanelversion) | `DNS::mass_edit_zone` chưa làm (không miền gốc nào dùng NS cPanel) |
-| iNET | `GET /domain` (đã có cấu trúc trả về trong tài liệu) | Ghi `PATCH /domain/{id}/record`: tài liệu đủ, **chờ anh duyệt** bật |
+| cPanel UAPI | `SubDomain::addsubdomain/listsubdomains`, `DomainInfo::single_domain_data/list_domains`, `Fileman::upload_files`, `SSL::start_autossl_check/is_autossl_check_in_progress/get_autossl_problems`, `StatsBar::get_stats` (cpanelversion), `DNS::has_local_authority` | `DNS::mass_edit_zone` chưa làm (không miền gốc nào dùng NS cPanel) |
+| iNET | `GET /domain`, `GET /domain/{id}`, `GET /domain/{id}/record`, `PATCH /domain/{id}/record` (chỉ ACTION_ADD) | — (cần khoá; ghi thật chờ anh bật công tắc) |
 | AI | Anthropic Messages (SDK `anthropic` 1.15, `claude-opus-5-5`, JSON schema, khối `document` cho PDF scan, fallback khi từ chối); `/api/ai/check` | — (cần khoá) |
 
 ## Tối thiểu để kiểm thử thật
@@ -56,7 +73,7 @@ Trong test này chỉ bước ghi DNS iNET là hàm giả. E2E giao diện trên
 
 ## Chờ chủ dự án chốt
 
-1. **Duyệt bật ghi bản ghi A qua iNET** (theo `PATCH /record` ACTION_ADD, chỉ thêm, không sửa/xoá bản ghi có sẵn).
+1. **Miền thử** cho lần ghi DNS thật đầu tiên (anh chỉ định, anh tự bật công tắc khi duyệt chạy thử).
 2. Quy tắc tên miền phụ: bỏ hậu tố pháp lý (app cũ, đang dùng) hay dùng nguyên cột E / rút gọn 2 từ.
 3. `th-ntp.com` của app cũ thuộc nick nào.
 4. Hạn mức miền / ngày mỗi nick (hiện không giới hạn).
