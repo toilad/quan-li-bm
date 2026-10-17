@@ -57,6 +57,8 @@ def search(query: str, orientation: str, per_page: int = 30, page: int = 1) -> d
             r = c.get(API, params=params)
     except httpx.TransportError as e:
         raise Transient(f"Pixabay search: lỗi mạng ({type(e).__name__})") from None
+    if r.status_code == 400 and page > 1:
+        return {"photos": [], "remaining": r.headers.get("X-RateLimit-Remaining")}  # page past the end of the results
     _check(r, "search")
     hits = r.json().get("hits") or []
     return {"photos": [_photo(h) for h in hits if h.get("largeImageURL") or h.get("webformatURL")],

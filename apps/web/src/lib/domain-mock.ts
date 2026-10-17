@@ -7,7 +7,7 @@
  * domain on that account's cPanel hosting. It never registers a new domain.
  * Nothing here calls iNET or cPanel.
  */
-import { COMPANIES, subdomainSlug, type Company } from "./mock-data";
+import { COMPANIES, foldAccents, subdomainSlug, type Company } from "./mock-data";
 
 /* ───────── iNET accounts ───────── */
 
@@ -180,7 +180,8 @@ const LEGAL = new Set(["llc", "inc", "pllc", "co", "corp", "ltd", "company", "th
 
 /** First two meaningful words of the company name: "Global Freight Partners LLC" → globalfreight. */
 export function shortSlug(name: string): string {
-  const words = name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w && !LEGAL.has(w));
+  const words = foldAccents(name.toLowerCase()).replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
+    .filter((w) => w && !LEGAL.has(w) && !["ltda", "eireli", "epp"].includes(w));
   return words.slice(0, 2).join("");
 }
 

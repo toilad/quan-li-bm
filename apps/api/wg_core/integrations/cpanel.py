@@ -42,7 +42,10 @@ class CPanel:
             raise NotConfigured(f"cPanel {self.user}", [f"token hợp lệ / quyền {module} (HTTP {r.status_code})"])
         if r.status_code >= 400:
             raise Permanent(f"cPanel {module}::{fn}: HTTP {r.status_code}")
-        res = r.json().get("result", {})
+        try:
+            res = r.json().get("result", {})
+        except ValueError:
+            raise Transient(f"cPanel {module}::{fn}: trả về không phải JSON (HTTP {r.status_code}) — có thể đang bảo trì / tường lửa") from None
         if res.get("status") != 1:
             raise Permanent(f"cPanel {module}::{fn}: {'; '.join(res.get('errors') or ['lỗi không rõ'])}")
         return res.get("data")
@@ -95,10 +98,16 @@ class CPanel:
         return None
 
     # ── files ──
-    def upload_files(self, dir_: str, files: dict[str, bytes]) -> dict:
-        """overwrite=0: an existing file is never replaced (the call reports it as failed)."""
+    def list_files(self, dir_: str) -> set[str]:
+        """Fileman::list_files → names of the files in dir (relative dirs resolve against the home directory)."""
+        data = self._call("Fileman", "list_files", {"dir": dir_, "types": "file"}) or []
+        items = data.get("files", []) if isinstance(data, dict) else data
+        return {x.get("file") for x in items if x.get("file") and x.get("type", "file") == "file"}
+
+    def upload_files(self, dir_: str, files: dict[str, bytes], overwrite: bool = False) -> dict:
+        """overwrite=0: an existing file is never replaced (cPanel fails that file with "already exists")."""
         multipart = {f"file-{i}": (name, data) for i, (name, data) in enumerate(files.items())}
-        return self._call("Fileman", "upload_files", {"dir": dir_, "overwrite": 0}, files=multipart)
+        return self._call("Fileman", "upload_files", {"dir": dir_, "overwrite": 1 if overwrite else 0}, files=multipart)
 
     # ── SSL ──
     def start_autossl(self) -> None:

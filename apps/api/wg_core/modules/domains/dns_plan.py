@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from ...integrations import net
 from ...integrations.cpanel import CPanel
 from ...integrations.errors import IntegrationError
-from ...integrations.inet import Inet, dns_provider
+from ...integrations.inet import Inet, dns_provider, record_label
 from ...models import AppSetting, Nick, RootDomain
 
 KEY = "dns_write"
@@ -127,9 +127,9 @@ def _check_one(it: dict, nick: Nick, cache: dict, log: list) -> dict:
             out["reason"] = _other_provider(cp, root, info)
             return out
         ok(f"iNET: {root} thuộc tài khoản {nick.name} (ID {out['domain_id']}), nameserver {', '.join(out['nameservers'])}")
-        same = [r for r in info["records"] if (r.get("name") or "").lower() == label]
+        same = [r for r in info["records"] if record_label(r.get("name"), root) == label]
         out["existing"] = [{"id": r.get("id"), "type": r.get("type"), "data": r.get("data")} for r in same]
-        if any((r.get("type") or "").upper() == "A" and (r.get("data") or "").strip() == ip for r in same):
+        if any((r.get("type") or "").upper() == "A" and (r.get("data") or "").strip().rstrip(".") == ip for r in same):
             out["action"] = "exists"
             ok(f"Bản ghi {label} A {ip} đã có — không gửi lại")
         elif same:

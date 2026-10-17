@@ -7,7 +7,10 @@ from ...config import settings
 from ...db import Base
 from ...integrations import ai, net
 from ...integrations.cpanel import CPanel
-from ...integrations.errors import Conflict, NotConfigured, Permanent, Transient
+from ...integrations.errors import Conflict, NotConfigured, Permanent, Transient, wait_or_fail
+
+SSL_WAIT_HOURS = 24  # AutoSSL on a busy server can take hours; past a day something is wrong
+AUTOSSL_RETRIGGER_HOURS = 2
 from ...integrations.google import Sheets
 from ...jobs import JobContext, enqueue, handler
 from ...models import Nick, RootDomain, SheetWrite
@@ -172,7 +175,19 @@ def _build(ctx: JobContext):
         out.mkdir(parents=True, exist_ok=True)
         for name, data in files.items():
             (out / name).write_bytes(data)
-        res = cp.upload_files(st["doc_root"], files) or {}
+        if not st.get("upload_attempted"):
+            # The site's own file names must not exist yet: someone else's files are never replaced.
+            clash = sorted(set(files) & cp.list_files(st["doc_root"]))
+            if clash:
+                raise Permanent(f"Thư mục {st['doc_root']} đã có {', '.join(clash[:5])} — không ghi đè file có sẵn, dừng")
+            ctx.checkpoint(upload_attempted=True)
+            overwrite = False
+        else:
+            # An earlier attempt may have stored some files before its answer was lost. Those names did not exist
+            # before that attempt (checked above), so any file with these names now is this site's own → replace.
+            overwrite = True
+            ctx.log("Upload lại sau lượt bị gián đoạn: chỉ thay các file của chính website này", "warn")
+        res = cp.upload_files(st["doc_root"], files, overwrite=overwrite) or {}
         if res.get("failed"):
             reasons = "; ".join(f'{u.get("file")}: {u.get("reason")}' for u in res.get("uploads", []) if u.get("reason"))
             raise Permanent(f"Upload không hoàn tất (không ghi đè file có sẵn): {reasons}")
@@ -182,16 +197,19 @@ def _build(ctx: JobContext):
 
     if not st.get("https_ok"):
         ctx.step("Bật SSL (AutoSSL) + kiểm tra HTTPS")
-        if not st.get("autossl_started"):
-            cp.start_autossl()
-            ctx.checkpoint(autossl_started=True)
+        from datetime import datetime, timezone
+
+        last = st.get("autossl_started_at")
+        if not last or (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() > AUTOSSL_RETRIGGER_HOURS * 3600:
+            cp.start_autossl()  # again every few hours while waiting: an earlier run may have happened before DNS was ready
+            ctx.checkpoint(autossl_started=True, autossl_started_at=datetime.now(timezone.utc).isoformat())
             ctx.log("SSL::start_autossl_check đã gửi", "info")
         if cp.autossl_in_progress():
-            raise Transient("AutoSSL đang chạy — kiểm tra lại sau", 120)
+            wait_or_fail(st, "ssl_wait_since", SSL_WAIT_HOURS, "AutoSSL đang chạy", 120)
         ok, why = net.https_ok(domain, row.cells["A"])
         if not ok:
             probs = cp.autossl_problems(domain)
-            raise Transient(f"HTTPS chưa chạy: {why}" + (f" · AutoSSL: {probs[0]}" if probs else ""), 900)
+            wait_or_fail(st, "ssl_wait_since", SSL_WAIT_HOURS, f"HTTPS chưa chạy: {why}" + (f" · AutoSSL: {probs[0]}" if probs else ""), 900)
         ctx.checkpoint(https_ok=True)
         ctx.log(f"https://{domain}: {why}", "ok")
 

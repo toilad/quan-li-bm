@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from .db import session_scope
-from .integrations.errors import Conflict, NotAvailable, NotConfigured, Transient
+from .integrations.errors import Conflict, NotAvailable, NotConfigured, Transient, Waiting
 from .models import AppSetting, Job, JobLog
 
 PAUSE_KEY = "paused_kinds"
@@ -162,6 +162,11 @@ def run_one() -> bool:
         except Conflict as e:
             job.status, job.last_error = "conflict", str(e)
             ctx.log(str(e), "warn")
+        except Waiting as e:  # expected wait: does not use up an attempt (the step keeps its own deadline)
+            job.status, job.last_error, job.attempts = "queued", str(e), max(0, job.attempts - 1)
+            job.run_after = datetime.now(timezone.utc) + timedelta(seconds=e.retry_after or 300)
+            flag_modified(job, "state")
+            ctx.log(f"Đang chờ, kiểm tra lại sau {int(e.retry_after or 300)}s: {e}", "info")
         except Transient as e:
             if job.attempts < job.max_attempts:
                 delay = e.retry_after or min(900, 15 * 2 ** (job.attempts - 1))

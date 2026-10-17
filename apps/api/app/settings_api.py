@@ -98,12 +98,22 @@ def oauth_callback(state: str = "", code: str = "", error: str = ""):
     if error or not code or not p or p.get("state") != state or time.time() - p.get("at", 0) > 900:
         return RedirectResponse(f"{web}?google=error&reason={urllib.parse.quote(error or 'state')}", status_code=302)
     oc = google.oauth_client()
-    r = httpx.post(google.TOKEN_URL, timeout=30, data={
-        "code": code, "client_id": oc["client_id"], "client_secret": oc.get("client_secret", ""), "redirect_uri": redirect_uri(),
-        "grant_type": "authorization_code", "code_verifier": p["verifier"]})
+    try:
+        r = httpx.post(google.TOKEN_URL, timeout=30, data={
+            "code": code, "client_id": oc["client_id"], "client_secret": oc.get("client_secret", ""), "redirect_uri": redirect_uri(),
+            "grant_type": "authorization_code", "code_verifier": p["verifier"]})
+    except httpx.TransportError:
+        return RedirectResponse(f"{web}?google=error&reason=network", status_code=302)
     body = r.json() if r.content else {}
     if r.status_code != 200 or "refresh_token" not in body:
         return RedirectResponse(f"{web}?google=error&reason={urllib.parse.quote(str(body.get('error', r.status_code)))}", status_code=302)
+    # Google's consent screen lets the owner untick a permission: without both, saving PDFs would fail later.
+    granted, missing = set(body.get("scope", "").split()), []
+    for scope, label in ((google.OAUTH_SCOPES.split()[0], "Sheets"), (google.OAUTH_SCOPES.split()[1], "Drive")):
+        if body.get("scope") and scope not in granted:
+            missing.append(label)
+    if missing:
+        return RedirectResponse(f"{web}?google=error&reason={urllib.parse.quote('missing_scope:' + '+'.join(missing))}", status_code=302)
     runtime_config.put("GOOGLE_TOKEN", json.dumps({"refresh_token": body["refresh_token"], "scope": body.get("scope", "")}))
     google._token_cache.clear()
     return RedirectResponse(f"{web}?google=connected", status_code=302)
@@ -124,5 +134,14 @@ def google_check():
             head = google._check(c.get(f"{google.SHEETS}/{sid}/values/{google._a1(tab, 'A1:L2')}", headers=google._auth(c)), "Sheets đọc tiêu đề")
             out["sheet"]["header_rows"] = head.get("values", [])
         about = google._check(c.get("https://www.googleapis.com/drive/v3/about", headers=google._auth(c), params={"fields": "user(emailAddress)"}), "Drive đọc tài khoản")
-        out["drive"] = {"account": about.get("user", {}).get("emailAddress"), "folder": runtime_config.get("DRIVE_FOLDER_ID") or "app sẽ tự tạo khi lưu PDF đầu tiên"}
+        folder = runtime_config.get("DRIVE_FOLDER_ID")
+        out["drive"] = {"account": about.get("user", {}).get("emailAddress"), "folder": folder or "app sẽ tự tạo khi lưu PDF đầu tiên",
+                        "folder_ok": None}
+        if folder:  # with OAuth (drive.file) the app only sees folders it created itself: check before the first save
+            fr = c.get(f"{google.DRIVE_FILES}/{folder}", headers=google._auth(c), params={"fields": "id,name,mimeType", "supportsAllDrives": "true"})
+            out["drive"]["folder_ok"] = fr.status_code == 200 and fr.json().get("mimeType") == "application/vnd.google-apps.folder"
+            if not out["drive"]["folder_ok"]:
+                out["drive"]["folder_problem"] = ("app không truy cập được thư mục này (quyền drive.file chỉ thấy thư mục do app tạo) — "
+                                                  "để trống “ID thư mục Drive” để app tự tạo")
+        out["sheet"]["data_starts_at_row"] = google.FIRST_DATA_ROW
     return out

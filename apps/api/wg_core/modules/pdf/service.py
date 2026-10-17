@@ -164,10 +164,21 @@ def _save(ctx: JobContext):
     else:
         ctx.log("Đã có Drive ID từ lượt trước → không upload lại", "info")
 
+    if not doc.sheet_row and ctx.state.get("append_tried"):
+        # An earlier attempt sent the row but did not get (or save) the answer: Sheets may have written it.
+        ctx.step("Kiểm tra dòng đã ghi ở lượt trước")
+        for r in Sheets().read_rows():
+            if r.cells["J"].strip() == j and r.cells["H"].strip() == h and doc.drive_file_id in r.cells["K"]:
+                doc.sheet_row = r.row
+                ctx.checkpoint(sheet_row=r.row)
+                ctx.log(f"Dòng {r.row} đã được ghi ở lượt trước (cùng J, H, Drive ID) → dùng lại, không thêm dòng trùng", "warn")
+                break
+
     if not doc.sheet_row:
         ctx.step("Ghi Google Sheet (A, D–K)")
         sheets = Sheets()
         values = row_values(doc)
+        ctx.checkpoint(append_tried=True)
         row = sheets.append_row(values)
         doc.sheet_row = row
         s.add(SheetWrite(tab=sheets.tab, range=f"A{row}:K{row}", old_value=None, new_value=" | ".join(values), job_id=ctx.job.id))

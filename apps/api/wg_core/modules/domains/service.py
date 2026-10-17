@@ -14,13 +14,14 @@ from sqlalchemy.orm import Session
 from ...config import API_ROOT, settings
 from ...integrations import net
 from ...integrations.cpanel import CPanel
-from ...integrations.errors import Conflict, NotAvailable, Permanent, Transient
+from ...integrations.errors import Conflict, NotAvailable, Permanent, Transient, wait_or_fail
 from ...integrations.google import Sheets
 from ...integrations.inet import Inet
 from ...jobs import JobContext, enqueue, handler
 from . import dns_plan
 from ...models import AppSetting, Job, Nick, RootDomain, SheetWrite
 
+DNS_WAIT_HOURS = 12  # a new record normally shows within minutes; past this something is wrong
 LABEL_RX = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 LEGAL = re.compile(r"\b(llc|inc|pllc|co|corp|ltd)\b\.?")
 
@@ -121,9 +122,16 @@ def set_selected(s: Session, names: list[str], on: bool) -> dict:
     return {"changed": changed, "refused": refused}
 
 
+BR_SUFFIX = re.compile(r"[\s,.-]+(ltda|eireli|epp|me|s/?a)\.?\s*$")  # Brazilian legal forms, only at the end
+
+
 def slug(company: str) -> str:
-    """Legacy _slug_for_subdomain: drop legal suffixes and symbols. (Naming rule still to be confirmed by the owner.)"""
-    return re.sub(r"[^a-z0-9]", "", LEGAL.sub("", company.lower()))
+    """Legacy _slug_for_subdomain: drop legal suffixes and symbols; accents are folded ("ç" → "c"), not dropped.
+    Same rule as subdomainSlug() in the web app. (Naming rule still to be confirmed by the owner.)"""
+    from ..pdf.fields import strip_accents
+
+    name = BR_SUFFIX.sub("", strip_accents(company.lower()))
+    return re.sub(r"[^a-z0-9]", "", LEGAL.sub("", name))
 
 
 def scan(s: Session) -> dict:
@@ -237,17 +245,25 @@ def _create(ctx: JobContext):
         ctx.step("Tạo miền trên cPanel")
         _gate(s, p["root"])
         cp = CPanel(nick.id, nick.cpanel_host)
-        cp.add_subdomain(p["label"], p["root"], f"public_html/{fqdn}")
+        if cp.subdomain(fqdn):  # created by an earlier attempt whose answer was lost (before it, the pre-check found none)
+            ctx.log(f"cPanel: {fqdn} đã có từ lượt trước → không tạo lại", "warn")
+        else:
+            cp.add_subdomain(p["label"], p["root"], f"public_html/{fqdn}")
+            ctx.log(f"cPanel: đã tạo {fqdn}", "ok")
         ctx.checkpoint(host_created=True)
-        ctx.log(f"cPanel: đã tạo {fqdn}", "ok")
 
     ctx.step("Xác minh DNS trỏ đúng IP")
     ips = net.resolve_a(fqdn)
     if nick.ip not in ips:
-        raise Transient(f"DNS {fqdn} chưa trỏ về {nick.ip} (đang: {', '.join(ips) or 'chưa có'}) — chờ lan truyền", 300)
+        wait_or_fail(st, "dns_wait_since", DNS_WAIT_HOURS, f"DNS {fqdn} chưa trỏ về {nick.ip} (đang: {', '.join(ips) or 'chưa có'})", 300)
     ctx.log(f"DNS {fqdn} → {nick.ip}", "ok")
 
     ctx.step("Đọc lại ô B rồi ghi")
+    company_now = sheets.read_cell(f"A{p['row']}").strip()
+    if p.get("company") and company_now.casefold() != p["company"].strip().casefold():
+        ctx.checkpoint(outcome="conflict", orphan={"fqdn": fqdn, "row_now": company_now})
+        raise Conflict(f"Dòng {p['row']} giờ là “{company_now}”, không còn là “{p['company']}” (Sheet đã đổi thứ tự?) — "
+                       f"không ghi B. Miền {fqdn} đã tạo, lưu vào “Tài nguyên chưa gắn”")
     live = sheets.read_cell(cell)
     if live.strip():
         ctx.checkpoint(outcome="conflict", orphan={"fqdn": fqdn, "found_b": live})

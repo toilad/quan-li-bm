@@ -19,8 +19,9 @@ class FakeSheet:
         last = max(self.rows)
         return [[self.rows.get(r, {}).get(c, "") for c in "ABCDEFGHIJKL"] for r in range(3, last + 1)]
 
-    def install(self, mock: respx.MockRouter, fail_append: int = 0):
-        state = {"fail": fail_append}
+    def install(self, mock: respx.MockRouter, fail_append: int = 0, ghost_append: int = 0):
+        """fail_append: n appends refused (503). ghost_append: n appends WRITTEN but answered 503 (lost reply)."""
+        state = {"fail": fail_append, "ghost": ghost_append}
         base = "https://sheets.googleapis.com/v4/spreadsheets/TESTSHEET/values/"
 
         def get(request):
@@ -46,6 +47,9 @@ class FakeSheet:
             row = max(list(self.rows) + [2]) + 1
             self.rows[row] = dict(zip("ABCDEFGHIJK", vals))
             self.appends.append(vals)
+            if state["ghost"]:
+                state["ghost"] -= 1
+                return httpx.Response(503, json={"error": {"message": "backend error"}})
             return httpx.Response(200, json={"updates": {"updatedRange": f"'Phoi US'!A{row}:K{row}"}})
 
         mock.post("https://oauth2.googleapis.com/token").respond(200, json={"access_token": "tok", "expires_in": 3600})
@@ -89,6 +93,7 @@ def install_doh(mock, answers: dict[str, list[str]]):
         return httpx.Response(200, json={"Status": 0, "Answer": [{"name": name, "type": 1, "data": ip} for ip in ips]})
 
     mock.get(url__startswith="https://cloudflare-dns.com/dns-query").mock(side_effect=doh)
+    mock.get(url__startswith="https://dns.google/resolve").mock(side_effect=doh)
 
 
 def cp_ok(data=None):

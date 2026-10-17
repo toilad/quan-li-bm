@@ -35,3 +35,20 @@ class Permanent(IntegrationError):
 
 class Conflict(IntegrationError):
     """Target cell already filled by someone else — never overwritten."""
+
+
+class Waiting(Transient):
+    """Something outside is still in progress (DNS propagation, AutoSSL). Checked again later without using up a retry;
+    the step that raises it keeps its own deadline in the job state and fails with Permanent when it is reached."""
+
+
+def wait_or_fail(state: dict, key: str, hours: float, message: str, retry_after: float):
+    """Raise Waiting until `hours` after the first wait recorded under state[key], then Permanent."""
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    since = datetime.fromisoformat(state.setdefault(key, now.isoformat()))
+    waited = (now - since).total_seconds() / 3600
+    if waited >= hours:
+        raise Permanent(f"{message} — đã chờ {waited:.1f} giờ, quá hạn {hours:g} giờ")
+    raise Waiting(f"{message} (đã chờ {int(waited * 60)} phút / tối đa {hours:g} giờ)", retry_after)

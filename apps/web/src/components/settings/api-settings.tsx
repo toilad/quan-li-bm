@@ -30,7 +30,13 @@ export function ApiSettings() {
     load();
     const q = new URLSearchParams(window.location.search).get("google");
     if (q === "connected") setMsg((m) => ({ ...m, google: { tone: "ok", text: "Đã kết nối Google — quyền truy cập lưu mã hoá phía server." } }));
-    if (q === "error") setMsg((m) => ({ ...m, google: { tone: "err", text: `Kết nối Google không thành công (${new URLSearchParams(window.location.search).get("reason")}).` } }));
+    if (q === "error") {
+      const reason = new URLSearchParams(window.location.search).get("reason") ?? "";
+      const text = reason.startsWith("missing_scope:")
+        ? `Google chưa được cấp đủ quyền (thiếu ${reason.slice(14).replace("+", " và ")}). Bấm Kết nối lại và tick đủ các ô quyền.`
+        : `Kết nối Google không thành công (${reason}).`;
+      setMsg((m) => ({ ...m, google: { tone: "err", text } }));
+    }
   }, [load]);
 
   const say = (group: string, m: Msg) => setMsg((x) => ({ ...x, [group]: m }));
@@ -81,8 +87,11 @@ export function ApiSettings() {
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 {g.key === "google" && (
                   <Btn onClick={() => run("google", "Đang kiểm tra Google (chỉ đọc)", () => api.get("/api/google/check"),
-                    (r: { sheet: { title: string; tabs: string[]; tab_found: boolean; tab: string }; drive: { account: string } }) =>
-                      `Sheet “${r.sheet.title}” · tab ${r.sheet.tab}: ${r.sheet.tab_found ? "có" : "KHÔNG có"} (${r.sheet.tabs.join(", ")}) · Drive: ${r.drive.account}`)}>
+                    (r: { sheet: { title: string; tabs: string[]; tab_found: boolean; tab: string; header_rows?: string[][]; data_starts_at_row?: number };
+                          drive: { account: string; folder_ok: boolean | null; folder_problem?: string } }) =>
+                      `Sheet “${r.sheet.title}” · tab ${r.sheet.tab}: ${r.sheet.tab_found ? "có" : "KHÔNG có"} (${r.sheet.tabs.join(", ")})` +
+                      (r.sheet.header_rows ? ` · dòng 1–2: ${r.sheet.header_rows.map((x) => x.slice(0, 3).join(" | ")).join(" / ")} → app đọc dữ liệu từ dòng ${r.sheet.data_starts_at_row}` : "") +
+                      ` · Drive: ${r.drive.account}` + (r.drive.folder_problem ? ` · ⚠ ${r.drive.folder_problem}` : ""))}>
                     <PlugZap className="size-4" /> Kiểm tra (chỉ đọc)
                   </Btn>
                 )}

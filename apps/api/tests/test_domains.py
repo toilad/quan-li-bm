@@ -126,3 +126,9 @@ def test_nick_check_without_keys_reports_each_service():
         out = domains.check_nick(s, "n2")  # no CPANEL_*_N2 / INET_API_KEY_N2 in the test env
     assert not out["cpanel"]["ok"] and "CPANEL_TOKEN_N2" in out["cpanel"]["error"]
     assert not out["inet"]["ok"] and "INET_API_KEY_N2" in out["inet"]["error"]
+
+
+def test_subdomain_labels_fold_accents_and_drop_legal_forms():
+    cases = {"CONSTRUÇÕES SILVA LTDA": "construcoessilva", "N Triangle Ranch, Inc.": "ntriangleranch",
+             "Padaria São José - ME": "padariasaojose", "ME Salon LLC": "mesalon", "Alpha S/A": "alpha"}
+    assert {name: domains.slug(name) for name in cases} == cases

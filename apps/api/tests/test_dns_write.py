@@ -211,3 +211,22 @@ def test_run_without_a_confirmed_preview_is_refused(client):
     _tick("huxma.life")
     assert client.post("/api/domains/run", json={"token": "nope"}).status_code == 409
     assert client.post("/api/domains/run", json={"items": [{"row": 5, "root": "huxma.life", "label": "x"}]}).status_code == 422
+
+
+def test_full_record_names_from_inet_are_recognised():
+    from wg_core.integrations.inet import record_label
+
+    assert record_label("acme.huxma.life.", "huxma.life") == "acme" and record_label("ACME.huxma.life", "huxma.life") == "acme"
+    assert record_label("huxma.life", "huxma.life") == "@" and record_label("@", "huxma.life") == "@"
+    _tick("huxma.life")
+    batch_mode()
+    sheet = FakeSheet({ROW: {"A": "Acme LLC"}})
+    inet = fake_inet(records=[{"id": 7, "name": "acme.huxma.life.", "type": "A", "data": IP, "ttl": 300}])
+    with respx.mock(assert_all_called=False) as m:
+        _routes(m, sheet, {"acme.huxma.life": [IP]})
+        patch = inet.install(m)
+        job_id = _job()
+        drain()
+    with session_scope() as s:
+        assert s.get(Job, job_id).state["dns_record"]["result"] == "exists"
+    assert not patch.called  # the record written as a full name is the same record: never added twice

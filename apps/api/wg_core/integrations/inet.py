@@ -39,8 +39,18 @@ def dns_provider(ns: set[str]) -> str:
     return "other"
 
 
-def _same(r: dict, name: str, rtype: str, data: str) -> bool:
-    return (r.get("name") or "").lower() == name.lower() and (r.get("type") or "").upper() == rtype and (r.get("data") or "").strip() == data
+def record_label(name: str, domain: str) -> str:
+    """The record's label relative to the domain. The docs show "@, www, _dmarc"; a full name ("acme.example.vn" or
+    "acme.example.vn.") is reduced the same way, so an existing record is never missed and added twice."""
+    n, d = (name or "").strip().rstrip(".").lower(), domain.strip().rstrip(".").lower()
+    if n in ("", "@", d):
+        return "@"
+    return n[: -len(d) - 1] if n.endswith("." + d) else n
+
+
+def _same(r: dict, name: str, rtype: str, data: str, domain: str) -> bool:
+    return (record_label(r.get("name"), domain) == name.lower() and (r.get("type") or "").upper() == rtype
+            and (r.get("data") or "").strip().rstrip(".") == data)
 
 
 class Inet:
@@ -113,7 +123,7 @@ class Inet:
         out = {"in_account": True, "domain_id": did, "status": d.get("status"), "nameservers": sorted(ns), "provider": prov}
         if prov == "inet":
             out["same_name"] = [{"id": r.get("id"), "type": r.get("type"), "data": r.get("data"), "ttl": r.get("ttl")}
-                                for r in self.records(did) if (r.get("name") or "").lower() == label.lower()]
+                                for r in self.records(did) if record_label(r.get("name"), domain) == label.lower()]
         return out
 
     # ── write (ACTION_ADD only) ──
@@ -130,8 +140,8 @@ class Inet:
         if dns_provider(ns) != "inet":
             raise NotAvailable("iNET DNS", f"{domain} không dùng ns1/ns2.inet.vn (đang: {', '.join(sorted(ns)) or 'không rõ'}) — không gọi API bản ghi của iNET")
         before = self.records(did)
-        same = [r for r in before if (r.get("name") or "").lower() == label.lower()]
-        mine = [r for r in same if _same(r, label, "A", ip)]
+        same = [r for r in before if record_label(r.get("name"), domain) == label.lower()]
+        mine = [r for r in same if _same(r, label, "A", ip, domain)]
         if mine:
             self.log(f"Bản ghi {label} A {ip} đã có (id {mine[0].get('id')}) — không gửi lại", "ok")
             return {"result": "exists", "domain_id": did, "record_id": mine[0].get("id")}
@@ -143,7 +153,7 @@ class Inet:
         after = r.get("recordList") if isinstance(r, dict) else None
         if after is None:  # response without the list → read it back
             after = self.records(did)
-        new = [x for x in after if _same(x, label, "A", ip)]
+        new = [x for x in after if _same(x, label, "A", ip, domain)]
         if not new:
             raise Permanent(f"iNET không xác nhận bản ghi {label} A {ip} sau khi thêm — kiểm tra trên iNET trước khi chạy lại")
         ids_after = {x.get("id") for x in after}

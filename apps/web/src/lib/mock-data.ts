@@ -34,8 +34,14 @@ const PARENTS = ["sustainlife.io.vn", "ntp88.com", "groupany.id.vn"];
 
 const LEGAL_SUFFIX = /\b(llc|inc|pllc|co|corp|ltd)\b\.?/g;
 
+/** Brazilian legal forms, removed only at the end of the name ("ME" inside a name is a word). */
+const BR_SUFFIX = /[\s,.-]+(ltda|eireli|epp|me|s\/?a)\.?\s*$/;
+/** "CONSTRUÇÕES" → "construcoes" (accents folded, not dropped). */
+export const foldAccents = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+
 /** Same idea as the legacy _slug_for_subdomain: 'N Triangle Ranch, Inc.' -> 'ntriangleranch'. */
-export const subdomainSlug = (name: string) => name.toLowerCase().replace(LEGAL_SUFFIX, "").replace(/[^a-z0-9]/g, "");
+export const subdomainSlug = (name: string) =>
+  foldAccents(name.toLowerCase()).replace(BR_SUFFIX, "").replace(LEGAL_SUFFIX, "").replace(/[^a-z0-9]/g, "");
 /** Legacy column E "Tên thường": keeps the legal suffix. */
 const shortName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
 

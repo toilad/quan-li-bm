@@ -55,7 +55,11 @@ def _check(resp: httpx.Response, what: str) -> dict:
         except ValueError:
             msg = resp.text[:300]
         if "invalid_grant" in str(msg):
-            raise NotConfigured("Google", [f"cấp quyền lại bằng scripts/google_auth.py ({msg})"])
+            raise NotConfigured("Google", [
+                "bấm “Kết nối lại” ở Cài đặt API — quyền Google đã hết hạn hoặc bị thu hồi (ứng dụng Google Cloud còn ở "
+                f"chế độ Testing thì quyền chỉ sống 7 ngày: chuyển sang In production) ({msg})"])
+        if resp.status_code in (401, 403) and any(k in str(msg).lower() for k in ("insufficient", "scope", "permission")):
+            raise NotConfigured("Google", [f"quyền cho {what} (khi kết nối hãy tick đủ Sheets và Drive) — {msg}"])
         raise Permanent(f"{what}: HTTP {resp.status_code} — {msg}")
     return resp.json() if resp.content else {}
 
@@ -107,7 +111,7 @@ def require_google(need_sheet=True, need_drive=False):
     s, mode = settings(), auth_mode()
     missing = []
     if not mode:
-        missing.append("OAuth Google của chủ tài khoản (GOOGLE_OAUTH_CLIENT_FILE + chạy scripts/google_auth.py)")
+        missing.append("Kết nối Google (Cài đặt API → dán OAuth client loại Web application → bấm Kết nối Google)")
     if need_sheet and not sheet_id():
         missing.append("SHEET_ID")
     if need_drive and mode == "service_account" and not cfg("DRIVE_FOLDER_ID"):
@@ -148,8 +152,18 @@ def access_token(client: httpx.Client) -> str:
     return _oauth_token(client) if auth_mode() == "oauth" else _sa_token(client)
 
 
+class _Transport(httpx.HTTPTransport):
+    """Network errors (timeout, reset, DNS) become Transient, so the job retries instead of failing."""
+
+    def handle_request(self, request):
+        try:
+            return super().handle_request(request)
+        except httpx.TransportError as e:
+            raise Transient(f"Google: lỗi mạng ({type(e).__name__}) — tự thử lại") from None
+
+
 def _client() -> httpx.Client:
-    return httpx.Client(timeout=60)
+    return httpx.Client(timeout=60, transport=_Transport())
 
 
 def _auth(c: httpx.Client) -> dict:
@@ -157,7 +171,7 @@ def _auth(c: httpx.Client) -> dict:
 
 
 def _a1(tab: str, cells: str) -> str:
-    return quote(f"'{tab}'!{cells}", safe="")
+    return quote("'" + tab.replace("'", "''") + f"'!{cells}", safe="")  # A1 notation: ' inside a sheet name is doubled
 
 
 COLS = "ABCDEFGHIJKL"
