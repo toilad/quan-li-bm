@@ -49,3 +49,5 @@ secrets/
 apps/api/*.log
 apps/api/*.err
 apps/api/e2e.url
+apps/web/*.log
+apps/web/*.err

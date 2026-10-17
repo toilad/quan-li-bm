@@ -30,6 +30,18 @@ docs/                Kiến trúc, trạng thái, tài liệu API, phân tích a
 
 ## Chạy trên máy (không cần Docker)
 
+Hằng ngày trên Windows, chạy trong PowerShell tại thư mục repo:
+
+```powershell
+.\scripts\start-local.ps1          # bật API :8000 + worker + giao diện :3210 → mở http://localhost:3210
+.\scripts\start-local.ps1 -Build   # sau khi cập nhật code: build lại giao diện rồi bật
+.\scripts\stop-local.ps1           # tắt tất cả
+```
+
+Lần đầu mở web sẽ hiện form "Tạo tài khoản chủ". Tắt hoặc bật lại không mất dữ liệu: database, khoá đã mã hoá và phiên đăng nhập được giữ nguyên. Việc đang chạy dở sẽ tự chạy tiếp từ bước đang làm.
+
+Cài đặt lần đầu (chỉ một lần):
+
 ```bash
 cd apps/api
 python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
