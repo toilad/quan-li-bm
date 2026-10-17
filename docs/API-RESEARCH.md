@@ -68,6 +68,16 @@ Các mục đánh dấu ✔ đã được kiểm tra trực tiếp lại trên t
   Nút "Kiểm tra nick" gọi hàm này. Các trang tài liệu đã tra ứng với API bản 11.138; tài liệu không ghi các hàm trên có từ bản nào.
   Vì vậy em chỉ hiện phiên bản để đối chiếu, không tự đặt ngưỡng tối thiểu.
   Nguồn: https://api.docs.cpanel.net/openapi/cpanel/operation/get_stats
+- ✔ Đã kiểm tra thật trên nick 3 (2026-10-17). Chỉ đọc, qua phiên đăng nhập SSO từ OnePortal, không dùng token.
+  - Đường vào: OnePortal → Hosting → dòng `toandao.site` → "Đăng nhập" (SSO) → `turboweb-082302.inet.vn:2083`.
+    `turboweb-082302.000nethost.com` cùng IP 202.92.7.88, TLS hợp lệ trên cổng 2083, nên giữ `cpanel_host` như cấu hình.
+  - cPanel 138.0 (build 15). Các tính năng `apitokens`, `subdomains`, `addondomains`, `filemanager`, `autossl`, `sslinstall` đều bật.
+    Tài khoản có 922 addon và 76 subdomain.
+  - `zoneedit` tắt, `has_local_authority`=0: DNS không quản lý ở cPanel. Bản ghi A phải tạo qua API iNET (đúng như app đang làm).
+  - `docroots_in_public_html_only=1`: thư mục của subdomain phải nằm trong `public_html`. App dùng `public_html/<fqdn>`, đúng yêu cầu.
+  - `SSL::get_autossl_problems` báo khoảng 11 200 dòng, chủ yếu "is unmanaged": các miền cũ không trỏ DNS về server.
+    Miền mới có bản ghi A về 202.92.7.88 thì AutoSSL xác thực qua HTTP được.
+  - Đã có sẵn 1 token tên `taomien` (toàn quyền, không hết hạn). Có thể của công cụ cũ. Nên tạo token riêng cho app.
 
 ## Pexels — ảnh cho website (ưu tiên khi có khoá)
 
