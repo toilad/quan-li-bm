@@ -7,9 +7,22 @@ from . import auth  # noqa: F401  (users, auth_sessions tables)
 from . import selftest  # noqa: F401
 
 
-def setup():
-    from .db import init_db, session_scope
+SETUP_LOCK = 7_031_502  # any constant: PostgreSQL advisory lock id for start-up
 
-    init_db()
-    with session_scope() as s:
-        domains.seed(s)
+
+def setup():
+    """Tables + seed. The API and the worker start at the same time (Docker Compose, the start script): a
+    session-level advisory lock makes them take turns, so the second one finds everything done instead of
+    failing on duplicate keys."""
+    from sqlalchemy import text
+
+    from .db import engine, init_db, session_scope
+
+    with engine().connect() as lock:
+        lock.execute(text("SELECT pg_advisory_lock(:k)"), {"k": SETUP_LOCK})
+        try:
+            init_db()
+            with session_scope() as s:
+                domains.seed(s)
+        finally:
+            lock.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": SETUP_LOCK})

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from tests.conftest import drain
 from wg_core import jobs
 from wg_core.db import session_scope
-from wg_core.models import Job
+from wg_core.models import AppSetting, Job
 
 
 def _job(key="a", **payload):
@@ -95,3 +95,20 @@ def test_worker_crash_recovery_resumes():
     drain()
     status, state = _get(jid)
     assert status == "done" and state["runs"] == {"1": 1, "2": 1}
+
+
+def test_job_of_a_dead_worker_is_recovered_within_a_minute_but_a_live_one_is_left_alone():
+    dead, _ = _job("dead", steps=1)
+    live, _ = _job("live", steps=1)
+    now = datetime.now(timezone.utc)
+    with session_scope() as s:
+        jobs.heartbeat(s, "other-host:1:alive")
+        s.add(AppSetting(key="worker:other-host:2:dead", value={"at": (now - timedelta(seconds=90)).isoformat()}))
+        for jid, wid in ((dead, "other-host:2:dead"), (live, "other-host:1:alive")):
+            j = s.get(Job, jid)
+            j.status, j.locked_by, j.locked_at = "running", wid, now - timedelta(minutes=2)  # killed 2 minutes ago
+    with session_scope() as s:
+        jobs.recover_stale(s)
+    with session_scope() as s:
+        assert s.get(Job, dead).status == "queued"  # its worker stopped beating → back in the queue
+        assert s.get(Job, live).status == "running"  # its worker is still alive → untouched

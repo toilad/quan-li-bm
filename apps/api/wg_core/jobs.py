@@ -43,7 +43,13 @@ def set_paused(session: Session, kind: str, on: bool) -> set[str]:
     session.merge(row)
     return kinds
 
-WORKER_ID = f"{socket.gethostname()}"
+import os  # noqa: E402
+import uuid  # noqa: E402
+
+# One id per worker process (a restarted worker is a new worker), so jobs left by a dead one can be told apart.
+WORKER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
+HEARTBEAT_SECONDS = 15
+DEAD_AFTER_SECONDS = 60
 HANDLERS: dict[str, Callable[["JobContext"], None]] = {}
 
 
@@ -173,9 +179,23 @@ def run_one() -> bool:
         return True
 
 
+def heartbeat(session: Session, worker_id: str = None):
+    """The worker says it is alive (a background thread calls this every HEARTBEAT_SECONDS, even during a long step)."""
+    session.merge(AppSetting(key=f"worker:{(worker_id or WORKER_ID)[:90]}", value={"at": datetime.now(timezone.utc).isoformat()}))
+
+
+def _alive(session: Session, worker_id: str | None, now: datetime) -> bool:
+    row = session.get(AppSetting, f"worker:{(worker_id or '')[:90]}")
+    return bool(row) and now - datetime.fromisoformat(row.value["at"]) < timedelta(seconds=DEAD_AFTER_SECONDS)
+
+
 def recover_stale(session: Session, minutes: int = 30):
-    """Jobs left 'running' by a crashed worker go back to the queue (state kept → resume)."""
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-    for job in session.scalars(select(Job).where(Job.status == "running", Job.locked_at < cutoff)):
+    """Jobs left 'running' by a worker that is gone (no heartbeat for DEAD_AFTER_SECONDS, or a lock older than
+    `minutes` as a last resort) go back to the queue — the steps already done are kept, so it resumes."""
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=minutes)
+    for job in session.scalars(select(Job).where(Job.status == "running")):
+        if job.locked_by == WORKER_ID or (_alive(session, job.locked_by, now) and job.locked_at and job.locked_at >= cutoff):
+            continue
         job.status, job.locked_by = "queued", None
         session.add(JobLog(job_id=job.id, level="warn", message="Worker dừng giữa chừng — đưa lại vào hàng đợi, giữ các bước đã xong"))
