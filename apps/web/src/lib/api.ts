@@ -5,7 +5,7 @@
  */
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
-export type ApiErrorKind = "offline" | "not_configured" | "not_available" | "conflict" | "invalid" | "error";
+export type ApiErrorKind = "offline" | "unauthenticated" | "not_configured" | "not_available" | "conflict" | "invalid" | "error";
 
 export class ApiError extends Error {
   constructor(
@@ -22,12 +22,18 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init });
+    // credentials: the login session is an HttpOnly cookie set by the API
+    res = await fetch(`${API_URL}${path}`, { cache: "no-store", credentials: "include", ...init });
   } catch {
     throw new ApiError("offline", "Không kết nối được backend — kiểm tra API đã chạy chưa");
   }
   const body = await res.json().catch(() => ({}));
   if (res.ok) return body as T;
+  if (res.status === 401 && body?.status === "unauthenticated") {
+    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login"))
+      window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    throw new ApiError("unauthenticated", "Cần đăng nhập", 401);
+  }
   const detail = body?.detail;
   const message = (typeof detail === "string" ? detail : detail?.message) || body?.message || `Lỗi ${res.status}`;
   const reasons: string[] = Array.isArray(detail?.reasons) ? detail.reasons : [];

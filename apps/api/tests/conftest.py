@@ -56,7 +56,7 @@ def clean_db(_env):
 
     runtime_config._cache.clear()
     with engine().begin() as c:
-        c.execute(text("TRUNCATE job_logs, sheet_writes, jobs, pdf_documents, site_choices, app_settings, stored_settings RESTART IDENTITY CASCADE"))
+        c.execute(text("TRUNCATE job_logs, sheet_writes, jobs, pdf_documents, site_choices, app_settings, stored_settings, auth_sessions, users RESTART IDENTITY CASCADE"))
         c.execute(text("UPDATE root_domains SET selected = false"))
     yield
 
@@ -69,3 +69,22 @@ def drain(max_jobs=50):
     while n < max_jobs and jobs.run_one():
         n += 1
     return n
+
+
+TEST_USER, TEST_PASSWORD = "owner", "test-only-pass-123"  # throwaway account inside the test database
+
+
+@pytest.fixture
+def client():
+    """API client logged in as the owner (every /api route needs a session)."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from wg_core import auth
+    from wg_core.db import session_scope
+
+    with session_scope() as s:
+        auth.create_user(s, TEST_USER, TEST_PASSWORD)
+    with TestClient(app, follow_redirects=False) as c:
+        assert c.post("/api/auth/login", json={"username": TEST_USER, "password": TEST_PASSWORD}).status_code == 200
+        yield c

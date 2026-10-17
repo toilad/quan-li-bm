@@ -30,7 +30,13 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Quản Lí BM API", version="0.1", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=settings().cors_origins.split(","), allow_methods=["*"], allow_headers=["*"])
+from app.auth_api import AuthMiddleware, allowed_origins  # noqa: E402
+from app.auth_api import router as auth_router  # noqa: E402
+
+# Order matters: CORS is added last so it is the outermost layer (401/403 answers still carry CORS headers).
+app.add_middleware(AuthMiddleware)
+app.add_middleware(CORSMiddleware, allow_origins=sorted(allowed_origins()), allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.include_router(auth_router)
 
 from app.settings_api import router as settings_router  # noqa: E402
 

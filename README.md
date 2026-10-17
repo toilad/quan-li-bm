@@ -55,6 +55,23 @@ mkdir secrets                               # đặt google-service-account.json
 docker compose up -d --build                # web :3000, api :8000
 ```
 
+## Đăng nhập
+
+Mọi màn hình và mọi `/api/*` đều cần đăng nhập. Chỉ `/api/health` và các endpoint đăng nhập là công khai.
+- **Trên máy chạy app:** lần đầu mở web, trang đăng nhập hiện form "Tạo tài khoản chủ". Form này chỉ hiện khi chưa có tài khoản nào và yêu cầu đến từ chính máy đó.
+- **Trên server / Docker:** tạo tài khoản bằng lệnh. Mật khẩu gõ khi lệnh hỏi, không ghi vào dòng lệnh.
+  `--reset` để đổi mật khẩu; mọi phiên cũ sẽ kết thúc.
+
+```bash
+docker compose exec api python -m scripts.create_user <tên>
+```
+
+- Mật khẩu băm scrypt. Phiên là cookie HttpOnly, SameSite=Lax, có Secure khi dùng https.
+  Phiên hết hạn sau 24 giờ không dùng hoặc 7 ngày. Sai mật khẩu nhiều lần thì bị chặn tạm thời.
+- Yêu cầu ghi (POST/PUT/PATCH/DELETE) từ nguồn (Origin) lạ bị từ chối.
+- Docker chỉ mở cổng trên `127.0.0.1`. Khi đưa ra Internet: đặt web + API sau reverse proxy có HTTPS, cùng một tên miền.
+  Đặt `PUBLIC_API_URL`, `PUBLIC_WEB_URL` ở trang Cài đặt và thêm tên miền đó vào `CORS_ORIGINS`.
+
 ## Tài liệu
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — kiến trúc đã duyệt, sao lưu & khôi phục

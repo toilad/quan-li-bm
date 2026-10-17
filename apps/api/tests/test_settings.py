@@ -3,9 +3,7 @@ import json
 import urllib.parse
 
 import httpx
-import pytest
 import respx
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from wg_core import runtime_config
@@ -14,12 +12,6 @@ from wg_core.db import engine
 CLIENT_JSON = json.dumps({"web": {"client_id": "cid.apps.googleusercontent.com", "client_secret": "csecret-value", "redirect_uris": ["x"], "javascript_origins": ["y"]}})
 
 
-@pytest.fixture
-def client():
-    from app.main import app
-
-    with TestClient(app, follow_redirects=False) as c:
-        yield c
 
 
 def test_secret_is_encrypted_at_rest_and_never_returned(client):

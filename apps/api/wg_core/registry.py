@@ -3,6 +3,7 @@ from .modules.domains import service as domains  # noqa: F401
 from .modules.pdf import service as pdf  # noqa: F401
 from .modules.websites import service as websites  # noqa: F401
 from . import runtime_config  # noqa: F401  (stored_settings table)
+from . import auth  # noqa: F401  (users, auth_sessions tables)
 from . import selftest  # noqa: F401
 
 

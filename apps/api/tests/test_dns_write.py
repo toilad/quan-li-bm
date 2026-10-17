@@ -1,9 +1,7 @@
 """Real DNS writes over the iNET API (documented PATCH /domain/{id}/record, ACTION_ADD), against an in-memory iNET:
 switch OFF by default, trial on one owner-chosen subdomain, read-only preview + single-use confirmation, never
 overwrite / edit / delete, never call the iNET record API for a domain on other nameservers, every call logged."""
-import pytest
 import respx
-from fastapi.testclient import TestClient
 from tests.conftest import drain
 from tests.mocks import FakeInet, FakeSheet, install_doh
 from tests.test_domains import CP, ROW, _routes, _tick
@@ -16,12 +14,6 @@ IP = "103.75.187.26"
 INET_NS = ["ns1.inet.vn", "ns2.inet.vn"]
 
 
-@pytest.fixture
-def client():
-    from app.main import app
-
-    with TestClient(app) as c:
-        yield c
 
 
 def fake_inet(records=None, ns=None, drop_on_add=False, name="huxma.life"):

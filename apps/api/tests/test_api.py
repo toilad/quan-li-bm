@@ -1,19 +1,12 @@
 import glob
 
 import pytest
-from fastapi.testclient import TestClient
 
 from tests.conftest import FIXTURES  # noqa: F401
 from tests.test_pdf import BR as BR_SAMPLES
 from wg_core.config import settings
 
 
-@pytest.fixture
-def client():
-    from app.main import app
-
-    with TestClient(app) as c:
-        yield c
 
 
 def test_status_reports_configuration(client):

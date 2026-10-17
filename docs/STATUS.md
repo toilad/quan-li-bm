@@ -13,11 +13,11 @@ Chưa thao tác lên tài khoản thật nào (chưa có khoá). Mọi dịch v�
 | SSL + Tạo web | **Mẫu web gốc của app cũ đã khôi phục** từ EXE và dùng để dựng 6 trang + robots/sitemap; xem trước = đúng HTML sẽ dựng. **Email chỉ hiện khi đã xác minh**; chưa xác minh/không có → không có link email, không có form gửi thư (thay bằng gọi điện/địa chỉ) | Quét Sheet (B có, C trống) — cần Google; document root đọc từ cPanel, nội dung AI + kiểm tra không bịa, upload `overwrite=0`, AutoSSL, kiểm HTTPS, đọc lại C rồi ghi — cần token cPanel + ANTHROPIC_API_KEY | — |
 | Cài đặt API | Trang **Cài đặt API**: Google, AI, máy chủ, iNET/cPanel × 3 nick. Khoá **mã hoá ở server** (Fernet, khoá chủ `data/master.key` hoặc `QLBM_MASTER_KEY`), không bao giờ trả về giao diện hay ghi log. Nút **Kết nối Google** (OAuth web, PKCE) + kiểm tra Google chỉ đọc | OAuth client loại *Web application* + redirect URI của server | — |
 | Tổng quan | Giao diện | — | Vẫn là **dữ liệu mẫu** (có nhãn “Dữ liệu mẫu”) |
-| Nền tảng | Hàng đợi PostgreSQL (chống chạy trùng, một việc/nick, thử lại có giãn cách, chạy tiếp từ bước dở, tạm dừng/tiếp tục), nhật ký từng việc, bảng `sheet_writes`, sao lưu/khôi phục `pg_dump`; **khởi động lại API + worker giữ nguyên dữ liệu và việc dở** | Docker Compose (db, api, worker, web, backup) — **chưa chạy thử** (máy này chưa có Docker) | **API chưa có đăng nhập/phân quyền** — không được mở ra Internet trước khi có; GitHub Private (chưa có remote) |
+| Nền tảng | Hàng đợi PostgreSQL (chống chạy trùng, một việc/nick, thử lại có giãn cách, chạy tiếp từ bước dở, tạm dừng/tiếp tục), nhật ký từng việc, bảng `sheet_writes`, sao lưu/khôi phục `pg_dump`; **khởi động lại API + worker giữ nguyên dữ liệu và việc dở**. **Đăng nhập**: mọi màn hình + mọi `/api/*` cần phiên (cookie HttpOnly), mật khẩu scrypt, chặn sai mật khẩu nhiều lần, chặn yêu cầu ghi từ nguồn lạ; tài khoản đầu tiên tạo tại máy hoặc bằng `scripts/create_user.py` | Docker Compose (db, api, worker, web, backup), cổng chỉ mở trên 127.0.0.1 — **chưa chạy thử** (máy này chưa có Docker) | Chỉ 1 vai trò (chủ); HTTPS + reverse proxy khi đưa lên server; GitHub Private (chưa có remote) |
 
-Kiểm thử: `apps/api` **74 test**, mọi API ngoài đều mock (iNET là tài khoản giả có trạng thái, theo đúng cấu trúc tài liệu).
+Kiểm thử: `apps/api` **80 test** (gồm đăng nhập), mọi API ngoài đều mock (iNET là tài khoản giả có trạng thái, theo đúng cấu trúc tài liệu).
 Gồm **1 test toàn tuyến** trên cùng một Sheet giả: lưu PDF → chạy thử → xem trước → tạo miền (B) → dựng web (C).
-E2E giao diện: ghi DNS (tắt → chạy thử → hàng loạt) 16/16 trên backend giả lập, có chặn mọi lời gọi ra ngoài.
+E2E giao diện trên backend giả lập (chặn mọi lời gọi ra ngoài): đăng nhập 21/21, ghi DNS (tắt → chạy thử → hàng loạt) 16/16, xem trước 15 mẫu 15/15.
 Trên backend dev: các màn 14/14, Cài đặt 11/11, xác minh email 6/6, xem trước 15 mẫu 15/15.
 
 ### Ghi DNS thật — các lớp bảo vệ

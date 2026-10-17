@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import {
-  LayoutDashboard, FileText, Globe2, ShieldCheck, LayoutTemplate, ScrollText, Settings, DatabaseBackup, CheckCircle2,
+  LayoutDashboard, FileText, Globe2, ShieldCheck, LayoutTemplate, ScrollText, Settings, DatabaseBackup, CheckCircle2, LogOut,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
@@ -34,8 +34,9 @@ const NAV = [
   { href: "/settings", label: "Cài đặt API", icon: Settings },
 ];
 
-export function Sidebar() {
+export function Sidebar({ user }: { user: string | null }) {
   const pathname = usePathname();
+  const logout = () => api.post("/api/auth/logout").catch(() => {}).finally(() => window.location.assign("/login"));
   const { b, offline } = useBackups();
   const last = b?.latest ? new Date(b.latest).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : null;
 
@@ -88,12 +89,14 @@ export function Sidebar() {
             Bản sao lưu ở máy chủ · chưa đẩy ra kho ngoài
           </div>
         </div>
-        <div className="mt-4 flex items-center justify-between px-2 text-[12px] text-fg-subtle">
-          <span>v0.2 · backend local</span>
-          <span className="flex items-center gap-1.5">
-            <span className="animate-pulse-dot size-1.5 rounded-full bg-emerald-400" />
-            Hoạt động
+        <div className="mt-4 flex items-center justify-between gap-2 px-2 text-[12px] text-fg-subtle">
+          <span className="flex min-w-0 items-center gap-1.5 truncate" title="Tài khoản đang đăng nhập">
+            <span className="animate-pulse-dot size-1.5 shrink-0 rounded-full bg-emerald-400" />
+            {user ?? "—"}
           </span>
+          <button onClick={logout} className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-fg-muted hover:bg-white/[0.05] hover:text-fg">
+            <LogOut className="size-3.5" /> Đăng xuất
+          </button>
         </div>
       </div>
     </aside>
@@ -109,7 +112,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Logo() {
+export function Logo() {
   return (
     <svg viewBox="0 0 40 40" className="size-10" aria-hidden>
       <defs>
