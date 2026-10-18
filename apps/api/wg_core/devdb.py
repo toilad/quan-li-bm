@@ -7,11 +7,24 @@ from .config import API_ROOT
 
 @lru_cache
 def _server():
+    import time
+
     import pgserver  # dev dependency
 
     path = API_ROOT / ".pgdata"
     path.mkdir(exist_ok=True)
-    return pgserver.get_server(str(path), cleanup_mode=None)
+    # pgserver waits only 10 s for pg_ctl. After the PC was switched off without stopping PostgreSQL, crash recovery
+    # takes longer (seen 2026-10-18: ~40 s, retrying on a "sharing violation" for the log file inside .pgdata) and the
+    # first call times out although the server comes up. Keep asking for up to 2 minutes: once it is running,
+    # get_server attaches to it.
+    deadline = time.monotonic() + 120
+    while True:
+        try:
+            return pgserver.get_server(str(path), cleanup_mode=None)
+        except Exception:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(5)
 
 
 def dev_database_url() -> str:
