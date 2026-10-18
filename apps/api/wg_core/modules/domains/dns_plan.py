@@ -33,7 +33,8 @@ def mode(sw: dict) -> str:
     return "batch" if sw["trial_passed"] else "trial"
 
 
-def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None = None, ops: list[str] | None = None) -> dict:
+def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None = None, ops: list[str] | None = None,
+               also: list[str] | None = None) -> dict:
     from .service import LABEL_RX
 
     sw = get_switch(s)
@@ -48,6 +49,13 @@ def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None =
                 raise ValueError("Tên miền phụ chỉ gồm a–z, 0–9, “-”")
         if t != sw["trial_fqdn"]:
             sw.update(trial_fqdn=t, trial_passed=False, trial_job=None, web_trial_passed=False, web_trial_job=None)
+    if also is not None:  # extra approved names: only names the app created (B written by one of its jobs)
+        from ...models import SheetWrite
+
+        made = {w.new_value.lower() for w in s.query(SheetWrite).filter(SheetWrite.range.like("B%"))}
+        if bad := [n for n in also if n.strip().lower() not in made]:
+            raise ValueError(f"Chỉ thêm được tên do app đã tạo: {', '.join(bad)}")
+        sw["also"] = sorted({n.strip().lower() for n in also})
     if ops is not None:
         bad = sorted(set(ops) - set(OPS))
         if bad:

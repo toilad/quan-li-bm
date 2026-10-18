@@ -444,3 +444,27 @@ def test_job_runner_relocks_after_the_trial_job():
         assert s.get(Job, job_id).status == "done"
     sw = write_guard.load()
     assert sw["trial_passed"] and not sw["enabled"] and "đã xong" in sw["locked_reason"]
+
+
+@pytest.mark.real_guard
+def test_extra_approved_names_only_for_names_the_app_created_and_cleared_on_relock():
+    from wg_core import write_guard
+    from wg_core.models import SheetWrite
+    from wg_core.modules.domains import dns_plan
+
+    _tick("huxma.life")
+    with session_scope() as s:
+        s.add(SheetWrite(tab="Phoi US", range="B9", old_value="", new_value="beta.huxma.life", job_id=None))
+    with session_scope() as s:
+        dns_plan.set_switch(s, enabled=True, trial_fqdn=FQDN, ops=["ssl"])
+        with pytest.raises(ValueError):
+            dns_plan.set_switch(s, also=["never-made.huxma.life"])
+        dns_plan.set_switch(s, also=["beta.huxma.life"])
+    sw = write_guard.load()
+    assert write_guard.why_not(sw, "ssl", "beta.huxma.life") is None and write_guard.why_not(sw, "ssl", FQDN) is None
+    assert "miền thử" in write_guard.why_not(sw, "ssl", "gamma.huxma.life")
+    assert "chưa cho phép" in write_guard.why_not(sw, "host", "beta.huxma.life")
+    with session_scope() as s:
+        write_guard.relock(s, "xong")
+    sw = write_guard.load()
+    assert not sw["enabled"] and sw["also"] == []

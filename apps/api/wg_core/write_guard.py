@@ -19,7 +19,8 @@ from .integrations.errors import NotAvailable
 KEY = "dns_write"
 OPS = {"dns": "Thêm bản ghi A (iNET)", "host": "Tạo miền trên cPanel", "upload": "Tải website lên hosting", "ssl": "Chạy AutoSSL"}
 DEFAULT = {"enabled": False, "trial_fqdn": "", "ops": [], "trial_passed": False, "trial_job": None,
-           "web_trial_passed": False, "web_trial_job": None, "changed_at": None, "locked_reason": None}
+           "web_trial_passed": False, "web_trial_job": None, "changed_at": None, "locked_reason": None,
+           "also": []}  # other names the owner approved for this opening (e.g. AutoSSL on both trial domains)
 
 
 def load(s=None) -> dict:
@@ -43,7 +44,8 @@ def why_not(sw: dict, op: str, fqdn: str) -> str | None:
     if op not in (sw.get("ops") or []):
         return f"Anh chưa cho phép thao tác “{name}” — bật nó ở Cài đặt › Ghi thật"
     passed = sw["trial_passed"] if op in ("dns", "host") else sw["web_trial_passed"]
-    if not passed and fqdn.lower() != (sw["trial_fqdn"] or "").lower():
+    allowed = {(sw["trial_fqdn"] or "").lower()} | {n.lower() for n in sw.get("also") or []}
+    if not passed and fqdn.lower() not in allowed:
         return f"Đang chạy thử: “{name}” chỉ được làm cho miền thử {sw['trial_fqdn'] or '(chưa đặt)'}, không phải {fqdn}"
     return None
 
@@ -75,7 +77,7 @@ def relock(s, reason: str) -> bool:
     sw = load(s)
     if not sw["enabled"]:
         return False
-    sw.update(enabled=False, locked_reason=reason, changed_at=datetime.now(timezone.utc).isoformat())
+    sw.update(enabled=False, also=[], locked_reason=reason, changed_at=datetime.now(timezone.utc).isoformat())
     s.merge(AppSetting(key=KEY, value=sw))
     return True
 
