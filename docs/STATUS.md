@@ -67,7 +67,13 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - Ghi chú:
     - Ngày thật có dạng tháng/ngày/năm (`11/08/2026` = 08/11/2026), tài liệu ghi ngày/tháng; app không đọc trường này.
     - Danh sách bản ghi không bị giới hạn 200 (các miền khác trả 757, 650… bản ghi).
-  - Nick 1 và 2: chưa có token, app báo thiếu đúng mục của từng nick, không mượn token nick 3.
+  - Nick 2: chưa có token, app báo thiếu đúng mục của nick đó, không mượn token nick khác.
+- ✔ **Nick 1 (LÊ VĂN TOẢN) — đã xác minh bằng token cPanel `QuanLiBM-n1` và khoá iNET `QuanLiBM-n1` của app** (18/10/2026, chỉ đọc):
+  - **cPanel:** user `lprumhqwhosting`, host `turboweb-022607.000nethost.com`, bản 138.0 (build 15), IP 103.75.187.26 (khớp cấu hình), ID dịch vụ hosting 4808242.
+    - Miền chính `levantoan.000web.com`: 608 addon (cả 608 dùng `public_html/<tên>`), 0 subdomain, 0 alias. Khớp với dữ liệu đọc qua trình duyệt.
+    - Cả 11 miền gốc không nằm trên tài khoản, nên tạo kiểu addon domain.
+  - **iNET:** 11 miền, khớp đủ 11 miền gốc trong cấu hình. Tất cả dùng `ns*.inet.vn`.
+    - `vietcart.site` đang bị tạm ngưng (suspended); cấu hình ghi DNS "unknown", thực tế là iNET. App vẫn chặn vì miền tạm ngưng.
 - **Khoá ghi thật** (Cài đặt › Ghi thật): mặc định KHOÁ.
   - Bốn thao tác (bản ghi A, tạo miền cPanel, tải web, AutoSSL) được kiểm tra ngay trong client API trước khi gửi.
   - Anh phải tích từng thao tác và đặt miền thử. Chỉ miền thử chạy được cho tới khi nó xong.
