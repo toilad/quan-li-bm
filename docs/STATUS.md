@@ -42,11 +42,19 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - **50 dòng chờ tạo miền** (B trống);
   - **105 dòng chờ tạo web** (B có, C trống). Trong đó 70 dòng thuộc iNET-1/iNET-3. 35 dòng chưa biết hosting: lusterteas.com 22, th-ntp.com 7, zentrivo.top 2, và 4 dòng có **tên công ty ở cột B** thay vì tên miền.
 - Chưa ghi gì lên Sheet hay Drive.
-- **cPanel nick 3** (đọc qua phiên SSO từ OnePortal, chưa có token cho app):
-  - user `vdcspksihosting`; host `turboweb-082302.000nethost.com`; ID dịch vụ hosting iNET 4575817; cPanel 138.
-  - Miền chính `toandao.site`: 922 addon, 76 subdomain, 2 alias.
-  - Chỉ `toandao.site` nằm trên tài khoản. 10 miền gốc còn lại tạo theo kiểu addon domain.
-  - Nick 1 và 2 chưa có phiên đăng nhập iNET trong trình duyệt.
+- ✔ **cPanel nick 3 — đã xác minh bằng token riêng của app** (18/10/2026, token `QuanLiBM-2`, chỉ đọc):
+  - **Gọi thật bằng token, tất cả OK:**
+    - UAPI `StatsBar::get_stats` → 138.0 (build 15);
+    - `DomainInfo::list_domains`, `AddonDomain::listaddondomains`, `SubDomain::listsubdomains`, `DomainInfo::single_domain_data`;
+    - `Fileman::list_files`.
+  - **Kết quả:** user `vdcspksihosting`, host `turboweb-082302.000nethost.com`, IP 202.92.7.88, document root `/home/vdcspksihosting/public_html`.
+    - Miền chính `toandao.site`: 922 addon (cả 922 dùng thư mục `public_html/<tên>`), 76 subdomain riêng, 2 alias.
+    - `listsubdomains` = 998 = 922 subdomain gắn với addon + 76 subdomain riêng.
+    - ID dịch vụ hosting iNET 4575817 (lấy từ OnePortal).
+  - **Khớp hoàn toàn** với dữ liệu đọc qua phiên trình duyệt hôm 17/10.
+  - Nút "Kiểm tra hosting" của app: chỉ `toandao.site` tạo kiểu subdomain, 10 miền gốc còn lại tạo kiểu addon domain.
+  - Còn thiếu khoá API iNET của nick 3 (`INET_API_KEY_N3`), cần để tạo bản ghi A.
+  - Nick 1 và 2: chưa có token, app báo thiếu đúng mục của từng nick, không mượn token nick 3.
 - **Khoá ghi thật** (Cài đặt › Ghi thật): mặc định KHOÁ.
   - Bốn thao tác (bản ghi A, tạo miền cPanel, tải web, AutoSSL) được kiểm tra ngay trong client API trước khi gửi.
   - Anh phải tích từng thao tác và đặt miền thử. Chỉ miền thử chạy được cho tới khi nó xong.
