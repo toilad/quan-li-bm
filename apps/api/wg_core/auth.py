@@ -20,6 +20,16 @@ from .db import Base
 COOKIE = "qlbm_session"
 IDLE = timedelta(hours=24)
 MAX_AGE = timedelta(days=7)
+# A login made on the machine that runs the app (loopback, not through a proxy) may stay longer: the owner's own PC.
+# Everything else (other devices, anything behind a reverse proxy) keeps 24 h idle / 7 days.
+LOCAL_IDLE = timedelta(days=7)
+LOCAL_MAX_AGE = timedelta(days=30)
+LOCAL_TAG = "local:"
+
+
+def limits(ip: str) -> tuple[timedelta, timedelta]:
+    """(idle, max age) for a session by where it was created (AuthSession.ip, set at login)."""
+    return (LOCAL_IDLE, LOCAL_MAX_AGE) if (ip or "").startswith(LOCAL_TAG) else (IDLE, MAX_AGE)
 MIN_PASSWORD = 10
 _N, _R, _P = 2**14, 8, 1
 _DUMMY = None
@@ -97,7 +107,7 @@ def set_password(s: Session, user: User, password: str):
     s.execute(delete(AuthSession).where(AuthSession.user_id == user.id))  # every other session ends
 
 
-def login(s: Session, username: str, password: str, ip: str = "") -> str | None:
+def login(s: Session, username: str, password: str, ip: str = "", local: bool = False) -> str | None:
     global _DUMMY
     u = s.scalar(select(User).where(User.username == username.strip().lower()))
     if not u:
@@ -108,7 +118,8 @@ def login(s: Session, username: str, password: str, ip: str = "") -> str | None:
         return None
     token = secrets.token_urlsafe(32)
     now = _now()
-    s.add(AuthSession(token_hash=_token_hash(token), user_id=u.id, created_at=now, last_seen=now, ip=ip[:64]))
+    s.add(AuthSession(token_hash=_token_hash(token), user_id=u.id, created_at=now, last_seen=now,
+                      ip=((LOCAL_TAG if local else "") + ip)[:64]))
     u.last_login = now
     return token
 
@@ -120,7 +131,8 @@ def session_user(s: Session, token: str | None) -> User | None:
     if not row:
         return None
     now = _now()
-    if now - row.last_seen > IDLE or now - row.created_at > MAX_AGE:
+    idle, max_age = limits(row.ip)
+    if now - row.last_seen > idle or now - row.created_at > max_age:
         s.delete(row)
         return None
     if now - row.last_seen > timedelta(minutes=5):

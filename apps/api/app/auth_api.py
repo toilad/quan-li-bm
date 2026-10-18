@@ -33,8 +33,14 @@ def _secure(request: Request) -> bool:
     return request.url.scheme == "https" or (cfg("PUBLIC_API_URL") or "").startswith("https://")
 
 
+def _local(request: Request) -> bool:
+    """On the machine that runs the app, not through a proxy (a proxy on the same machine would look local)."""
+    return _client(request) in LOOPBACK and "x-forwarded-for" not in request.headers and "forwarded" not in request.headers
+
+
 def _set_cookie(request: Request, response: Response, token: str):
-    response.set_cookie(auth.COOKIE, token, max_age=int(auth.MAX_AGE.total_seconds()), httponly=True,
+    max_age = auth.LOCAL_MAX_AGE if _local(request) else auth.MAX_AGE
+    response.set_cookie(auth.COOKIE, token, max_age=int(max_age.total_seconds()), httponly=True,
                         samesite="lax", secure=_secure(request), path="/")
 
 
@@ -78,7 +84,7 @@ def login(body: Credentials, request: Request, response: Response):
     if wait := auth.throttle.blocked(ip):
         raise HTTPException(429, f"Sai mật khẩu quá nhiều lần — thử lại sau {wait // 60 + 1} phút")
     with session_scope() as s:
-        token = auth.login(s, body.username, body.password, ip)
+        token = auth.login(s, body.username, body.password, ip, local=_local(request))
     if not token:
         auth.throttle.fail(ip)
         raise HTTPException(401, "Sai tên đăng nhập hoặc mật khẩu")
@@ -99,7 +105,7 @@ def setup(body: Credentials, request: Request, response: Response):
             auth.create_user(s, body.username, body.password)
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
-        token = auth.login(s, body.username, body.password, _client(request))
+        token = auth.login(s, body.username, body.password, _client(request), local=_local(request))
     _set_cookie(request, response, token)
     return {"ok": True, "user": body.username.strip().lower()}
 
@@ -127,6 +133,6 @@ def change_password(body: NewPassword, request: Request, response: Response):
             auth.set_password(s, user, body.new)
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
-        token = auth.login(s, user.username, body.new, _client(request))
+        token = auth.login(s, user.username, body.new, _client(request), local=_local(request))
     _set_cookie(request, response, token)
     return {"ok": True}

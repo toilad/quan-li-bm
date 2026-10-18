@@ -173,3 +173,19 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
 2. Quy tắc tên miền phụ: bỏ hậu tố pháp lý (app cũ, đang dùng) hay dùng nguyên cột E / rút gọn 2 từ.
 3. `th-ntp.com` của app cũ thuộc nick nào.
 4. Hạn mức miền / ngày mỗi nick (hiện không giới hạn).
+
+
+## Phiên đăng nhập và Google OAuth (rà soát 18/10/2026)
+- **Phiên đăng nhập app:**
+  - cookie `qlbm_session` HttpOnly, SameSite=Lax, Secure khi chạy HTTPS;
+  - máy chủ chỉ lưu SHA-256 của mã phiên; đăng xuất xoá phiên ở máy chủ; đổi mật khẩu thì huỷ mọi phiên;
+  - giới hạn đăng nhập sai; kiểm tra Origin với các lệnh ghi.
+- **Thời hạn phiên:** đăng nhập ngay trên máy chạy app (loopback, không qua proxy) giữ tối đa 30 ngày, 7 ngày không dùng thì hết. Mọi nơi khác giữ 24 giờ / 7 ngày.
+  Request có `X-Forwarded-For` hoặc `Forwarded` không bao giờ được coi là máy này. Phiên tạo trước thay đổi này vẫn theo luật cũ.
+- **Google OAuth:**
+  - Scope đang cấp: `spreadsheets` (nhạy cảm) + `drive.file` (không nhạy cảm), có refresh token.
+  - App đang ở chế độ Testing, nên refresh token hết hạn sau 7 ngày.
+  - Phương án (chưa đổi gì):
+    1. Publish "In production" mà không xin xác minh. Google hiện cảnh báo "ứng dụng chưa được xác minh", giới hạn 100 người dùng; token không còn hạn 7 ngày. Cần trang chủ và trang chính sách quyền riêng tư công khai.
+    2. Xin xác minh scope `spreadsheets`: cần tên miền đã xác minh, trang chủ, chính sách quyền riêng tư, có thể cả video demo.
+    3. Service account cho Sheets (chia sẻ Sheet cho email của service account): không hết hạn. Nhưng service account không tải được file lên Drive cá nhân (không có dung lượng), nên phôi PDF vẫn cần OAuth.

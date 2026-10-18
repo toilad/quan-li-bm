@@ -78,3 +78,56 @@ def test_password_change_ends_other_sessions(client):
         assert client.post("/api/auth/password", json={"current": TEST_PASSWORD, "new": "another-long-pass"}).status_code == 200
         assert client.get("/api/status").status_code == 200  # this browser got a new session
         assert other.get("/api/status").status_code == 401  # the other one was logged out
+
+
+
+def test_a_login_on_this_machine_lasts_30_days_7_idle_and_anything_else_keeps_24h_7_days():
+    from datetime import timedelta
+
+    from wg_core import auth
+    from wg_core.auth import AuthSession
+    from wg_core.db import session_scope
+
+    with session_scope() as s:
+        if not auth.users_exist(s):
+            auth.create_user(s, "owner2", "a-long-password-123")
+        user = s.query(auth.User).first()
+        name = user.username
+    pw = "a-long-password-123"
+    with session_scope() as s:
+        local = auth.login(s, name, pw, "127.0.0.1", local=True)
+        remote = auth.login(s, name, pw, "203.0.113.5")
+        if local is None:  # the suite's owner may have another password: set one for this test
+            auth.set_password(s, s.query(auth.User).filter_by(username=name).one(), pw)
+    if local is None:
+        with session_scope() as s:
+            local = auth.login(s, name, pw, "127.0.0.1", local=True)
+            remote = auth.login(s, name, pw, "203.0.113.5")
+
+    def age(token, idle_days, total_days):
+        with session_scope() as s:
+            row = s.query(AuthSession).filter_by(token_hash=auth._token_hash(token)).one()
+            row.last_seen = auth._now() - timedelta(days=idle_days)
+            row.created_at = auth._now() - timedelta(days=total_days)
+        with session_scope() as s:
+            return auth.session_user(s, token) is not None
+
+    assert age(local, 3, 20)          # 3 days idle, 20 days old: still in
+    assert not age(remote, 2, 2)      # elsewhere: 24 h idle ends it
+    with session_scope() as s:
+        local2 = auth.login(s, name, pw, "127.0.0.1", local=True)
+    assert not age(local2, 1, 31)     # never past 30 days
+    with session_scope() as s:
+        local3 = auth.login(s, name, pw, "127.0.0.1", local=True)
+    assert not age(local3, 8, 8)      # 7 days idle ends it
+
+
+def test_a_proxied_request_is_never_treated_as_local(client):
+    from app.auth_api import _local
+
+    class R:
+        def __init__(self, headers):
+            self.client = type("C", (), {"host": "127.0.0.1"})()
+            self.headers = headers
+
+    assert _local(R({})) and not _local(R({"x-forwarded-for": "198.51.100.7"})) and not _local(R({"forwarded": "for=198.51.100.7"}))
