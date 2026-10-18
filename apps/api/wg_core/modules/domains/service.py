@@ -345,4 +345,4 @@ def _create(ctx: JobContext):
     ctx.checkpoint(written_b=fqdn)
     ctx.log(f"Ghi {cell} = {fqdn} · cột C giữ nguyên", "ok")
     if dns_plan.mark_trial(s, fqdn, ctx.job.id):
-        ctx.log(f"Chạy thử thành công trên {fqdn} — từ giờ được chạy hàng loạt (vẫn phải xem trước và xác nhận)", "ok")
+        ctx.log(f"Chạy thử thành công trên {fqdn}. Ghi thật sẽ tự khoá lại; anh mở lại thì mới chạy được miền khác (vẫn xem trước và xác nhận)", "ok")

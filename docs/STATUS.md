@@ -189,3 +189,16 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
     1. Publish "In production" mà không xin xác minh. Google hiện cảnh báo "ứng dụng chưa được xác minh", giới hạn 100 người dùng; token không còn hạn 7 ngày. Cần trang chủ và trang chính sách quyền riêng tư công khai.
     2. Xin xác minh scope `spreadsheets`: cần tên miền đã xác minh, trang chủ, chính sách quyền riêng tư, có thể cả video demo.
     3. Service account cho Sheets (chia sẻ Sheet cho email của service account): không hết hạn. Nhưng service account không tải được file lên Drive cá nhân (không có dung lượng), nên phôi PDF vẫn cần OAuth.
+
+## ✔ Ghi thử thật đầu tiên — subdomain (18/10/2026, anh duyệt đúng tên này)
+- **Miền:** `hemisferioholdingsltda.ntp88.com`, Sheet dòng 2803 (doanh nghiệp ở cột A), nick 2, cPanel `msvalljjhosting`, kiểu subdomain của miền chính `ntp88.com`.
+- **Job #12, 1 lần chạy, tất cả đã kiểm chứng lại bằng API thật:**
+  - iNET `PATCH /domain/4830119/record` ACTION_ADD: A `hemisferioholdingsltda` → 103.75.187.26, TTL 300, id 2828451. 672 bản ghi cũ giữ nguyên, nay có 673.
+  - cPanel `SubDomain::addsubdomain`: subdomain có trong `listsubdomains`, thư mục `public_html/hemisferioholdingsltda.ntp88.com`.
+  - DNS công khai trỏ 103.75.187.26 sau khoảng 5 phút.
+  - B2803 ghi `hemisferioholdingsltda.ntp88.com` (đọc lại A2803 đúng công ty, B trống trước khi ghi; có nhật ký ghi Sheet). C2803 vẫn trống.
+  - Ghi thật tự khoá lại ngay sau job.
+  - HTTP hiện trả 403 vì thư mục chưa có web; bước dựng web làm sau.
+- Phát hiện trong lúc chọn dòng:
+  - dòng 2 trùng công ty với dòng 521 (đã có miền), nên bị loại; app giờ tự chặn trường hợp này;
+  - quy ước nhãn thật là cột E (729/760 miền).
