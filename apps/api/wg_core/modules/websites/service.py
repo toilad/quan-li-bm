@@ -44,7 +44,14 @@ def address_of(cells: dict) -> str:
 
 
 def facts_of(cells: dict) -> dict:
-    return {"Company": cells["A"], "Phone": cells["D"], "Address": address_of(cells)}
+    return {"Company": cells["A"], "Phone": cells["D"], "Address": address_of(cells), "City": cells["G"], "State": cells["H"]}
+
+
+def use_ai() -> bool:
+    """AI copy only when the owner turned it on AND a key is set; otherwise the free built-in copy."""
+    from ...runtime_config import get as cfg
+
+    return (cfg("SITE_COPY_AI") or "off").strip().lower() == "on" and bool(cfg("ANTHROPIC_API_KEY"))
 
 
 def email_of(s: Session, cells: dict) -> str:
@@ -132,6 +139,16 @@ def _build(ctx: JobContext):
         ctx.checkpoint(doc_root=found[0], doc_root_api=found[1])
         ctx.log(f"cPanel {found[1]}: document root {found[0]}", "ok")
 
+    if not st.get("copy") and not use_ai():
+        ctx.step("Tạo nội dung (viết sẵn theo ngành, không dùng AI)")
+        from .offline_copy import write_site_copy as offline_copy
+
+        copy = offline_copy(facts, template.id, domain)
+        if bad := problems(copy, facts):  # same check as AI copy: nothing the Sheet does not support
+            raise Permanent(f"Nội dung viết sẵn không qua kiểm tra: {'; '.join(bad)}")
+        ctx.checkpoint(copy=copy, copy_source="offline")
+        ctx.log("Nội dung viết sẵn theo ngành (không AI, miễn phí) — đạt kiểm tra: không số liệu / giải thưởng / khách hàng bịa", "ok")
+
     if not st.get("copy"):
         ctx.step("Tạo nội dung bằng AI")
         feedback = ""
@@ -144,7 +161,7 @@ def _build(ctx: JobContext):
             ctx.log(f"Kiểm tra nội dung: {feedback} → loại, tạo lại ({attempt + 1}/2)", "warn")
         else:
             raise Permanent(f"Nội dung AI vẫn có thông tin không căn cứ sau 2 lần tạo lại: {feedback}")
-        ctx.checkpoint(copy=copy)
+        ctx.checkpoint(copy=copy, copy_source="ai")
         ctx.log("Nội dung đạt kiểm tra: không giải thưởng / khách hàng / số liệu bịa", "ok")
 
     out = settings().data_dir / "sites" / domain

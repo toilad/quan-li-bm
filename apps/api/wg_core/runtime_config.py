@@ -39,6 +39,7 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "GOOGLE_TOKEN": ("google", "Quyền truy cập Google (cấp qua nút Kết nối)", True),
     "ANTHROPIC_API_KEY": ("ai", "Khoá API Anthropic", True),
     "AI_MODEL": ("ai", "Model", False),
+    "SITE_COPY_AI": ("ai", "Viết nội dung website bằng AI: off (mặc định, miễn phí, viết sẵn theo ngành) hoặc on (cần khoá Anthropic, tốn phí)", False),
     "PEXELS_API_KEY": ("photos", "Khoá API Pexels", True),
     "PIXABAY_API_KEY": ("photos", "Khoá API Pixabay", True),
     "PUBLIC_API_URL": ("server", "Địa chỉ API công khai (cho OAuth redirect)", False),
@@ -76,7 +77,7 @@ def credential_problem(name: str, value: str) -> str | None:
 def unusable_in_header(value: str) -> bool:
     """A stored credential that cannot even be sent (an HTTP header must be ASCII without spaces inside)."""
     return not value.isascii() or any(c.isspace() for c in value.strip())
-DEFAULTS = {**{f"CPANEL_ADDON_API_{n}": "auto" for n in NICKS}, "SHEET_TAB": "Phoi US", "SHEET_FIRST_ROW": "3", "AI_MODEL": "claude-opus-5-5", "PUBLIC_API_URL": "http://localhost:8000", "PUBLIC_WEB_URL": "http://localhost:3210"}  # written by the OAuth callback, never typed in
+DEFAULTS = {**{f"CPANEL_ADDON_API_{n}": "auto" for n in NICKS}, "SITE_COPY_AI": "off", "SHEET_TAB": "Phoi US", "SHEET_FIRST_ROW": "3", "AI_MODEL": "claude-opus-5-5", "PUBLIC_API_URL": "http://localhost:8000", "PUBLIC_WEB_URL": "http://localhost:3210"}  # written by the OAuth callback, never typed in
 
 _cache: dict[str, tuple[str | None, float]] = {}
 _TTL = 3.0

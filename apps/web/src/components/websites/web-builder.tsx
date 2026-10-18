@@ -23,7 +23,7 @@ export function WebBuilder() {
 
   return (
     <div className="space-y-5">
-      <BackendStatusBanner needs={["sheets", "ai", "cpanel"]} status={backend.status} offline={backend.offline} />
+      <BackendStatusBanner needs={["sheets", "cpanel"]} status={backend.status} offline={backend.offline} />
       {state.message && (
         <button onClick={() => dispatch({ type: "message", text: null })} className="panel w-full !rounded-2xl px-5 py-3 text-left text-[12.5px] text-sky-100">
           {state.message} <span className="text-fg-subtle">· bấm để ẩn</span>

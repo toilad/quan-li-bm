@@ -52,6 +52,9 @@ def _run(template="lawyer-legal"):
 
 
 def test_full_build_uses_chosen_template_and_reported_docroot():
+    from wg_core import runtime_config
+
+    runtime_config.put("SITE_COPY_AI", "on")  # this test covers the AI path
     sheet = _sheet()
     with respx.mock(assert_all_called=False) as m:
         upload, ai = _routes(m, sheet)
@@ -115,3 +118,33 @@ def test_c_already_filled_is_never_overwritten():
     with session_scope() as s:
         assert s.get(Job, job_id).status == "conflict"
     assert not upload.called and sheet.writes == []
+
+
+
+def test_without_ai_the_site_is_built_for_free_and_nothing_is_sent_to_anthropic():
+    sheet = _sheet()
+    with respx.mock(assert_all_called=False) as m:
+        upload, ai = _routes(m, sheet)
+        job_id = _run("lawyer-legal")
+        drain()
+    with session_scope() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "done", j.last_error
+        assert j.state["copy_source"] == "offline"
+    assert not ai.called and upload.called
+
+
+def test_free_copy_is_stable_per_domain_differs_between_domains_and_invents_nothing():
+    from wg_core.modules.websites.content_check import problems
+    from wg_core.modules.websites.offline_copy import write_site_copy
+    from wg_core.modules.websites.templates import TEMPLATES
+
+    facts = {"Company": "Acme Plumbing LLC", "Phone": "(307) 555-0100", "Address": "1 Main St, Cheyenne WY 82001",
+             "City": "CHEYENNE", "State": "WY"}
+    for t in TEMPLATES:
+        c = write_site_copy(facts, t.id, "acme.example.com")
+        assert not problems(c, facts), (t.id, problems(c, facts))
+        assert c == write_site_copy(facts, t.id, "acme.example.com")  # same domain → same text on every re-run
+        assert "Acme Plumbing LLC" in c["intro_paragraph"] and "Cheyenne, WY" in c["about_full"]
+    a, b = (write_site_copy(facts, "corporate-firm", d) for d in ("one.example.com", "two.example.com"))
+    assert (a["tagline"], a["services"], a["why_choose_us"]) != (b["tagline"], b["services"], b["why_choose_us"])

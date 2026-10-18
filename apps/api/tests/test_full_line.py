@@ -65,6 +65,9 @@ def _cpanel(m, answers):
 
 
 def test_pdf_to_domain_to_website_on_one_sheet():
+    from wg_core import runtime_config
+
+    runtime_config.put("SITE_COPY_AI", "on")  # the AI path end to end (the free copy has its own tests)
     inet = FakeInet({"huxma.life": {"id": 501, "ns": ["ns1.inet.vn", "ns2.inet.vn"], "records": [{"id": 1, "name": "@", "type": "A", "data": IP, "ttl": 300}]}})
     sheet = FakeSheet({3: {"A": "Existing Co", "B": "old.example.com", "C": "https://old.example.com", "J": "2024-000000001"}})
     answers: dict[str, list[str]] = {}
