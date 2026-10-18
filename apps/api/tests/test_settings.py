@@ -15,7 +15,7 @@ CLIENT_JSON = json.dumps({"web": {"client_id": "cid.apps.googleusercontent.com",
 
 
 def test_secret_is_encrypted_at_rest_and_never_returned(client):
-    r = client.put("/api/settings", json={"name": "ANTHROPIC_API_KEY", "value": "sk-test-SECRET-123"})
+    r = client.put("/api/settings", json={"name": "ANTHROPIC_API_KEY", "value": "sk-ant-test-SECRET-123"})
     assert r.status_code == 200
     with engine().connect() as c:
         stored = c.execute(text("SELECT value, secret FROM stored_settings WHERE name='ANTHROPIC_API_KEY'")).one()
@@ -24,7 +24,7 @@ def test_secret_is_encrypted_at_rest_and_never_returned(client):
     assert "SECRET-123" not in body
     f = next(x for x in client.get("/api/settings").json()["fields"] if x["name"] == "ANTHROPIC_API_KEY")
     assert f["set"] and f["source"] == "app" and "value" not in f
-    assert runtime_config.get("ANTHROPIC_API_KEY") == "sk-test-SECRET-123"  # integrations read it
+    assert runtime_config.get("ANTHROPIC_API_KEY") == "sk-ant-test-SECRET-123"  # integrations read it
 
 
 def test_owner_setting_wins_over_env_and_clearing_falls_back(client, monkeypatch):
