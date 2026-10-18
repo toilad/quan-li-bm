@@ -67,7 +67,12 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - Ghi chú:
     - Ngày thật có dạng tháng/ngày/năm (`11/08/2026` = 08/11/2026), tài liệu ghi ngày/tháng; app không đọc trường này.
     - Danh sách bản ghi không bị giới hạn 200 (các miền khác trả 757, 650… bản ghi).
-  - Nick 2: chưa có token, app báo thiếu đúng mục của nick đó, không mượn token nick khác.
+- ✔ **Nick 2 (tài khoản iNET thứ hai, chủ cũng tên LÊ VĂN TOẢN) — đã xác minh bằng token cPanel `QuanLiBM-n2` và khoá iNET `QuanLiBM-n2` của app** (18/10/2026, chỉ đọc):
+  - **cPanel:** user `msvalljjhosting`, host `turboweb-022607.000nethost.com` (chung server với nick 1), bản 138.0 (build 15), IP 103.75.187.26.
+    - Miền chính `ntp88.com`: 86 addon (cả 86 dùng `public_html/<tên>`), 29 subdomain, 0 alias. Khớp với dữ liệu đọc qua trình duyệt.
+    - Cách tạo: `ntp88.com` (miền chính) và `thanhnam88.com` (addon) tạo kiểu subdomain; `convnctnet.com` tạo kiểu addon.
+  - **iNET:** 3 miền, khớp đủ 3 miền gốc trong cấu hình, tất cả dùng `ns*.inet.vn`.
+- **Cả 3 nick:** nút "Kiểm tra hosting" của app chạy thật OK cho từng nick, mỗi nick dùng đúng token và khoá của chính nó. Khoá ghi thật vẫn KHOÁ.
 - ✔ **Nick 1 (LÊ VĂN TOẢN) — đã xác minh bằng token cPanel `QuanLiBM-n1` và khoá iNET `QuanLiBM-n1` của app** (18/10/2026, chỉ đọc):
   - **cPanel:** user `lprumhqwhosting`, host `turboweb-022607.000nethost.com`, bản 138.0 (build 15), IP 103.75.187.26 (khớp cấu hình), ID dịch vụ hosting 4808242.
     - Miền chính `levantoan.000web.com`: 608 addon (cả 608 dùng `public_html/<tên>`), 0 subdomain, 0 alias. Khớp với dữ liệu đọc qua trình duyệt.
