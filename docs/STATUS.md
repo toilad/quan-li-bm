@@ -202,3 +202,14 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
 - Phát hiện trong lúc chọn dòng:
   - dòng 2 trùng công ty với dòng 521 (đã có miền), nên bị loại; app giờ tự chặn trường hợp này;
   - quy ước nhãn thật là cột E (729/760 miền).
+
+## ✔ Thử addon domain (nick 1) và website (dòng 705) — 19/10/2026, anh duyệt từng tên
+- **Addon** `marilumuller.yhawtunga.diy` (dòng 2804, nick 1), job #13:
+  - iNET ACTION_ADD bản ghi A (id 2828456, 336 bản ghi cũ giữ nguyên).
+  - **UAPI `AddonDomain::addaddondomain` chạy thật thành công lần đầu**: `subdomain` = tên miền, gắn vào `levantoan.000web.com`, thư mục `public_html/<tên>`, đúng mẫu của 608 addon cũ.
+  - DNS trỏ đúng sau khoảng 15 phút (DNS đã ghi nhớ kết quả "chưa có tên" từ lúc xem trước). Đã ghi B2804 và tự khoá.
+- **Website** `importador.ganeshabrands.space` (dòng 705, miền anh tạo sẵn, nick 1), job #14:
+  - Nội dung **viết sẵn không AI** (0 đồng), mẫu Corporate Firm, 7 ảnh Pexels.
+  - `Fileman::upload_files`: 6 trang + 7 ảnh. Chứng chỉ Let's Encrypt đã có sẵn (hết hạn 28/12/2026). Đã ghi C705 và tự khoá.
+  - **Hosting chặn mọi web khi truy cập từ mạng Việt Nam** (403 của LiteSpeed, cả web cũ, cả 3 hosting). Từ nước ngoài trang hiển thị bình thường (đã kiểm tra bằng công cụ đọc web).
+  - Vì vậy job xác minh bằng chứng chỉ hợp lệ + file có trên cPanel, thay cho việc đọc trang từ máy này.
