@@ -53,7 +53,20 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
     - ID dịch vụ hosting iNET 4575817 (lấy từ OnePortal).
   - **Khớp hoàn toàn** với dữ liệu đọc qua phiên trình duyệt hôm 17/10.
   - Nút "Kiểm tra hosting" của app: chỉ `toandao.site` tạo kiểu subdomain, 10 miền gốc còn lại tạo kiểu addon domain.
-  - Còn thiếu khoá API iNET của nick 3 (`INET_API_KEY_N3`), cần để tạo bản ghi A.
+- ✔ **iNET nick 3 — đã xác minh bằng khoá API riêng của app** (18/10/2026, khoá `QuanLiBM-n3`: chỉ Domain, GET + PATCH, hết hạn 18/10/2027; PATCH vẫn bị khoá ghi thật chặn):
+  - **Gọi thật, tất cả OK:**
+    - `GET /domain`: 26 miền, phân trang đúng (`page` bắt đầu từ 1, `number` bắt đầu từ 0);
+    - `GET /domain?name=`, `GET /domain/{id}` (nsList), `GET /domain/{id}/record`.
+  - **Đối chiếu:** 11 miền gốc trong cấu hình app đều có trên iNET, đúng trạng thái, ngày hết hạn và nameserver.
+    - 10 miền dùng `ns*.inet.vn`; `167nailspa.com` dùng Cloudflare.
+    - Có 15 miền `.online` trên iNET chưa có trong cấu hình app; em chưa thêm.
+  - **Lỗi tìm được nhờ chạy thật, đã sửa:**
+    - Gateway bọc mọi phản hồi trong `{success, data, meta}`, lỗi là `{success: false, error}`. Code cũ đọc `content` ở cấp ngoài nên ra 0 miền.
+    - Mẫu thật đã làm sạch nằm ở `tests/fixtures/inet_live_samples.json`.
+    - Lần đầu ô khoá chứa một đoạn văn dán nhầm; giờ app từ chối khi lưu.
+  - Ghi chú:
+    - Ngày thật có dạng tháng/ngày/năm (`11/08/2026` = 08/11/2026), tài liệu ghi ngày/tháng; app không đọc trường này.
+    - Danh sách bản ghi không bị giới hạn 200 (các miền khác trả 757, 650… bản ghi).
   - Nick 1 và 2: chưa có token, app báo thiếu đúng mục của từng nick, không mượn token nick 3.
 - **Khoá ghi thật** (Cài đặt › Ghi thật): mặc định KHOÁ.
   - Bốn thao tác (bản ghi A, tạo miền cPanel, tải web, AutoSSL) được kiểm tra ngay trong client API trước khi gửi.

@@ -1,0 +1,187 @@
+{
+ "_about": "Real iNET gateway answers (developers.inet.vn/api/gateway/v1), read-only, nick 3's own API key, 2026-10-18. Sanitised: domain names -> dN.example, IPs -> 203.0.113.10, ids remapped, registrant/contract replaced, request ids zeroed, lists cut to 2 items. Keys, nesting and types are unchanged. TXT values and record labels replaced; nameserver hostnames are iNET's public ns1/ns2.inet.vn.",
+ "list_domains": {
+  "http": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body": {
+   "success": true,
+   "data": {
+    "size": 100,
+    "number": 0,
+    "content": [
+     {
+      "id": 1602,
+      "name": "d1.example",
+      "status": "active",
+      "suffix": "com",
+      "contract": "sanitised",
+      "issueDate": "08/13/2026 15:58",
+      "expireDate": "08/13/2027 15:58",
+      "registrant": "sanitised",
+      "verifyStatus": "verified"
+     },
+     {
+      "id": 1245,
+      "name": "d2.example",
+      "status": "active",
+      "suffix": "space",
+      "contract": "sanitised",
+      "issueDate": "07/03/2026 15:50",
+      "expireDate": "07/03/2027 15:50",
+      "registrant": "sanitised",
+      "verifyStatus": "verified"
+     }
+    ],
+    "totalPages": 1,
+    "totalElements": 26
+   },
+   "meta": {
+    "endpoint": "/v1/domain",
+    "latency_ms": 98,
+    "timestamp": "2026-10-18T15:35:00.000Z",
+    "request_id": "00000000-0000-0000-0000-000000000000"
+   }
+  }
+ },
+ "find_domain": {
+  "http": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body": {
+   "success": true,
+   "data": {
+    "size": 30,
+    "number": 0,
+    "content": [
+     {
+      "id": 1828,
+      "name": "d4.example",
+      "status": "active",
+      "suffix": "site",
+      "contract": "sanitised",
+      "issueDate": "11/08/2025 15:10",
+      "expireDate": "11/08/2026 15:10",
+      "registrant": "sanitised",
+      "verifyStatus": "verified"
+     }
+    ],
+    "totalPages": 1,
+    "totalElements": 1
+   },
+   "meta": {
+    "endpoint": "/v1/domain",
+    "latency_ms": 80,
+    "timestamp": "2026-10-18T15:35:00.000Z",
+    "request_id": "00000000-0000-0000-0000-000000000000"
+   }
+  }
+ },
+ "domain_detail": {
+  "http": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body": {
+   "success": true,
+   "data": {
+    "id": 1828,
+    "name": "d4.example",
+    "nsList": [
+     {
+      "id": 1494,
+      "hostname": "ns1.inet.vn"
+     },
+     {
+      "id": 1495,
+      "hostname": "ns2.inet.vn"
+     }
+    ],
+    "status": "active",
+    "suffix": "site",
+    "contract": "sanitised",
+    "issueDate": "11/08/2025 15:10",
+    "expireDate": "11/08/2026 15:10",
+    "registrant": "sanitised",
+    "verifyStatus": "verified",
+    "domainStatuses": [
+     {
+      "status": "clientTransferProhibited"
+     }
+    ]
+   },
+   "meta": {
+    "endpoint": "/v1/domain/1828",
+    "latency_ms": 245,
+    "timestamp": "2026-10-18T15:35:00.000Z",
+    "request_id": "00000000-0000-0000-0000-000000000000"
+   }
+  }
+ },
+ "records": {
+  "http": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body": {
+   "success": true,
+   "data": {
+    "id": 1828,
+    "name": "d4.example",
+    "recordList": [
+     {
+      "id": 1951,
+      "ttl": 300,
+      "data": "sanitised-txt-value",
+      "name": "label1",
+      "type": "TXT",
+      "domainId": 1828,
+      "createdDate": "11/12/2025 09:00"
+     },
+     {
+      "id": 1120,
+      "ttl": 300,
+      "data": "sanitised-txt-value",
+      "name": "label2",
+      "type": "TXT",
+      "domainId": 1828,
+      "createdDate": "11/12/2025 10:23"
+     },
+     {
+      "id": 1424,
+      "ttl": 300,
+      "data": "203.0.113.10",
+      "name": "label3",
+      "type": "A",
+      "domainId": 1828,
+      "createdDate": "06/09/2026 08:34"
+     }
+    ]
+   },
+   "meta": {
+    "endpoint": "/v1/domain/1828/record",
+    "latency_ms": 426,
+    "timestamp": "2026-10-18T15:35:00.000Z",
+    "request_id": "00000000-0000-0000-0000-000000000000"
+   }
+  }
+ },
+ "not_found_path": {
+  "http": 404,
+  "content_type": "application/json",
+  "body": {
+   "success": false,
+   "error": "API endpoint không tồn tại"
+  }
+ },
+ "bad_key": {
+  "http": 401,
+  "content_type": "application/json",
+  "body": {
+   "success": false,
+   "error": "API key không hợp lệ hoặc chưa được cung cấp"
+  }
+ },
+ "no_key": {
+  "http": 401,
+  "content_type": "application/json",
+  "body": {
+   "success": false,
+   "error": "API key không hợp lệ hoặc chưa được cung cấp"
+  }
+ }
+}

@@ -81,15 +81,26 @@ class Inet:
             raise Transient("iNET: vượt giới hạn 60 yêu cầu/phút", float(ra) if ra and ra.isdigit() else 60)
         if r.status_code >= 500:
             raise Transient(f"iNET {path}: HTTP {r.status_code}")
+        try:
+            body = r.json()
+        except ValueError:
+            body = None
+        # The gateway wraps every answer (checked live 2026-10-18, tests/fixtures/inet_live_samples.json):
+        #   ok    → {"success": true, "data": <the payload the reference documents>, "meta": {endpoint, latency_ms, …}}
+        #   error → {"success": false, "error": "<message>"}  (401 bad or missing key, 404 unknown endpoint, …)
+        error = body.get("error") if isinstance(body, dict) and body.get("success") is False else None
         if r.status_code in (401, 403):
             scope = "read" if method == "GET" else "write"
-            raise NotConfigured("iNET", [f"khoá API hợp lệ có quyền {scope} (HTTP {r.status_code})"])
+            raise NotConfigured("iNET", [f"khoá API hợp lệ có quyền {scope} (HTTP {r.status_code}{': ' + error if error else ''})"])
         if r.status_code >= 400:
-            raise Permanent(f"iNET {method} {path}: HTTP {r.status_code} — {r.text[:300]}")
-        try:
-            return r.json()
-        except ValueError as e:
-            raise Permanent(f"iNET {method} {path}: trả về không phải JSON") from e
+            raise Permanent(f"iNET {method} {path}: HTTP {r.status_code} — {error or r.text[:300]}")
+        if body is None:
+            raise Permanent(f"iNET {method} {path}: trả về không phải JSON")
+        if isinstance(body, dict) and "success" in body:
+            if body["success"] is not True:
+                raise Permanent(f"iNET {method} {path}: {error or 'không thành công'}")
+            return body.get("data") or {}
+        return body  # without the envelope (the shape the reference shows): read the same way
 
     def _get(self, path: str, params: dict | None = None):
         return self._call("GET", path, params=params)

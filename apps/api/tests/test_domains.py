@@ -1,6 +1,6 @@
 import respx
 from tests.conftest import drain
-from tests.mocks import FakeSheet, cp_account, cp_ok, install_doh
+from tests.mocks import FakeSheet, cp_account, cp_ok, install_doh, wrap
 
 from wg_core.db import session_scope
 from wg_core.integrations.inet import Inet
@@ -112,8 +112,8 @@ def test_read_only_nick_check_marks_roots_on_hosting_and_in_inet():
         m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([
             {"domain": d, "subdomain": d, "rootdomain": "levantoan.000web.com", "fullsubdomain": f"{d}.levantoan.000web.com", "basedir": f"public_html/{d}"} for d in ("sustainlife.io.vn", "huxma.life")]))
         ver = m.get(f"{CP}/StatsBar/get_stats").mock(return_value=cp_ok([{"name": "cpanelversion", "id": "cpanelversion", "count": "11.130.0.15", "item": "cPanel Version"}]))
-        inet = m.get(url__startswith="https://developers.inet.vn/api/gateway/v1/domain").mock(return_value=httpx.Response(200, json={
-            "content": [{"id": 1, "name": "huxma.life"}, {"id": 2, "name": "sustainlife.io.vn"}], "totalPages": 1}))
+        inet = m.get(url__startswith="https://developers.inet.vn/api/gateway/v1/domain").mock(return_value=wrap({
+            "content": [{"id": 1, "name": "huxma.life"}, {"id": 2, "name": "sustainlife.io.vn"}], "totalPages": 1}, "/v1/domain"))
         with session_scope() as s:
             out = domains.check_nick(s, "n1")
     assert out["cpanel"]["ok"] and set(out["cpanel"]["on_hosting"]) == {"sustainlife.io.vn", "huxma.life"}
