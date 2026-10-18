@@ -64,6 +64,9 @@ def credential_problem(name: str, value: str) -> str | None:
     if name.startswith("CPANEL_TOKEN_"):
         if not v.isascii() or any(c.isspace() for c in v) or not (20 <= len(v) <= 64) or not v.isalnum():
             return "Token cPanel là một chuỗi chữ và số liền (khoảng 32 ký tự) — có vẻ đã dán nhầm nội dung khác"
+    if name == "ANTHROPIC_API_KEY":
+        if not v.startswith("sk-ant-") or not v.isascii() or any(c.isspace() for c in v):
+            return "Khoá Anthropic có dạng sk-ant-… (một chuỗi liền) — có vẻ đã dán nhầm nội dung khác"
     if name.startswith("CPANEL_USER_"):
         if not v.isascii() or any(c.isspace() for c in v) or len(v) > 64:
             return "User cPanel là một chuỗi liền, không dấu, không khoảng trắng"

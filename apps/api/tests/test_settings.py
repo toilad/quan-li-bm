@@ -161,3 +161,8 @@ def test_a_bad_value_already_stored_gives_a_clear_error_not_a_crash():
     finally:
         for k in ("INET_API_KEY_N2", "CPANEL_USER_N2", "CPANEL_TOKEN_N2"):
             os.environ.pop(k, None)
+
+
+def test_anthropic_key_wrong_paste_is_refused(client):
+    assert client.put("/api/settings", json={"name": "ANTHROPIC_API_KEY", "value": "đây là một câu dán nhầm"}).status_code == 422
+    assert client.put("/api/settings", json={"name": "ANTHROPIC_API_KEY", "value": "sk-ant-api03-abcDEF123"}).status_code == 200
