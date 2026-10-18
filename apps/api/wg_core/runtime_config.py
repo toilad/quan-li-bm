@@ -49,6 +49,30 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     **{f"CPANEL_ADDON_API_{n}": (f"nick:{n.lower()}", "API tạo addon domain: auto (mặc định: cPanel ≥ 138 dùng UAPI, thấp hơn dùng API 2), uapi hoặc api2", False) for n in NICKS},
 }
 SET_ONLY_BY_SERVER = {"GOOGLE_TOKEN"}
+
+
+def credential_problem(name: str, value: str) -> str | None:
+    """Why `value` cannot be this credential (None = plausible). Catches a wrong paste — a sentence, the page text, a
+    key of another service — before it is stored. Never echoes the value."""
+    v = value.strip()
+    if not v:
+        return None
+    if name.startswith("INET_API_KEY_"):
+        # developers.inet.vn keys: "inet_sk_…" (Authorization: Bearer inet_sk_... in the official examples)
+        if not v.startswith("inet_sk_") or not v.isascii() or any(c.isspace() for c in v):
+            return "Khoá API iNET có dạng inet_sk_… (một chuỗi liền, không dấu, không khoảng trắng) — có vẻ đã dán nhầm nội dung khác"
+    if name.startswith("CPANEL_TOKEN_"):
+        if not v.isascii() or any(c.isspace() for c in v) or not (20 <= len(v) <= 64) or not v.isalnum():
+            return "Token cPanel là một chuỗi chữ và số liền (khoảng 32 ký tự) — có vẻ đã dán nhầm nội dung khác"
+    if name.startswith("CPANEL_USER_"):
+        if not v.isascii() or any(c.isspace() for c in v) or len(v) > 64:
+            return "User cPanel là một chuỗi liền, không dấu, không khoảng trắng"
+    return None
+
+
+def unusable_in_header(value: str) -> bool:
+    """A stored credential that cannot even be sent (an HTTP header must be ASCII without spaces inside)."""
+    return not value.isascii() or any(c.isspace() for c in value.strip())
 DEFAULTS = {**{f"CPANEL_ADDON_API_{n}": "auto" for n in NICKS}, "SHEET_TAB": "Phoi US", "SHEET_FIRST_ROW": "3", "AI_MODEL": "claude-opus-5-5", "PUBLIC_API_URL": "http://localhost:8000", "PUBLIC_WEB_URL": "http://localhost:3210"}  # written by the OAuth callback, never typed in
 
 _cache: dict[str, tuple[str | None, float]] = {}

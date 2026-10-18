@@ -61,6 +61,10 @@ class Inet:
         self.key = env_secret(f"INET_API_KEY_{nick_id.upper()}")
         if not self.key:
             raise NotConfigured(f"iNET {nick_id}", [f"INET_API_KEY_{nick_id.upper()}"])
+        from ..runtime_config import unusable_in_header
+
+        if unusable_in_header(self.key):  # e.g. a sentence pasted instead of the key
+            raise NotConfigured(f"iNET {nick_id}", [f"INET_API_KEY_{nick_id.upper()} hợp lệ (giá trị đang lưu có dấu/khoảng trắng — dán lại khoá inet_sk_…)"])
         self.log = log or (lambda msg, level="info": None)
 
     def _call(self, method: str, path: str, params: dict | None = None, json: dict | None = None, note: str = ""):

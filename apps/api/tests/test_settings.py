@@ -125,8 +125,39 @@ def test_saving_a_setting_logs_its_name_never_its_value(client, caplog):
     import logging
 
     with caplog.at_level(logging.WARNING, logger="qlbm.settings"):
-        assert client.put("/api/settings", json={"name": "CPANEL_TOKEN_N3", "value": "TOP-SECRET-VALUE"}).status_code == 200
+        assert client.put("/api/settings", json={"name": "CPANEL_TOKEN_N3", "value": "TOPSECRETVALUE0123456789"}).status_code == 200
         assert client.put("/api/settings", json={"name": "CPANEL_ADDON_API_N3", "value": "nope"}).status_code == 422
     text = caplog.text
     assert "CPANEL_TOKEN_N3 saved" in text and "CPANEL_ADDON_API_N3 NOT saved (HTTP 422" in text
-    assert "TOP-SECRET-VALUE" not in text and "nope" not in text.split("HTTP 422")[0]
+    assert "TOPSECRETVALUE0123456789" not in text and "nope" not in text.split("HTTP 422")[0]
+
+
+def test_a_wrong_paste_is_refused_for_keys_and_tokens(client):
+    sentence = "Anh ơi, phần cPanel của nick 3 đã kết nối thật bằng token riêng của app"
+    for name in ("INET_API_KEY_N3", "CPANEL_TOKEN_N3", "CPANEL_USER_N3"):
+        r = client.put("/api/settings", json={"name": name, "value": sentence})
+        assert r.status_code == 422 and "nhầm" in r.text or "không dấu" in r.text
+        assert sentence not in r.text  # the refused value is not echoed back
+    assert client.put("/api/settings", json={"name": "INET_API_KEY_N3", "value": "inet_sk_AbC123xyz"}).status_code == 200
+    assert client.put("/api/settings", json={"name": "CPANEL_TOKEN_N3", "value": "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"}).status_code == 200
+    assert client.put("/api/settings", json={"name": "CPANEL_USER_N3", "value": "cpuser"}).status_code == 200
+
+
+def test_a_bad_value_already_stored_gives_a_clear_error_not_a_crash():
+    import os
+
+    import pytest
+
+    from wg_core.integrations.cpanel import CPanel
+    from wg_core.integrations.errors import NotConfigured
+    from wg_core.integrations.inet import Inet
+
+    os.environ.update({"INET_API_KEY_N2": "khoá sai có dấu", "CPANEL_USER_N2": "u2", "CPANEL_TOKEN_N2": "token có dấu"})
+    try:
+        with pytest.raises(NotConfigured, match="INET_API_KEY_N2 hợp lệ"):
+            Inet("n2")
+        with pytest.raises(NotConfigured, match="CPANEL_TOKEN_N2 hợp lệ"):
+            CPanel("n2", "h.example")
+    finally:
+        for k in ("INET_API_KEY_N2", "CPANEL_USER_N2", "CPANEL_TOKEN_N2"):
+            os.environ.pop(k, None)

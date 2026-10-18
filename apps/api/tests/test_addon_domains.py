@@ -360,13 +360,13 @@ def test_each_nick_uses_only_its_own_token():
 def test_cpanel_token_is_stored_encrypted_and_never_returned(client):
     from wg_core.runtime_config import StoredSetting  # noqa: F401  (the table the value lands in)
 
-    assert client.put("/api/settings", json={"name": "CPANEL_TOKEN_N2", "value": "SECRET-TOKEN-XYZ"}).status_code == 200
-    assert "SECRET-TOKEN-XYZ" not in client.get("/api/settings").text
+    assert client.put("/api/settings", json={"name": "CPANEL_TOKEN_N2", "value": "SECRETTOKENXYZ0123456789"}).status_code == 200
+    assert "SECRETTOKENXYZ0123456789" not in client.get("/api/settings").text
     with session_scope() as s:
         from sqlalchemy import text
 
         raw = s.execute(text("SELECT value FROM stored_settings WHERE name='CPANEL_TOKEN_N2'")).scalar()
-    assert raw and "SECRET-TOKEN-XYZ" not in raw  # Fernet ciphertext, not the token
+    assert raw and "SECRETTOKENXYZ0123456789" not in raw  # Fernet ciphertext, not the token
     assert client.put("/api/settings", json={"name": "CPANEL_ADDON_API_N2", "value": "soap"}).status_code == 422
     assert client.put("/api/settings", json={"name": "CPANEL_ADDON_API_N2", "value": "uapi"}).status_code == 200
 

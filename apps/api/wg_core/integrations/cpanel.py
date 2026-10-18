@@ -37,6 +37,11 @@ class CPanel:
         missing = [n for n, v in ((f"CPANEL_USER_{key}", self.user), (f"CPANEL_TOKEN_{key}", self.token)) if not v]
         if missing or not host:
             raise NotConfigured(f"cPanel {nick_id}", missing + ([] if host else ["địa chỉ cPanel"]))
+        from ..runtime_config import unusable_in_header
+
+        for n, v in ((f"CPANEL_USER_{key}", self.user), (f"CPANEL_TOKEN_{key}", self.token)):
+            if unusable_in_header(v):  # e.g. a sentence pasted instead of the token
+                raise NotConfigured(f"cPanel {nick_id}", [f"{n} hợp lệ (giá trị đang lưu có dấu/khoảng trắng — dán lại)"])
         self.host = host
         self.base = f"https://{host}:2083/execute"
 
