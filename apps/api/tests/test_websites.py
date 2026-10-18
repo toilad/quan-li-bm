@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 import respx
@@ -148,3 +149,62 @@ def test_free_copy_is_stable_per_domain_differs_between_domains_and_invents_noth
         assert "Acme Plumbing LLC" in c["intro_paragraph"] and "Cheyenne, WY" in c["about_full"]
     a, b = (write_site_copy(facts, "corporate-firm", d) for d in ("one.example.com", "two.example.com"))
     assert (a["tagline"], a["services"], a["why_choose_us"]) != (b["tagline"], b["services"], b["why_choose_us"])
+
+
+
+def test_a_region_blocked_site_with_a_valid_certificate_and_all_files_counts_as_live(monkeypatch):
+    """Seen live: the hosting answers LiteSpeed's 403 to this network for every site; from abroad the page loads."""
+    from wg_core.integrations import net
+
+    monkeypatch.setattr(net, "cert_valid", lambda d: (True, "chứng chỉ hợp lệ · Let's Encrypt · hết hạn Dec 28 2026"))
+    sheet = _sheet()
+    blocked = "<html><body>403 Forbidden Access to this resource on the server is denied! Proudly powered by LiteSpeed</body></html>"
+    sent: dict = {}
+
+    def upload(request):
+        sent["names"] = set(re.findall(r'filename="([^"]+)"', request.content.decode("utf-8", "ignore")))
+        return cp_ok({"succeeded": len(sent["names"]), "failed": 0, "uploads": []})
+
+    def listing(request):  # empty before the upload, then the uploaded files (plus the hosting's own php.ini)
+        names = sorted(sent.get("names", set()) | {"php.ini"})
+        return cp_ok({"files": [{"file": n, "type": "file"} for n in names], "dirs": []})
+
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        install_doh(m, {DOMAIN: ["103.75.187.26"]})
+        m.get(f"{CP}/SubDomain/listsubdomains").mock(return_value=cp_ok([{"domain": DOMAIN, "basedir": "sites/acme"}]))
+        m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))
+        m.get(f"{CP}/Fileman/list_files").mock(side_effect=listing)
+        m.post(f"{CP}/Fileman/upload_files").mock(side_effect=upload)
+        autossl = m.get(f"{CP}/SSL/start_autossl_check").mock(return_value=cp_ok(None))
+        m.get(f"{CP}/SSL/is_autossl_check_in_progress").mock(return_value=cp_ok(1))  # an account-wide run never blocks it
+        m.get(f"https://{DOMAIN}/").respond(403, text=blocked)
+        job_id = _run("lawyer-legal")
+        drain()
+    with session_scope() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "done", j.last_error
+        assert j.state["https_ok"] and set(j.state["uploaded_files"]) == sent["names"]
+    assert not autossl.called and sheet.writes == [(f"C{ROW}", f"https://{DOMAIN}")]
+
+
+def test_a_region_block_without_the_uploaded_files_is_not_taken_as_live(monkeypatch):
+    from wg_core.integrations import net
+
+    monkeypatch.setattr(net, "cert_valid", lambda d: (True, "ok"))
+    sheet = _sheet()
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        install_doh(m, {DOMAIN: ["103.75.187.26"]})
+        m.get(f"{CP}/SubDomain/listsubdomains").mock(return_value=cp_ok([{"domain": DOMAIN, "basedir": "sites/acme"}]))
+        m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))
+        m.get(f"{CP}/Fileman/list_files").mock(return_value=cp_ok({"files": [], "dirs": []}))  # files vanished
+        m.get(f"{CP}/SSL/get_autossl_problems").mock(return_value=cp_ok([]))
+        m.post(f"{CP}/Fileman/upload_files").mock(return_value=cp_ok({"succeeded": 8, "failed": 0, "uploads": []}))
+        m.get(f"https://{DOMAIN}/").respond(403, text="Access to this resource on the server is denied! LiteSpeed")
+        job_id = _run("lawyer-legal")
+        drain()
+    with session_scope() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "queued" and "thiếu file" in j.last_error, j.last_error  # keeps waiting, C not written
+    assert sheet.writes == []

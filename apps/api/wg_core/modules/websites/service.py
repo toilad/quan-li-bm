@@ -208,7 +208,7 @@ def _build(ctx: JobContext):
         if res.get("failed"):
             reasons = "; ".join(f'{u.get("file")}: {u.get("reason")}' for u in res.get("uploads", []) if u.get("reason"))
             raise Permanent(f"Upload không hoàn tất (không ghi đè file có sẵn): {reasons}")
-        ctx.checkpoint(uploaded=True, built_template=template.id)
+        ctx.checkpoint(uploaded=True, built_template=template.id, uploaded_files=sorted(files))
         pages = sum(1 for n in files if n.endswith('.html'))
         ctx.log(f"Fileman::upload_files → {st['doc_root']} · {pages} trang + {len(chosen)} ảnh · mẫu {template.name}", "ok")
 
@@ -216,14 +216,28 @@ def _build(ctx: JobContext):
         ctx.step("Bật SSL (AutoSSL) + kiểm tra HTTPS")
         from datetime import datetime, timezone
 
-        last = st.get("autossl_started_at")
-        if not last or (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() > AUTOSSL_RETRIGGER_HOURS * 3600:
-            cp.start_autossl(domain)  # again every few hours while waiting: an earlier run may have happened before DNS was ready
-            ctx.checkpoint(autossl_started=True, autossl_started_at=datetime.now(timezone.utc).isoformat())
-            ctx.log("SSL::start_autossl_check đã gửi", "info")
-        if cp.autossl_in_progress():
-            wait_or_fail(st, "ssl_wait_since", SSL_WAIT_HOURS, "AutoSSL đang chạy", 120)
+        cert_ok, cert_info = net.cert_valid(domain)
+        if cert_ok:  # AutoSSL already covers this name: no need to wait for an account-wide AutoSSL run
+            ctx.log(f"{domain}: {cert_info} — không cần chạy AutoSSL", "ok")
+        else:
+            last = st.get("autossl_started_at")
+            if not last or (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() > AUTOSSL_RETRIGGER_HOURS * 3600:
+                cp.start_autossl(domain)  # again every few hours while waiting: an earlier run may have happened before DNS was ready
+                ctx.checkpoint(autossl_started=True, autossl_started_at=datetime.now(timezone.utc).isoformat())
+                ctx.log("SSL::start_autossl_check đã gửi", "info")
+            if cp.autossl_in_progress():
+                wait_or_fail(st, "ssl_wait_since", SSL_WAIT_HOURS, "AutoSSL đang chạy", 120)
         ok, why = net.https_ok(domain, row.cells["A"])
+        if not ok and net.BLOCKED in why and cert_ok:
+            # The hosting refuses this network (every site, old ones too) — the page cannot be read from here.
+            # Evidence instead: a valid certificate for the name + every uploaded file listed in the document root.
+            want = set(st.get("uploaded_files") or ["index.html"])
+            missing = sorted(want - cp.list_files(st["doc_root"]))
+            if not missing:
+                ok, why = True, (f"{cert_info}; trang không đọc được từ mạng này ({why}) — đã đối chiếu {len(want)} file "
+                                 f"trên cPanel thay cho việc đọc trang")
+            else:
+                why += f"; thiếu file trên hosting: {', '.join(missing[:5])}"
         if not ok:
             probs = cp.autossl_problems(domain)
             wait_or_fail(st, "ssl_wait_since", SSL_WAIT_HOURS, f"HTTPS chưa chạy: {why}" + (f" · AutoSSL: {probs[0]}" if probs else ""), 900)

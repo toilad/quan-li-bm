@@ -45,6 +45,27 @@ def resolve_a(name: str) -> list[str]:
     return sorted({ip for a in answers for ip in a})
 
 
+REGION_BLOCK = "Access to this resource on the server is denied"  # LiteSpeed's 403 page (seen 2026-10-19 for every site,
+# old ones too, from the owner's network in Vietnam, while the same pages load normally from abroad)
+BLOCKED = "hosting chặn truy cập từ mạng này"
+
+
+def cert_valid(domain: str) -> tuple[bool, str]:
+    """TLS handshake with full verification (chain + hostname), IPv4. (ok, "issuer · expires …" or the reason)."""
+    import socket
+    import ssl
+
+    try:
+        addr = socket.getaddrinfo(domain, 443, socket.AF_INET, socket.SOCK_STREAM)[0][4]
+        with socket.create_connection(addr, timeout=20) as sock:
+            with ssl.create_default_context().wrap_socket(sock, server_hostname=domain) as t:
+                c = t.getpeercert()
+    except (OSError, ssl.SSLError) as e:
+        return False, f"chưa có chứng chỉ hợp lệ ({type(e).__name__})"
+    issuer = dict(x[0] for x in c.get("issuer", ())).get("organizationName", "?")
+    return True, f"chứng chỉ hợp lệ · {issuer} · hết hạn {c.get('notAfter')}"
+
+
 def https_ok(domain: str, must_contain: str) -> tuple[bool, str]:
     """GET https://domain with certificate verification. OK = 200 + expected text in the page."""
     try:
@@ -54,6 +75,8 @@ def https_ok(domain: str, must_contain: str) -> tuple[bool, str]:
         return False, f"không kết nối HTTPS được ({e.__class__.__name__}: chứng chỉ chưa có hoặc chưa hợp lệ?)"
     except httpx.TransportError as e:
         return False, f"lỗi mạng: {e}"
+    if r.status_code == 403 and REGION_BLOCK.lower() in r.text.lower():
+        return False, f"HTTP 403 — {BLOCKED} (trang chặn của LiteSpeed)"
     if r.status_code != 200:
         return False, f"HTTP {r.status_code}"
     if html.unescape(must_contain).lower() not in html.unescape(r.text).lower():  # "Silva &amp; Cia" == "Silva & Cia"
