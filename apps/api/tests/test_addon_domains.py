@@ -214,6 +214,7 @@ def test_alias_root_stops_the_preview_with_the_reason():
     _tick("huxma.life")
     with respx.mock(assert_all_called=False) as m:
         install_doh(m, {})
+        FakeSheet({ROW: {"A": "Acme LLC"}}).install(m)
         cp_account(m, CP, main=MAIN, addon=(), parked=("huxma.life",))
         m.get(f"{CP}/DomainInfo/single_domain_data").mock(return_value=cp_ok({"documentroot": "/home/u1/public_html", "ip": IP}))
         fake_inet().install(m)
@@ -228,6 +229,7 @@ def test_preview_shows_how_each_name_will_be_created():
     _tick("huxma.life")
     with respx.mock(assert_all_called=False) as m:
         install_doh(m, {})
+        FakeSheet({ROW: {"A": "Acme LLC"}}).install(m)
         _addon_account(m)
         fake_inet().install(m)
         with session_scope() as s:

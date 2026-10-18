@@ -140,3 +140,28 @@ def test_subdomain_labels_fold_accents_and_drop_legal_forms():
     cases = {"CONSTRUÇÕES SILVA LTDA": "construcoessilva", "N Triangle Ranch, Inc.": "ntriangleranch",
              "Padaria São José - ME": "padariasaojose", "ME Salon LLC": "mesalon", "Alpha S/A": "alpha"}
     assert {name: domains.slug(name) for name in cases} == cases
+
+
+def test_label_comes_from_column_e_like_the_existing_domains():
+    assert domains.label_for({"A": "VEGA LAVANDERIA LTDA", "E": "vegalavanderialtda"}) == "vegalavanderialtda"
+    assert domains.label_for({"A": "N Triangle Ranch, Inc.", "E": ""}) == "ntriangleranch"  # no E → legacy rule
+    assert domains.label_for({"A": "Alpha S/A", "E": "alpha s/a"}) == "alpha"  # invalid E → legacy rule
+
+
+def test_a_company_that_already_has_a_domain_is_not_offered_or_previewed(client):
+    from wg_core.modules.domains import dns_plan
+
+    _tick("huxma.life")
+    sheet = FakeSheet({7: {"A": "Acme LLC", "J": "12.345.678/0001-90"},
+                       8: {"A": "acme  llc", "B": "acmellc.yhawt.press"},          # same name, other row, has a domain
+                       9: {"A": "Other Name", "J": "12345678000190", "B": "x.press"},  # same registration number
+                       10: {"A": "Beta LLC", "E": "betallc"}})
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        with session_scope() as s:
+            out = domains.scan(s)
+        assert [r["row"] for r in out["rows"]] == [10] and out["rows"][0]["label"] == "betallc"
+        assert any(e["row"] == 7 and "dòng 8" in e["reason"] for e in out["excluded"])
+        with session_scope() as s:
+            p = dns_plan.preview(s, [{"row": 7, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])
+    assert p["rows"][0]["action"] == "refuse" and "đã có miền acmellc.yhawt.press" in p["rows"][0]["reason"]

@@ -165,6 +165,17 @@ def preview(s: Session, items: list[dict]) -> dict:
     ok_items, refused = validate_items(s, items)
     sw = get_switch(s)
     cache, log, rows = {}, [], []
+    if ok_items:  # one Sheet read: a company that already has a domain in another row never gets a second one
+        from ...integrations.google import Sheets
+        from .service import already_has_domain, domains_by_company
+
+        sheet_rows = Sheets().read_rows()
+        has, by_row = domains_by_company(sheet_rows), {r.row: r.cells for r in sheet_rows}
+        for it in list(ok_items):
+            cells = by_row.get(it["row"])
+            if why := ("Dòng không còn trên Sheet" if cells is None else already_has_domain(has, cells)):
+                refused[it["row"]] = why
+                ok_items.remove(it)
     for it in ok_items:
         rows.append(_check_one(it, s.get(Nick, it["nick_id"]), cache, log))
     for row, why in refused.items():

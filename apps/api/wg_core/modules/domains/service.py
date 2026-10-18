@@ -140,8 +140,41 @@ def slug(company: str) -> str:
     return re.sub(r"[^a-z0-9]", "", LEGAL.sub("", name))
 
 
+def label_for(cells: dict) -> str:
+    """The label the Sheet already uses: column E (729 of the 760 existing domains on 2026-10-18 are exactly E, legal
+    suffix kept — e.g. vegalavanderialtda). Falls back to slug(A) when E is empty or not a valid DNS label."""
+    e = (cells.get("E") or "").strip().lower()
+    return e if LABEL_RX.match(e) else slug(cells.get("A") or "")
+
+
+def _company_keys(cells: dict) -> list[tuple[str, str]]:
+    keys = [("A", re.sub(r"\s+", " ", (cells.get("A") or "").strip().casefold()))]
+    if digits := re.sub(r"\D", "", cells.get("J") or ""):
+        keys.append(("J", digits))
+    return [k for k in keys if k[1]]
+
+
+def domains_by_company(rows) -> dict:
+    """(A name | J registration number) → [(row, B)] for every row that already has a domain in B."""
+    out: dict = {}
+    for r in rows:
+        if b := r.cells["B"].strip():
+            for k in _company_keys(r.cells):
+                out.setdefault(k, []).append((r.row, b))
+    return out
+
+
+def already_has_domain(index: dict, cells: dict) -> str | None:
+    for k in _company_keys(cells):
+        if hits := index.get(k):
+            row, b = hits[0]
+            return f"Doanh nghiệp này đã có miền {b} ở dòng {row} ({'cùng tên A' if k[0] == 'A' else 'cùng số J'}) — không tạo thêm"
+    return None
+
+
 def scan(s: Session) -> dict:
     rows = Sheets().read_rows()
+    has = domains_by_company(rows)
     out, excluded = [], []
     for r in rows:
         c = r.cells
@@ -150,13 +183,16 @@ def scan(s: Session) -> dict:
         if not c["A"].strip():
             excluded.append({"row": r.row, "reason": "Thiếu tên doanh nghiệp (A)"})
             continue
+        if why := already_has_domain(has, c):
+            excluded.append({"row": r.row, "reason": why})
+            continue
         flags = []
         if not c["K"].strip():
             flags.append("Chưa có link K")
         if not c["E"].strip():
             flags.append("Thiếu cột E")
         out.append({"row": r.row, "A": c["A"], "D": c["D"], "E": c["E"], "F": c["F"], "G": c["G"], "H": c["H"], "I": c["I"],
-                    "J": c["J"], "K": c["K"], "flags": flags, "label": slug(c["A"])})
+                    "J": c["J"], "K": c["K"], "flags": flags, "label": label_for(c)})
     existing_b = sorted({r.cells["B"].strip().lower() for r in rows if r.cells["B"].strip()})
     return {"total": len(rows), "with_b": len(existing_b), "rows": out, "excluded": excluded, "existing_b": existing_b,
             "tab": Sheets().tab}

@@ -186,14 +186,15 @@ export function shortSlug(name: string): string {
 }
 
 export const SLUG_RULES: Record<SlugRule, { label: string; detail: string }> = {
-  columnE: { label: "Dùng cột E", detail: "Lấy nguyên giá trị cột E: 13570traditionstreetllc" },
+  columnE: { label: "Dùng cột E (như các miền đã có)", detail: "Lấy nguyên cột E, giữ hậu tố: vegalavanderialtda — 729/760 miền đang có dùng cách này" },
   legacy: { label: "Bỏ hậu tố pháp lý", detail: "Như app cũ (_slug_for_subdomain): N Triangle Ranch, Inc. → ntriangleranch" },
   short: { label: "Rút gọn theo tên công ty", detail: "2 từ đầu, bỏ hậu tố: Global Freight Partners LLC → globalfreight" },
 };
 
 /** Column E is only READ here — it is never rewritten. */
 export function slugFor(c: Company, rule: SlugRule): string {
-  if (rule === "columnE") return c.E.trim().toLowerCase();
+  // column E is what 729 of the 760 existing domains use (checked on the real Sheet 2026-10-18); invalid E → legacy rule
+  if (rule === "columnE") return labelIssue(c.E.trim().toLowerCase()) ? subdomainSlug(c.A) : c.E.trim().toLowerCase();
   if (rule === "short") return shortSlug(c.A);
   return subdomainSlug(c.A);
 }

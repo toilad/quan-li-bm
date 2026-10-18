@@ -236,7 +236,7 @@ function toNicks(server: ServerNick[]): Nick[] {
 
 export function useDomainQueue() {
   const [state, dispatchLocal] = useReducer(reducer, undefined, (): DomainState => ({
-    rows: [], nicks: [], selectedRoots: [], selectionLoaded: false, lastSync: "—", rule: "legacy", batchLimit: 30,
+    rows: [], nicks: [], selectedRoots: [], selectionLoaded: false, lastSync: "—", rule: "columnE", batchLimit: 30,
     running: false, paused: false, selected: null, created: {}, existingB: [], scan: null, loadError: null, message: null,
   }));
   const stateRef = useRef(state);
