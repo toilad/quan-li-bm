@@ -28,8 +28,17 @@ def _server():
 
 
 def dev_database_url() -> str:
+    import time
+
     srv = _server()
-    out = srv.psql("SELECT datname FROM pg_database WHERE datname='qlbm';")
-    if "qlbm" not in out:
+    # During crash recovery the server already runs but answers "the database system is starting up" (seen
+    # 2026-10-19): psql prints nothing, and every stored setting (iNET keys…) then reads as "not set". Wait for a
+    # real answer, up to 2 minutes.
+    deadline = time.monotonic() + 120
+    while "datname" not in (out := srv.psql("SELECT datname FROM pg_database WHERE datname='qlbm';") or ""):
+        if time.monotonic() > deadline:
+            raise RuntimeError("PostgreSQL (dev) chưa sẵn sàng sau 2 phút — xem apps/api/.pgdata/log")
+        time.sleep(3)
+    if "qlbm" not in out.replace("datname", ""):
         srv.psql("CREATE DATABASE qlbm;")
     return srv.get_uri("qlbm")

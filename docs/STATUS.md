@@ -248,4 +248,7 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
 - Kiểm tra thật trên nick 2: phiên cPanel đúng user `msvalljjhosting`; list OK; **dry run thành công**
   ("a test certificate was issued and discarded" trên máy chủ thử của Let's Encrypt), không cài gì lên hosting.
 - Bước 2: domain chưa có SSL thì app Issue cho đúng domain đó (http-01, chỉ tên đó). Có khoá ghi "ssl", tối đa 30 phút/lần, chỉ khi DNS đã trỏ đúng.
-- Cần quyền khoá iNET: **Domain + Hosting, GET + PATCH + POST**. Nick 2 đã đủ; nick 1 và nick 3 cần thêm Hosting + POST.
+- Cần quyền khoá iNET: **Domain + Hosting, GET + PATCH + POST**. Cả 3 nick đã đủ quyền này.
+- Kiểm tra thật, chỉ đọc (list-certificates): nick 1 thấy 41 chứng chỉ, nick 2 đã kiểm trước đó, nick 3 thấy 782 chứng chỉ.
+- Postgres dev vừa khôi phục sau khi máy tắt đột ngột: app chờ tới khi DB trả lời truy vấn thật (tối đa 2 phút).
+  Trước đây, trong lúc DB đang khôi phục, app báo các khoá đã lưu là "chưa cấu hình".
