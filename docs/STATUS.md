@@ -252,3 +252,20 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
 - Kiểm tra thật, chỉ đọc (list-certificates): nick 1 thấy 41 chứng chỉ, nick 2 đã kiểm trước đó, nick 3 thấy 782 chứng chỉ.
 - Postgres dev vừa khôi phục sau khi máy tắt đột ngột: app chờ tới khi DB trả lời truy vấn thật (tối đa 2 phút).
   Trước đây, trong lúc DB đang khôi phục, app báo các khoá đã lưu là "chưa cấu hình".
+
+## ✔ B2 lô đầu: nhóm trống cột C (19/10/2026)
+- Kiểm tra trước (chỉ đọc) 105 dòng có B, C trống:
+  - 58 dòng sẵn sàng: đều đã có SSL, thư mục trống;
+  - 12 dòng thư mục đã có web cũ (index.html, config.js, script.js, style.css): không ghi đè, bỏ qua;
+  - 31 dòng có miền gốc ngoài 3 nick;
+  - 4 dòng cột B không phải tên miền.
+- Anh duyệt đúng 58 dòng, chỉ thao tác "tải website lên". Kết quả: **58/58 xong**, job 16–73.
+  - Ô C đọc lại từ Sheet khớp cả 58.
+  - Khoá tự đóng sau lô.
+  - Không cần Issue SSL (đã có sẵn), không đụng AutoSSL.
+- Mẫu web: corporate-firm 55, dermatologist-clinic 2 (phòng khám), daily-soap-tv 1 (công ty làm phim).
+- Lỗi chữ thấy trên web đầu ("LTDA..", "a organised") đã sửa giữa lô (85301bd). 15 web làm trước bản sửa (dòng 519, 706–719) còn lỗi chữ nhỏ, chờ anh quyết có cập nhật lại không.
+- Sự cố trong lô:
+  - Xếp lại hàng sau khi khởi động lại worker đã tạo job trùng cho các dòng đã xong.
+  - Job 74 thấy C519 đã có thì dừng, không ghi đè, và tự khoá. Các job trùng khác đã huỷ trước khi chạy.
+  - Bài học: không gọi lại enqueue cho cả lô; chỉ mở lại khoá.
