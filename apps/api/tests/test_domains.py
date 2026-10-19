@@ -48,9 +48,20 @@ def _routes(m, sheet, ips):
     install_doh(m, ips)
     cp_account(m, CP)
     m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life", "type": "addon_domain"}})
-    m.get(f"{CP}/SubDomain/listsubdomains").mock(return_value=cp_ok([]))
+    made: list = []  # like cPanel: a subdomain is listed once addsubdomain created it
+
+    def add(request):
+        q = request.url.params
+        made.append({"domain": f"{q['domain']}.{q['rootdomain']}", "rootdomain": q["rootdomain"], "basedir": q["dir"]})
+        return cp_ok(None)
+
+    def listing(request):
+        rx = request.url.params.get("regex", "")
+        return cp_ok([x for x in made if not rx or x["domain"].replace(".", "\.") in rx])
+
+    m.get(f"{CP}/SubDomain/listsubdomains").mock(side_effect=listing)
     m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))
-    return m.get(f"{CP}/SubDomain/addsubdomain").mock(return_value=cp_ok(None))
+    return m.get(f"{CP}/SubDomain/addsubdomain").mock(side_effect=add)
 
 
 def test_b_filled_meanwhile_is_conflict_not_overwrite():
@@ -165,3 +176,27 @@ def test_a_company_that_already_has_a_domain_is_not_offered_or_previewed(client)
         with session_scope() as s:
             p = dns_plan.preview(s, [{"row": 7, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])
     assert p["rows"][0]["action"] == "refuse" and "đã có miền acmellc.yhawt.press" in p["rows"][0]["reason"]
+
+
+def test_b1_never_writes_b_when_cpanel_does_not_list_the_new_subdomain():
+    from tests.test_dns_write import batch_mode, fake_inet
+
+    _tick("huxma.life")
+    batch_mode()
+    sheet = FakeSheet({ROW: {"A": "Acme LLC"}})
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        install_doh(m, {"acme.huxma.life": ["103.75.187.26"]})
+        cp_account(m, CP)
+        m.get(f"{CP}/DomainInfo/single_domain_data").respond(200, json={"status": 1, "data": {"documentroot": "/home/u1/public_html/huxma.life"}})
+        m.get(f"{CP}/SubDomain/listsubdomains").mock(return_value=cp_ok([]))  # create "succeeds" but nothing is listed
+        m.get(f"{CP}/AddonDomain/listaddondomains").mock(return_value=cp_ok([]))
+        m.get(f"{CP}/SubDomain/addsubdomain").mock(return_value=cp_ok(None))
+        fake_inet().install(m)
+        with session_scope() as s:
+            job_id = domains.enqueue_rows(s, [{"row": ROW, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])["queued"][0]["job_id"]
+        drain()
+    with session_scope() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "failed" and "không liệt kê" in j.last_error
+    assert sheet.writes == []

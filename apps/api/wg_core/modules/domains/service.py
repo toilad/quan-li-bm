@@ -317,11 +317,17 @@ def _create(ctx: JobContext):
                 ctx.log(f"cPanel: đã tạo addon domain {fqdn} ({used})", "ok")
             if (found.get("basedir") or "").strip("/") != want:
                 raise Conflict(f"{fqdn} trên cPanel dùng thư mục {found.get('basedir')} (không phải {want}) — không ghi đè, B giữ trống")
-        elif cp.subdomain(fqdn):  # created by an earlier attempt whose answer was lost (before it, the pre-check found none)
-            ctx.log(f"cPanel: {fqdn} đã có từ lượt trước → không tạo lại", "warn")
         else:
-            cp.add_subdomain(p["label"], p["root"], want)
-            ctx.log(f"cPanel: đã tạo subdomain {fqdn}", "ok")
+            if found := cp.subdomain(fqdn):  # created by an earlier attempt whose answer was lost
+                ctx.log(f"cPanel: {fqdn} đã có từ lượt trước → không tạo lại", "warn")
+            else:
+                cp.add_subdomain(p["label"], p["root"], want)
+                found = cp.subdomain(fqdn)  # confirm with the read API whatever the create call answered
+                if not found:
+                    raise Permanent(f"SubDomain::addsubdomain không báo lỗi nhưng cPanel không liệt kê {fqdn} — kiểm tra trên cPanel trước khi chạy lại")
+                ctx.log(f"cPanel: đã tạo subdomain {fqdn}", "ok")
+            if (found.get("basedir") or want).strip("/") != want:
+                raise Conflict(f"{fqdn} trên cPanel dùng thư mục {found.get('basedir')} (không phải {want}) — không ghi đè, B giữ trống")
         ctx.checkpoint(host_created=True)
 
     ctx.step("Xác minh DNS trỏ đúng IP")
@@ -329,6 +335,12 @@ def _create(ctx: JobContext):
     if nick.ip not in ips:
         wait_or_fail(st, "dns_wait_since", DNS_WAIT_HOURS, f"DNS {fqdn} chưa trỏ về {nick.ip} (đang: {', '.join(ips) or 'chưa có'})", 300)
     ctx.log(f"DNS {fqdn} → {nick.ip}", "ok")
+
+    ctx.step("Xác nhận domain trên hosting")
+    cp = CPanel(nick.id, nick.cpanel_host)
+    if not (cp.subdomain(fqdn) or cp.addon(fqdn)):
+        raise Permanent(f"{fqdn} không còn trên cPanel {nick.name} — không ghi B")
+    ctx.log(f"cPanel {nick.name}: {fqdn} có trên hosting · DNS → {nick.ip}", "ok")
 
     ctx.step("Đọc lại ô B rồi ghi")
     company_now = sheets.read_cell(f"A{p['row']}").strip()
