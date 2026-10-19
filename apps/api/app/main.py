@@ -237,7 +237,7 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
     if d.status == "queued":  # last save stopped (blocked/failed): editable again
         d.status = "review"
     if body.doc_type and body.doc_type != d.doc_type:
-        if body.doc_type not in ("wy", "ca", "br"):
+        if body.doc_type not in ("wa", "wy", "ca", "br"):
             raise HTTPException(422, "Loại phôi không hợp lệ")
         pdf.extract_into(d, pdf.storage_path(d.md5).read_bytes(), forced_type=body.doc_type)
     if body.fields:

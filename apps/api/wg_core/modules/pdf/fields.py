@@ -51,7 +51,8 @@ def validate(fields: dict, doc_type: str) -> dict[str, dict]:
                 issues[k] = {"level": "error", "kind": "missing", "message": "Trống — xác nhận để trống trước khi lưu"}
     j, h, i, d = val("J"), val("H"), val("I"), val("D")
     if d:
-        parts = [re.sub(r"\D", "", x) for x in d.split("/")]
+        # a country code in front is fine: +55 (Brazil), +1 (US)
+        parts = [re.sub(r"^1(?=\d{10}$)", "", re.sub(r"^55(?=\d{10,11}$)", "", re.sub(r"\D", "", x))) for x in d.split("/")]
         if any(len(x) not in (10, 11) for x in parts):
             issues["D"] = {"level": "error", "kind": "format", "message": "Mỗi số điện thoại phải có 10–11 chữ số"}
         elif len(parts) > 1:
@@ -63,8 +64,16 @@ def validate(fields: dict, doc_type: str) -> dict[str, dict]:
             issues["J"] = {"level": "error", "kind": "format", "message": "Sai số kiểm tra CNPJ — đối chiếu lại phôi"}
         if h and h not in BR_UF:
             issues["H"] = {"level": "error", "kind": "format", "message": "UF không hợp lệ"}
-        if i and not re.fullmatch(r"\d{2}\.\d{3}-\d{3}", i):
-            issues["I"] = {"level": "error", "kind": "format", "message": "CEP phải dạng 00.000-000"}
+        if i and not re.fullmatch(r"\d{8}|\d{2}\.\d{3}-\d{3}", i):  # the Sheet keeps the 8 digits
+            issues["I"] = {"level": "error", "kind": "format", "message": "CEP phải có 8 chữ số"}
+    elif doc_type == "wa":
+        # Washington filings: the principal office can be in another state or abroad (Mexico…) → warnings only.
+        if i and not re.fullmatch(r"\d{5}(-\d{4})?", i):
+            issues["I"] = {"level": "warn", "kind": "format", "message": "Không phải ZIP Mỹ (trụ sở ở nước ngoài?) — đối chiếu phôi"}
+        if h and not re.fullmatch(r"[A-Z]{2}", h):
+            issues["H"] = {"level": "warn", "kind": "format", "message": "Không phải mã bang 2 chữ — đối chiếu phôi"}
+        if j and not re.fullmatch(r"\d{9}", j):
+            issues["J"] = {"level": "warn", "kind": "format", "message": "UBI thường có 9 chữ số — đối chiếu lại phôi"}
     elif doc_type in ("wy", "ca"):
         if i and not re.fullmatch(r"\d{5}(-\d{4})?", i):
             issues["I"] = {"level": "error", "kind": "format", "message": "ZIP phải 5 số (hoặc 5+4)"}

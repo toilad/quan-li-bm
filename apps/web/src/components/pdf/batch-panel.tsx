@@ -18,7 +18,7 @@ export function BatchPanel({ state, dispatch }: { state: QueueState; dispatch: Q
   const queued = count("queued");
   const failed = count("failed");
   const cleanReview = files.filter(isCleanForBulk).length;
-  const types: DocType[] = ["wy", "ca", "br", "unknown"];
+  const types: DocType[] = ["wa", "br", "wy", "ca", "unknown"];
 
   return (
     <section className="panel flex flex-col p-5">

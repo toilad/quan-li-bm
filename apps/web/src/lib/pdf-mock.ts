@@ -19,7 +19,7 @@ export type Fields = Record<FieldKey, Field>;
 
 /* ───────────────────────── Document types ───────────────────────── */
 
-export type DocType = "wy" | "ca" | "br" | "unknown";
+export type DocType = "wa" | "wy" | "ca" | "br" | "unknown";
 
 type DocTypeMeta = {
   label: string;
@@ -31,6 +31,13 @@ type DocTypeMeta = {
 };
 
 export const DOC_TYPES: Record<DocType, DocTypeMeta> = {
+  wa: {
+    label: "Washington",
+    short: "WA",
+    form: "Certificate of Formation / Annual Report · Washington Secretary of State",
+    tagCls: "border-indigo-400/30 bg-indigo-500/15 text-indigo-200",
+    origin: { A: "Business Name", D: "Principal Office · Phone", F: "Principal Office · Street Address (hoặc Registered Agent)", G: "City", H: "State", I: "ZIP", J: "UBI Number" },
+  },
   wy: {
     label: "Wyoming LLC",
     short: "WY",
@@ -48,9 +55,9 @@ export const DOC_TYPES: Record<DocType, DocTypeMeta> = {
   br: {
     label: "Brazil CNPJ",
     short: "BR",
-    form: "Comprovante de Inscrição e de Situação Cadastral · Receita Federal",
+    form: "Comprovante de Inscrição / Ficha cadastral · Receita Federal",
     tagCls: "border-emerald-400/30 bg-emerald-500/15 text-emerald-200",
-    origin: { A: "Nome empresarial", D: "Telefone", F: "Logradouro + Número + Complemento + Bairro", G: "Município", H: "UF", I: "CEP", J: "Número de inscrição" },
+    origin: { A: "Nome empresarial", D: "Telefone (số đầu)", F: "Logradouro, Número, Complemento, Bairro, Município, UF CEP", G: "Município", H: "UF", I: "CEP (chỉ số)", J: "Número de inscrição (CNPJ)" },
   },
   unknown: {
     label: "Chưa nhận diện",
@@ -61,7 +68,7 @@ export const DOC_TYPES: Record<DocType, DocTypeMeta> = {
   },
 };
 
-export const KNOWN_DOC_TYPES: DocType[] = ["wy", "ca", "br"];
+export const KNOWN_DOC_TYPES: DocType[] = ["wa", "br", "wy", "ca"];
 
 export type Detection = { confidence: number; reason: string; manual?: boolean };
 
@@ -84,13 +91,13 @@ export function fieldHint(key: FieldKey, t: DocType): string {
   const br = t === "br";
   switch (key) {
     case "A": return br ? "Đúng như Nome empresarial" : "Giữ LLC / Inc.";
-    case "D": return br ? "(11) 0000-0000" : "(XXX) XXX-XXXX";
+    case "D": return br ? "(11) 0000-0000 — số đầu tiên" : "(XXX) XXX-XXXX";
     case "E": return "Tự sinh từ A";
-    case "F": return br ? "LOGRADOURO, NÚMERO, COMPLEMENTO - BAIRRO" : "Số nhà, tên đường";
+    case "F": return br ? "ĐƯỜNG, SỐ, PHỤ, KHU, THÀNH PHỐ, UF CEP" : "ĐƯỜNG, THÀNH PHỐ, BANG ZIP";
     case "G": return "";
-    case "H": return br ? "SP" : t === "ca" ? "CA" : "WY";
-    case "I": return br ? "00.000-000" : "5 số";
-    case "J": return br ? "00.000.000/0000-00" : t === "ca" ? "12 số" : "2024-000000000";
+    case "H": return br ? "SP" : t === "ca" ? "CA" : t === "wa" ? "WA" : "WY";
+    case "I": return br ? "8 chữ số" : "5 số (hoặc 5+4)";
+    case "J": return br ? "00.000.000/0000-00" : t === "ca" ? "12 số" : t === "wa" ? "UBI 9 số" : "2024-000000000";
   }
 }
 
@@ -203,22 +210,25 @@ export function validate(fields: Fields, t: DocType): Partial<Record<FieldKey, I
         break;
       case "D": {
         // A comprovante can print several numbers ("(55) 3223-1635 / (55) 3217-0922"): kept as printed.
-        const parts = v.split("/").map((x) => x.replace(/\D/g, ""));
+        // A country code is fine: +55 (Brazil) or +1 (US) in front of the 10–11 digits.
+        const parts = v.split("/").map((x) => x.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "").replace(/^1(?=\d{10}$)/, ""));
         if (parts.some((d) => d.length !== 10 && d.length !== 11)) set("error", "format", "Mỗi số điện thoại phải có 10–11 chữ số");
         else if (parts.length > 1) set("warn", "review", `Phôi có ${parts.length} số — giữ nguyên như phôi`);
         break;
       }
       case "H":
-        if (br ? !UF.includes(v) : !/^[A-Z]{2}$/.test(v)) set("error", "format", br ? "UF không hợp lệ (vd: SP, RJ, MG)" : "Bang phải là 2 chữ in hoa");
+        if (t === "wa" && !/^[A-Z]{2}$/.test(v)) set("warn", "review", "Không phải mã bang Mỹ 2 chữ (trụ sở ở nước ngoài?) — đối chiếu phôi");
+        else if (br ? !UF.includes(v) : !/^[A-Z]{2}$/.test(v)) set("error", "format", br ? "UF không hợp lệ (vd: SP, RJ, MG)" : "Bang phải là 2 chữ in hoa");
         else if ((t === "wy" && v !== "WY") || (t === "ca" && v !== "CA"))
           set("warn", "review", `Phôi ${DOC_TYPES[t].short} nhưng bang là ${v} — kiểm tra lại`);
         break;
       case "I":
         if (br) {
-          // Printed as "00.000-000" on the comprovante; kept exactly as printed.
-          if (!/^\d{2}\.?\d{3}-\d{3}$/.test(v))
+          // The Sheet keeps the CEP digits ("39100000"); "00.000-000" as printed is accepted too.
+          if (!/^\d{8}$/.test(v) && !/^\d{2}\.?\d{3}-\d{3}$/.test(v))
             set("error", "format", digits.length === 7 ? "CEP còn 7 số — có thể đã mất số 0 ở đầu" : "CEP phải dạng 00.000-000");
-        } else if (!/^\d{5}(-\d{4})?$/.test(v))
+        } else if (t === "wa" && !/^\d{5}(-\d{4})?$/.test(v)) set("warn", "review", "Không phải ZIP Mỹ (trụ sở ở nước ngoài?) — đối chiếu phôi");
+        else if (!/^\d{5}(-\d{4})?$/.test(v))
           set("error", "format", digits.length === 4 ? "ZIP còn 4 số — có thể đã mất số 0 ở đầu" : "ZIP phải có 5 số");
         break;
       case "J":
@@ -230,6 +240,8 @@ export function validate(fields: Fields, t: DocType): Partial<Record<FieldKey, I
           // Structure of CA entity numbers is NOT confirmed (one sample only):
           // basic check, warn on doubt, never block saving.
           if (!/^\d{12}$/.test(v)) set("warn", "review", "Khác dạng thường gặp (12 chữ số) — đối chiếu lại phôi; vẫn được lưu");
+        } else if (t === "wa") {
+          if (!/^\d{9}$/.test(v)) set("warn", "review", "UBI thường có 9 chữ số — đối chiếu lại phôi");
         } else if (t === "wy" && !/^\d{4}-\d{9}$/.test(v)) set("error", "format", "Original ID Wyoming dạng 2024-000000000");
         break;
     }
@@ -399,6 +411,7 @@ const md5 = (seed: number) =>
   Array.from({ length: 32 }, (_, i) => "0123456789abcdef"[(seed * 7 + i * 13 + ((seed * i) % 11)) % 16]).join("");
 
 const DET = {
+  wa: { confidence: 97, reason: "“Filed Secretary of State · State of Washington”, có số UBI" },
   wy: { confidence: 99, reason: "Tiêu đề “STATE OF WYOMING · Articles of Organization”, có Original ID" },
   ca: { confidence: 96, reason: "Bản scan mẫu LLC-1 (REV 01/2013): khung “Articles of Organization of a Limited Liability Company”, dấu FILED · State of California" },
   br: { confidence: 99, reason: "“CADASTRO NACIONAL DA PESSOA JURÍDICA · Comprovante de Inscrição” · có lớp chữ, đọc thẳng từng ô" },
@@ -455,7 +468,7 @@ const BR = {
 
 const base = (p: Partial<PdfFile> & Pick<PdfFile, "id" | "name" | "docType" | "status">): PdfFile => ({
   sizeKb: 240, pages: 1, md5: md5(p.id.length * 31 + p.name.length), step: 0, progress: 0,
-  detection: p.docType === "unknown" ? null : DET[p.docType as "wy" | "ca" | "br"], fields: null, industry: null,
+  detection: p.docType === "unknown" ? null : DET[p.docType as "wa" | "wy" | "ca" | "br"], fields: null, industry: null,
   textLayer: p.docType !== "ca",
   ...p,
 });
@@ -540,6 +553,10 @@ export const MOCK_RESULTS: Record<string, Extracted> = {
 
 /** Demo result when the user picks a type for an unrecognised file and re-reads it. */
 export const RESCAN_SAMPLES: Record<Exclude<DocType, "unknown">, Extracted> = {
+  wa: {
+    fields: us({ a: "Cascade Ridge Media LLC", d: "(206) 555-0142", street: "1201 3rd Ave Ste 400", city: "Seattle", st: "WA", zip: "98101", j: "604000123" }, "ai"),
+    industry: industryFromName("Cascade Ridge Media LLC"),
+  },
   ca: {
     fields: ca({ a: "Golden State Media Studio, LLC", street: "6255 Sunset Blvd. Ste 1500", city: "Los Angeles", zip: "90028", j: "201600382150" }, { A: 96, J: 97 }),
     industry: industryFromName("Golden State Media Studio LLC"),

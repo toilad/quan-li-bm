@@ -1,5 +1,6 @@
 import glob
 import hashlib
+import re
 import json
 
 import pytest
@@ -38,8 +39,8 @@ def test_brazil_detect_and_extract_all_samples():
         assert f["A"]["value"] and f["A"]["source"] == "text"
         assert cnpj_valid(f["J"]["value"]), f["J"]
         assert f["H"]["value"] in {"SP", "MG", "RS"}
-        assert len(f["I"]["value"]) == 10 and f["I"]["value"][2] == "."  # CEP kept as printed, text
-        assert " - " in f["F"]["value"] and "*" not in f["F"]["value"]
+        assert re.fullmatch(r"\d{8}", f["I"]["value"])  # the Sheet keeps the CEP digits (as text: leading zero kept)
+        assert f["F"]["value"].endswith(f'{f["G"]["value"]}, {f["H"]["value"]} {f["I"]["value"]}') and "*" not in f["F"]["value"]
         assert extra["situacao_cadastral"] == "ATIVA"
         assert not {k for k, v in validate(f, "br").items() if v["level"] == "error"}
 

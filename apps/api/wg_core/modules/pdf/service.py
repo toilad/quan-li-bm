@@ -18,7 +18,7 @@ from ...integrations.google import Drive, Sheets, hyperlink_formula
 from ...jobs import JobContext, enqueue, handler
 from ...models import PdfDocument, SheetWrite
 from ..websites.templates import detect as detect_template, template_for_cnae
-from .extract import detect, extract_br, extract_wy, fields_from_ai, read_pdf
+from .extract import detect, extract_text_layer, fields_from_ai, read_pdf
 from .fields import FIELD_KEYS, blocking, field, short_name, validate
 
 
@@ -64,13 +64,11 @@ def extract_into(doc: PdfDocument, data: bytes, forced_type: str | None = None):
     doc.detection_confidence = 1.0 if forced_type else det.confidence
     doc.detection_reason = "Chọn thủ công" if forced_type else det.reason
     doc.error = None
-    if doc.doc_type == "br" and doc.has_text:
-        doc.fields, doc.extra = extract_br(t)
+    read = extract_text_layer(t, doc.doc_type) if doc.has_text else None
+    if read:
+        doc.fields, doc.extra = read
         doc.status = "review"
-    elif doc.doc_type == "wy" and doc.has_text:
-        doc.fields, doc.extra = extract_wy(t)
-        doc.status = "review"
-    elif not doc.has_text and doc.doc_type in ("ca", "wy", "br", "unknown"):
+    elif not doc.has_text and doc.doc_type in ("ca", "wy", "wa", "br", "unknown"):
         # Scan without a text layer: the AI job identifies the form (unless picked by hand) and reads it.
         doc.fields, doc.status = {}, "needs_ai"
     else:
