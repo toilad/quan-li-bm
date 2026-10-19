@@ -58,7 +58,9 @@ def test_tag_and_validation():
     assert issues["D"]["level"] == "warn" and "TẠM" in issues["D"]["message"]  # a reminder, does not block saving
     ca = {"A": {"value": "X LLC"}, "D": {"value": ""}, "H": {"value": ""}}
     tag(ca, {"form": "LLC-1", "state_of_form": "CA"})
-    assert ca["D"]["value"].startswith("(213) 555-01")
+    assert ca["D"]["value"].startswith("(213) 555-01") and ca["D"]["state"] == "CA"
+    issues = validate({**{k: {"value": "x"} for k in "AEFGIJ"}, "H": {"value": ""}, "D": ca["D"]}, "ca")
+    assert "TẠM" in issues["D"]["message"]  # checked against CA, not "state unknown"
     br = {"A": {"value": "X LTDA"}, "D": {"value": ""}, "H": {"value": "SP"}}
     tag(br)
     assert br["D"]["value"] == "" and br["D"]["phone_source"] == "needs_setup"  # no reserved block in Brazil

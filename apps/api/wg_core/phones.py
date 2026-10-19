@@ -158,7 +158,7 @@ def tag(fields: dict, extra: dict | None = None) -> None:
         return
     temp = placeholder(state, (fields.get("A") or {}).get("value", ""))
     if temp:
-        d.update(value=temp, source="placeholder", phone_source="placeholder", checked=True,
+        d.update(value=temp, source="placeholder", phone_source="placeholder", checked=True, state=state,
                  note=f"Số TẠM mã vùng {state} (dải 555-01xx dành cho số giả, không phải số của ai) — phôi không có số; "
                       f"anh thay bằng số thật sau. Website không hiện số tạm này")
     else:
