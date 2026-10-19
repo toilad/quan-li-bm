@@ -199,6 +199,33 @@ async def upload_pdf(files: list[UploadFile] = File(...), s: Session = Depends(d
     return out
 
 
+@app.get("/api/pdf/{doc_id}/crop")
+def pdf_crop(doc_id: int, page: int, box: str, rotation: int = 0, s: Session = Depends(db)):
+    """The region of the page a cell was read from (outlined), shown next to the cell so the owner can compare."""
+    import io as _io
+
+    from fastapi.responses import Response
+    from PIL import ImageDraw
+
+    from wg_core.modules.pdf.ocr import render
+
+    d = s.get(PdfDocument, doc_id)
+    if not d or page < 1 or page > max(d.pages, 1):
+        raise HTTPException(404)
+    try:
+        x0, y0, x1, y1 = (min(1.0, max(0.0, float(v))) for v in box.split(","))
+    except ValueError:
+        raise HTTPException(422, "box = x0,y0,x1,y1 (0–1)") from None
+    img = render(pdf.storage_path(d.md5).read_bytes(), page - 1, 150, rotation if rotation in (90, 180, 270) else 0)
+    w, h = img.size
+    mx, my = 0.04, 0.02
+    cx0, cy0, cx1, cy1 = int(max(0, x0 - mx) * w), int(max(0, y0 - my) * h), int(min(1, x1 + mx) * w), int(min(1, y1 + my) * h)
+    ImageDraw.Draw(img).rectangle((x0 * w - 3, y0 * h - 3, x1 * w + 3, y1 * h + 3), outline=(225, 29, 72), width=3)
+    buf = _io.BytesIO()
+    img.crop((cx0, cy0, cx1, cy1)).save(buf, "PNG")
+    return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "private, max-age=600"})
+
+
 @app.get("/api/pdf/{doc_id}/file")
 def pdf_file(doc_id: int, s: Session = Depends(db)):
     d = s.get(PdfDocument, doc_id)
@@ -218,6 +245,10 @@ class PdfEdit(BaseModel):
     # owner confirms the email printed on the PDF is the business's own official contact
     # (comprovantes often carry the accountant's address); only then may a website show it
     email_verified: bool | None = None
+    # owner ticks a cell "đã kiểm tra" after comparing it with the page (cells read from a scan cannot be saved before)
+    checked: dict[str, bool] | None = None
+    # owner chooses one of the suggested addresses (registered agent / Return to …) for F–I
+    use_candidate: int | None = None
 
 
 @app.patch("/api/pdf/{doc_id}")
@@ -230,7 +261,7 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
         if body.email_verified and not (d.extra or {}).get("email"):
             raise HTTPException(422, "Phôi không có email để xác minh")
         d.extra = {**(d.extra or {}), "email_verified": body.email_verified}
-        if body.fields is None and body.doc_type is None and body.industry is None:
+        if body.fields is None and body.doc_type is None and body.industry is None and body.checked is None                 and body.use_candidate is None:
             return doc_out(d)
     if d.status == "saved" or _live_save(s, d):
         raise HTTPException(409, "Đã lưu / đang lưu — không sửa")
@@ -246,8 +277,29 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
         f = dict(d.fields)
         for k, v in body.fields.items():
             if k in FIELD_KEYS:
-                f[k] = {"value": v.strip(), "source": "manual" if v.strip() else "missing"}
+                old = f.get(k) or {}
+                # typed by the owner: checked by definition; the page region stays for reference, OCR doubts go
+                f[k] = {"value": v.strip(), "source": "manual" if v.strip() else "missing", "checked": bool(v.strip()),
+                        **({"region": old["region"]} if old.get("region") else {}), **({"role": old["role"]} if old.get("role") else {})}
         d.fields = f
+    if body.checked:
+        f = dict(d.fields)
+        for k, on in body.checked.items():
+            if isinstance(f.get(k), dict) and f[k].get("value"):
+                f[k] = {**f[k], "checked": bool(on)}
+        d.fields = f
+    if body.use_candidate is not None:
+        from wg_core.modules.pdf.extract import us_style_address
+
+        cands = (d.extra or {}).get("address_candidates") or []
+        if not 0 <= body.use_candidate < len(cands):
+            raise HTTPException(422, "Không có địa chỉ gợi ý này")
+        c = cands[body.use_candidate]
+        note = f"Anh chọn dùng: {c['label']}"
+        base = {"source": "manual", "checked": True, "role": c["role"], **({"region": c["region"]} if c.get("region") else {})}
+        d.fields = {**d.fields,
+                    "F": {**base, "value": us_style_address(c["street"], c["city"], c["state"], c["zip"]), "note": note},
+                    "G": {**base, "value": c["city"]}, "H": {**base, "value": c["state"]}, "I": {**base, "value": c["zip"]}}
     if body.industry:
         d.industry = {**(d.industry or {}), "category": body.industry, "source": "manual"}
     return doc_out(d)

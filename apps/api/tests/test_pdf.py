@@ -228,7 +228,7 @@ def test_scan_is_classified_and_read_by_ai_then_needs_owner_check(monkeypatch):
     from tests.mocks import anthropic_json
     from wg_core.modules.pdf import ocr
 
-    monkeypatch.setattr(ocr, "ocr_pages", lambda data: [[]])  # a form the free OCR reader does not know → the AI
+    monkeypatch.setattr(ocr, "ocr_document", lambda data: [])  # a form the free OCR reader does not know → the AI
 
     ai_reply = {"doc_type": "ca", "evidence": "LLC-1, Secretary of State, State of California",
                 "A": {"value": "EXAMPLE SUPPLY CO., LLC", "found": True}, "D": {"value": "", "found": False},
@@ -252,6 +252,9 @@ def test_scan_is_classified_and_read_by_ai_then_needs_owner_check(monkeypatch):
         assert d.fields["E"]["value"] == "examplesupplycollc"
         # scanned → A/J read by AI → cannot be saved until the owner ticks "đã đối chiếu"
         assert any("đối chiếu" in r for r in pdf.save_check(d, confirm_missing=True, critical_checked=False))
+        # every cell read from the image must also be ticked "đã kiểm tra" (owner's rule, 2026-10-19)
+        assert any("đã kiểm tra" in r for r in pdf.save_check(d, confirm_missing=True, critical_checked=True))
+        d.fields = {k: {**v, "checked": True} for k, v in d.fields.items()}
         assert not pdf.save_check(d, confirm_missing=True, critical_checked=True)
     sent = _json.loads(route.calls[0].request.content)
     assert sent["model"] == "claude-opus-5-5"
@@ -265,7 +268,7 @@ def test_scan_of_an_unknown_form_without_ai_key_says_what_to_do(monkeypatch):
     if not CA:
         pytest.skip("California sample not present")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
-    monkeypatch.setattr(ocr, "ocr_pages", lambda data: [[]])
+    monkeypatch.setattr(ocr, "ocr_document", lambda data: [])
     with session_scope() as s:
         doc, _ = pdf.ingest(s, "scan.pdf", open(CA[0], "rb").read())
         assert doc.status == "needs_ai"

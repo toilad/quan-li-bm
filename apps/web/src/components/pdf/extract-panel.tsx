@@ -9,6 +9,8 @@ import {
   DOC_TYPES, FIELD_LABEL, FIELD_META, INDUSTRIES, KNOWN_DOC_TYPES, SAVE_STEPS, fieldHint, hasLeadingZero, templateFor, validate,
   type DocType, type FieldKey, type FieldSource, type IndustryKey, type PdfFile,
 } from "@/lib/pdf-mock";
+import { API_URL } from "@/lib/api";
+import type { AddressCandidate, Region } from "@/lib/pdf-mock";
 import { PdfStatusChip } from "./status";
 import { canSave, saveBlockers } from "./use-pdf-queue";
 import type { QueueDispatch } from "./use-pdf-backend";
@@ -22,6 +24,73 @@ const SOURCE: Record<FieldSource, { label: string; icon: typeof Bot; cls: string
   manual: { label: "Đã sửa tay", icon: PenLine, cls: "text-amber-200" },
   missing: { label: "Thiếu", icon: AlertCircle, cls: "text-rose-300" },
 };
+
+const ROLE: Record<string, string> = {
+  principal: "Trụ sở chính", mailing: "Địa chỉ nhận thư của DN", agent: "Registered agent",
+  return_to: "Return to (người nộp hồ sơ)", principal_ca: "Văn phòng tại California",
+};
+
+/** The part of the page a value was read from (outlined in red), cut out by the server — compare it with the cell. */
+function RegionCrop({ docId, region, alt }: { docId: string; region: Region; alt: string }) {
+  const src = `${API_URL}/api/pdf/${docId}/crop?page=${region.page}&box=${region.box.join(",")}&rotation=${region.rotation ?? 0}`;
+  return (
+    <a href={src} target="_blank" rel="noreferrer" title="Mở vùng ảnh lớn hơn" className="block">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} loading="lazy" className="max-h-16 max-w-full rounded border border-line bg-white object-contain" />
+    </a>
+  );
+}
+
+function Candidates({ file, dispatch, editable }: { file: PdfFile; dispatch: QueueDispatch; editable: boolean }) {
+  const list = file.candidates ?? [];
+  if (!list.length) return null;
+  return (
+    <div className="col-span-2 rounded-xl border border-sky-400/25 bg-sky-500/[0.05] p-3">
+      <div className="text-[12px] font-semibold text-sky-200">Địa chỉ khác in trên phôi — chưa dùng cho F–I</div>
+      <p className="mt-0.5 text-[11px] leading-snug text-fg-subtle">
+        Không phải địa chỉ doanh nghiệp tự khai (registered agent, “Return to”, văn phòng khác). App không tự dùng; anh chỉ chọn khi
+        chắc đây là địa chỉ cần điền.
+      </p>
+      {list.map((c: AddressCandidate, i: number) => (
+        <div key={i} className="mt-2.5 flex flex-wrap items-start gap-3 border-t border-sky-400/15 pt-2.5">
+          {c.region && <RegionCrop docId={file.id} region={c.region} alt={c.label} />}
+          <div className="min-w-0 flex-1">
+            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-sky-300">{ROLE[c.role] ?? c.role} · {c.label}</div>
+            <div className="text-[13px]">{[c.street, c.city, `${c.state} ${c.zip}`.trim()].filter(Boolean).join(", ")}</div>
+            {c.region && <div className="text-[10.5px] text-fg-subtle">Trang {c.region.page}{c.confidence !== undefined && ` · OCR ${c.confidence}%`}</div>}
+            {c.suspects?.map((x, j) => (
+              <div key={j} className="mt-1 flex items-start gap-1 text-[11px] text-amber-200"><AlertTriangle className="mt-px size-3 shrink-0" />{x.message}</div>
+            ))}
+          </div>
+          {editable && (
+            <button type="button" onClick={() => dispatch({ type: "useCandidate", id: file.id, index: i })}
+              className="rounded-md border border-sky-400/40 px-2.5 py-1 text-[11.5px] font-medium text-sky-100 hover:bg-sky-500/15">
+              Dùng cho F–I
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScanFacts({ file }: { file: PdfFile }) {
+  const s = file.scan;
+  if (!s?.version && !s?.warning && !s?.note) return null;
+  const facts = [
+    s.version && `Mẫu ${s.version}${s.versionVerified === false ? " (chưa kiểm chứng)" : ""}`,
+    s.pagesRead && `đọc ${s.pagesRead} trang`,
+    s.filedDate && `ngày nộp ${s.filedDate}`,
+    (s.formationState || s.formationDate) && `thành lập ${[s.formationState, s.formationDate].filter(Boolean).join(" · ")} (không ghi vào Sheet)`,
+  ].filter(Boolean);
+  return (
+    <div className="col-span-2 space-y-1 rounded-lg border border-line bg-ink-850/50 px-3 py-2 text-[11.5px] text-fg-muted">
+      {facts.length > 0 && <div>{facts.join(" · ")}</div>}
+      {s.warning && <div className="flex items-start gap-1 text-amber-300"><AlertTriangle className="mt-px size-3 shrink-0" />{s.warning}</div>}
+      {s.note && <div className="flex items-start gap-1 text-sky-200"><Info className="mt-px size-3 shrink-0" />{s.note}</div>}
+    </div>
+  );
+}
 
 const list = (keys: FieldKey[]) => keys.map((k) => `${k} (${FIELD_LABEL[k]})`).join(", ");
 
@@ -119,6 +188,7 @@ export function ExtractPanel({
 
         {file.fields && !awaitingType && (
           <div className="grid grid-cols-2 gap-x-3 gap-y-3.5">
+            <ScanFacts file={file} />
             {FIELD_META.map((m) => {
               const fld = file.fields![m.key];
               const issue = issues[m.key];
@@ -126,7 +196,7 @@ export function ExtractPanel({
               const origin = DOC_TYPES[file.docType].origin[m.key];
               const keepZero = (m.key === "I" || m.key === "J") && !issue && hasLeadingZero(fld.value);
               return (
-                <label
+                <div
                   key={m.key}
                   className={clsx("block", m.wide && "col-span-2")}
                   onMouseEnter={() => onHover(m.key)}
@@ -182,10 +252,37 @@ export function ExtractPanel({
                       </span>
                     ) : null}
                     {origin && m.key !== "E" && <span className="block text-[10.5px] text-fg-subtle/80">trên phôi: {origin}</span>}
+                    {fld.suspects?.map((x, i) => (
+                      <div key={i} className="flex items-start gap-1.5 rounded-md border border-amber-400/30 bg-amber-500/[0.06] px-2 py-1 text-[11px] text-amber-200">
+                        <AlertTriangle className="mt-px size-3 shrink-0" />
+                        <span className="flex-1">{x.message}</span>
+                        {x.suggestion && editable && (
+                          <button type="button" onClick={() => dispatch({ type: "edit", id: file.id, key: m.key, value: x.suggestion })}
+                            className="shrink-0 rounded border border-amber-400/40 px-1.5 text-[10.5px] hover:bg-amber-500/15" title={x.suggestion}>
+                            Dùng gợi ý
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {fld.region && fld.value && (
+                      <div className="flex items-end gap-2 pt-0.5">
+                        <RegionCrop docId={file.id} region={fld.region} alt={`Vùng đọc ô ${m.key}`} />
+                        <span className="text-[10.5px] text-fg-subtle">Trang {fld.region.page}</span>
+                      </div>
+                    )}
+                    {fld.value && m.key !== "E" && (
+                      <label className={clsx("inline-flex items-center gap-1.5 text-[11px]",
+                        fld.checked ? "text-emerald-300" : fld.source === "ocr" || fld.source === "ai" ? "text-amber-200" : "text-fg-subtle")}>
+                        <input type="checkbox" checked={!!fld.checked} disabled={!editable}
+                          onChange={(e) => dispatch({ type: "check", id: file.id, key: m.key, on: e.target.checked })} />
+                        {fld.checked ? "Đã kiểm tra với ảnh" : fld.source === "ocr" || fld.source === "ai" ? "Chưa kiểm tra — bắt buộc trước khi lưu" : "Chưa kiểm tra"}
+                      </label>
+                    )}
                   </div>
-                </label>
+                </div>
               );
             })}
+            <Candidates file={file} dispatch={dispatch} editable={editable} />
 
             {(["B", "C"] as const).map((c) => (
               <div key={c}>
@@ -219,6 +316,12 @@ export function ExtractPanel({
             <Blocker>Thiếu trường quan trọng {list(b.criticalMissing)} — không thể lưu, nhập theo đúng phôi</Blocker>
           )}
           {b.format.length > 0 && <Blocker>Sai định dạng: {list(b.format)} — sửa trước khi lưu</Blocker>}
+          {b.unchecked.length > 0 && (
+            <Blocker>
+              Đọc từ ảnh scan, chưa đánh dấu đã kiểm tra: {list(b.unchecked)} — so từng ô với vùng ảnh bên cạnh rồi tick “Đã kiểm tra”
+              (hoặc sửa tay). Chưa kiểm tra thì không lưu lên Drive / Sheet.
+            </Blocker>
+          )}
 
           {b.needCriticalCheck && !b.unknownType && (
             <label className="flex cursor-pointer items-start gap-2 text-sky-100/90">

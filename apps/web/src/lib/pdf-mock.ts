@@ -10,10 +10,30 @@ import { detectTemplate, type SiteTemplate } from "./templates";
 export type FieldKey = "A" | "D" | "E" | "F" | "G" | "H" | "I" | "J";
 export type FieldSource = "text" | "ai" | "ocr" | "auto" | "manual" | "missing";
 /** `note` explains a normalisation, e.g. "California" → "CA" or how a BR address was assembled. */
+export type Region = { page: number; rotation?: number; box: [number, number, number, number] };
+export type Suspect = { message: string; suggestion: string };
 export type Field = {
   value: string; source: FieldSource; confidence?: number; note?: string;
   /** California: the same box read again from a later page (null match = not printed again) */
   check?: { other: string; match: boolean | null };
+  /** Where on the document the value was read (page + normalised box) — shown next to the cell. */
+  region?: Region;
+  /** Possible OCR misreadings: shown with a suggestion, never corrected silently. */
+  suspects?: Suspect[];
+  /** Owner compared the cell with the page ("đã kiểm tra"). Cells read from an image cannot be saved before. */
+  checked?: boolean;
+  /** Address cells: principal | mailing | agent | return_to | principal_ca */
+  role?: string;
+  warning?: string;
+};
+/** An address printed on the form that is not the company's own (agent, Return to, a second office): offered only. */
+export type AddressCandidate = {
+  role: string; label: string; street: string; city: string; state: string; zip: string; confidence?: number;
+  region?: Region; suspects?: Suspect[];
+};
+export type ScanInfo = {
+  form?: string; version?: string; versionVerified?: boolean; pagesRead?: number; filedDate?: string;
+  formationState?: string; formationDate?: string; warning?: string; note?: string; addressSource?: string;
 };
 export type Fields = Record<FieldKey, Field>;
 
@@ -255,6 +275,8 @@ export function validate(fields: Fields, t: DocType): Partial<Record<FieldKey, I
         set("warn", "review", "Không thấy số in lại ở trang sau để đối chiếu — kiểm tra bằng mắt");
     }
 
+    if (!out[m.key] && fld.suspects?.length) set("warn", "review", `Có thể đọc nhầm: ${fld.suspects[0].message}`);
+    else if (!out[m.key] && fld.warning) set("warn", "review", fld.warning);
     if (!out[m.key] && (fld.source === "ai" || fld.source === "ocr") && (fld.confidence ?? 100) < (m.critical ? 95 : 85))
       set("warn", "review", `${fld.source === "ocr" ? "OCR" : "AI"} đọc với độ tin cậy ${fld.confidence}% — cần đối chiếu`);
   }
@@ -338,6 +360,8 @@ export type PdfFile = {
   /** Scanned form waiting for the AI read (backend status needs_ai). */
   needsAi?: boolean;
   aiRunning?: boolean;
+  candidates?: AddressCandidate[];
+  scan?: ScanInfo;
 };
 
 export type Extracted = { fields: Fields; industry: Industry; br?: BrRaw };

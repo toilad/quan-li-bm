@@ -69,6 +69,33 @@ def detect(t: PdfText) -> Detection:
     return Detection("unknown", 0.0, "Không khớp mẫu phôi nào đã biết — không đoán")
 
 
+def locate(data: bytes, fields: dict) -> None:
+    """Text layer: the page and region where each value is printed (the first words of the value), shown to the owner
+    next to the cell. A value assembled from several boxes (F) points at its first words."""
+    def toks(s: str) -> list[str]:
+        return [x for x in (re.sub(r"[^A-Z0-9]", "", _norm(w)) for w in s.split()) if x]
+
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        pages = [(i, float(p.width), float(p.height), p.extract_words(keep_blank_chars=False)) for i, p in enumerate(pdf.pages[:10])]
+    for key, f in fields.items():
+        if key == "E" or not isinstance(f, dict) or not f.get("value"):
+            continue
+        want = toks(f["value"])[:3]
+        if not want:
+            continue
+        for i, w, h, words in pages:
+            norm = [re.sub(r"[^A-Z0-9]", "", _norm(x["text"])) for x in words]
+            hit = next((j for j in range(len(words) - len(want) + 1) if norm[j:j + len(want)] == want), None)
+            if hit is None and len(want) == 1:
+                hit = next((j for j, x in enumerate(norm) if want[0] and want[0] in x), None)
+            if hit is not None:
+                ws = words[hit:hit + len(want)]
+                f["region"] = {"page": i + 1, "rotation": 0,
+                               "box": [round(min(x["x0"] for x in ws) / w, 4), round(min(x["top"] for x in ws) / h, 4),
+                                       round(max(x["x1"] for x in ws) / w, 4), round(max(x["bottom"] for x in ws) / h, 4)]}
+                break
+
+
 def extract_text_layer(t: PdfText, doc_type: str) -> tuple[dict, dict] | None:
     """Fields from the text layer for the forms that have a reader; None = this form needs the AI (scan) or a person."""
     if doc_type == "br":
@@ -309,33 +336,45 @@ def extract_wa(t: PdfText) -> tuple[dict, dict]:
         if found and (addr := split_address(found.group(1))):
             source = src
             break
+    # Owner's rule (2026-10-19): F–I take only the company's own address — principal office, or its mailing address.
+    # A registered agent's address is offered as a suggestion for the owner to confirm, never used by itself.
     agent, agent_name = _wa_agent(t)
-    if addr and agent and PO_BOX.match(addr[0]) and not PO_BOX.match(agent[0]):
-        addr, source = agent, "Registered Agent · Street Address (trụ sở chỉ in PO BOX)"
-    elif addr and agent and _norm(addr[0]) == _norm(agent[0]) and COMMERCIAL_AGENT.search(agent_name):
+    role, warning, candidates = "principal" if addr else "", "", []
+    if addr and agent and _norm(addr[0]) == _norm(agent[0]) and COMMERCIAL_AGENT.search(agent_name):
         # The principal office printed is a commercial registered agent's office (e.g. "… SERVICES INC." in Spokane):
-        # the owner then uses the principal office MAILING address, where the company really is (not a PO box).
-        # An individual agent at the same street is the company's own address: kept.
+        # the company's own principal office MAILING address says where it really is (not a PO box).
         one = r"(\d[^:]*?, (?:UNITED STATES|USA|MEXICO|CANADA))"  # a street address that starts with a number
         mail = (split_address(_m(r"PRINCIPAL OFFICE Phone:.{0,900}? Mailing Address: " + one, s))
                 or split_address(_m(r"Principal Office Mailing Address: " + one, s)))
-        if mail and not re.match(r"P\.?\s*O\.?\s*BOX", mail[0], re.I) and _norm(mail[0]) != _norm(addr[0]):
-            addr, source = mail, "Principal Office · Mailing Address (địa chỉ trụ sở trùng địa chỉ registered agent)"
-    if not addr:
-        addr = agent
-        source = "Registered Agent · Street Address (phôi không có trụ sở chính)" if addr else ""
+        if mail and not PO_BOX.match(mail[0]) and _norm(mail[0]) != _norm(addr[0]):
+            addr, role, source = mail, "mailing", "Principal Office · Mailing Address (địa chỉ trụ sở in trên phôi là văn phòng dịch vụ registered agent)"
+        else:
+            warning = "Địa chỉ trụ sở in trên phôi trùng văn phòng dịch vụ registered agent — kiểm tra lại"
+    if addr and PO_BOX.match(addr[0]):
+        warning = "Trụ sở chỉ in hộp thư PO BOX, không phải địa chỉ nhà"
+    if agent and (not addr or _norm(agent[0]) != _norm(addr[0])):
+        candidates.append({"role": "agent", "label": "Registered Agent · Street Address", "street": agent[0], "city": agent[1],
+                           "state": agent[2], "zip": agent[3]})
     street, city, state, zipc = addr or ("", "", "", "")
-    note = f"Lấy từ: {source}" if source else None
+    why = "Phôi không có địa chỉ trụ sở doanh nghiệp — xem địa chỉ gợi ý, anh xác nhận"
+    note = f"Lấy từ: {source}" if addr else why
     fields = {
         "A": field(name, "text"),
         "D": field(phone, "text", None if phone else "Phôi không in số điện thoại trụ sở"),
         "F": field(us_style_address(street, city, state, zipc), "text", note),
-        "G": field(city, "text", note), "H": field(state, "text"), "I": field(zipc, "text"),
+        "G": field(city, "text", None if addr else why), "H": field(state, "text", None if addr else why),
+        "I": field(zipc, "text", None if addr else why),
         "J": field(ubi, "text", "UBI, bỏ khoảng trắng"),
     }
+    if addr:
+        for k in "FGHI":
+            fields[k]["role"] = role
+        if warning:
+            fields["F"]["warning"] = warning
     fields["E"] = field(short_name(name), "auto", "Tự sinh từ A")
     extra = {"form": _m(r"UBI #: [\d ]+ (.+?) (?:UBI NUMBER|BUSINESS INFORMATION|BUSINESS NAME)", s).title(),
-             "address_source": source, "email": _m(r"([\w.+-]+@[\w-]+\.[\w.]+)", s).lower(),
+             "address_source": source if addr else "", "address_candidates": candidates,
+             "email": _m(r"([\w.+-]+@[\w-]+\.[\w.]+)", s).lower(),
              "date_filed": _m(r"Date Filed: (\d{2}/\d{2}/\d{4})", s), "nature_of_business": _m(r"Nature of Business: (.+?) REGISTERED AGENT", s)}
     return fields, extra
 

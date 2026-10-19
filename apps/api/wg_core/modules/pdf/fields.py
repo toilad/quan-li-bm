@@ -44,11 +44,18 @@ def validate(fields: dict, doc_type: str) -> dict[str, dict]:
     issues: dict[str, dict] = {}
     val = lambda k: (fields.get(k) or {}).get("value", "").strip()  # noqa: E731
     for k in FIELD_KEYS:
+        f = fields.get(k) or {}
         if not val(k):
+            note = f.get("note") or ""
             if k in CRITICAL:
-                issues[k] = {"level": "error", "kind": "critical", "message": "Bắt buộc — không được để trống"}
+                issues[k] = {"level": "error", "kind": "critical", "message": f"Bắt buộc — {note or 'không được để trống'}"}
             elif k != "E":
-                issues[k] = {"level": "error", "kind": "missing", "message": "Trống — xác nhận để trống trước khi lưu"}
+                issues[k] = {"level": "error", "kind": "missing",
+                             "message": f"Trống — {note + ' · ' if note else ''}xác nhận để trống trước khi lưu"}
+        elif f.get("suspects"):  # a possible OCR misreading: never corrected silently, the owner decides
+            issues[k] = {"level": "warn", "kind": "review", "message": "Có thể đọc nhầm: " + f["suspects"][0]["message"]}
+        elif f.get("warning"):
+            issues[k] = {"level": "warn", "kind": "review", "message": f["warning"]}
     j, h, i, d = val("J"), val("H"), val("I"), val("D")
     if d:
         # a country code in front is fine: +55 (Brazil), +1 (US)

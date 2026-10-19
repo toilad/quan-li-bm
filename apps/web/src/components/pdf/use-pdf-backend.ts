@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { API_URL, ApiError, api, errorText, type Job } from "@/lib/api";
 import {
   INDUSTRIES, templateFor, type BrRaw, type DocType, type FieldKey, type Fields, type IndustryKey, type PdfFile, type PdfStatus,
-  type SHEET_TABS,
+  type SHEET_TABS, type AddressCandidate,
 } from "@/lib/pdf-mock";
 import { isCleanForBulk } from "./use-pdf-queue";
 
@@ -36,7 +36,9 @@ type Action =
   | { type: "saveAllValid" }
   | { type: "autoSave"; on: boolean }
   | { type: "tab"; tab: SheetTab }
-  | { type: "aiRead"; id: string };
+  | { type: "aiRead"; id: string }
+  | { type: "check"; id: string; key: FieldKey; on: boolean }
+  | { type: "useCandidate"; id: string; index: number };
 
 export type QueueDispatch = (a: Action) => void;
 
@@ -104,6 +106,12 @@ function toFile(d: Doc, job: Job | undefined, aiJob: Job | undefined, local: { c
     confirmMissing: local.confirm, criticalChecked: local.checked,
     blobUrl: `${API_URL}/api/pdf/${d.id}/file`,
     needsAi: d.status === "needs_ai", aiRunning: aiJob?.status === "queued" || aiJob?.status === "running",
+    candidates: (x as unknown as { address_candidates?: AddressCandidate[] }).address_candidates ?? [],
+    scan: {
+      form: x.form, version: x.version, versionVerified: (x as unknown as { version_verified?: boolean }).version_verified,
+      pagesRead: Number(x.pages_read) || undefined, filedDate: x.filed_date || x.date_filed, formationState: x.formation_state,
+      formationDate: x.formation_date, warning: x.warning, note: x.note, addressSource: x.address_source,
+    },
   } as PdfFile;
 }
 
@@ -202,8 +210,14 @@ export function usePdfBackend(onMessage: (msg: string) => void) {
       case "remove":
         // Hidden from this list only — nothing is deleted from the database, Drive or the Sheet.
         return setHidden((h) => new Set(h).add(a.id));
+      case "check": {
+        setDocs((ds) => ds.map((d) => (String(d.id) === a.id ? { ...d, fields: { ...d.fields, [a.key]: { ...(d.fields as Fields)[a.key], checked: a.on } } as Fields } : d)));
+        return void call(() => api.patch(`/api/pdf/${a.id}`, { checked: { [a.key]: a.on } }));
+      }
+      case "useCandidate":
+        return void call(() => api.patch(`/api/pdf/${a.id}`, { use_candidate: a.index }), "Đã dùng địa chỉ gợi ý cho F–I (anh đã chọn)");
       case "edit": {
-        setDocs((ds) => ds.map((d) => (String(d.id) === a.id ? { ...d, fields: { ...d.fields, [a.key]: { value: a.value, source: a.value ? "manual" : "missing" } } as Fields } : d)));
+        setDocs((ds) => ds.map((d) => (String(d.id) === a.id ? { ...d, fields: { ...d.fields, [a.key]: { ...(d.fields as Fields)[a.key], value: a.value, source: a.value ? "manual" : "missing", checked: !!a.value, suspects: undefined } } as Fields } : d)));
         clearTimeout(editTimers.current[a.id + a.key]);
         editTimers.current[a.id + a.key] = setTimeout(() => call(() => api.patch(`/api/pdf/${a.id}`, { fields: { [a.key]: a.value } })), 500);
         return;

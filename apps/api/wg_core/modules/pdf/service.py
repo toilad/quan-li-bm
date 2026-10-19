@@ -18,7 +18,7 @@ from ...integrations.google import Drive, Sheets, hyperlink_formula
 from ...jobs import JobContext, enqueue, handler
 from ...models import PdfDocument, SheetWrite
 from ..websites.templates import detect as detect_template, template_for_cnae
-from .extract import detect, extract_text_layer, fields_from_ai, read_pdf
+from .extract import detect, extract_text_layer, fields_from_ai, locate, read_pdf
 from .fields import FIELD_KEYS, blocking, field, short_name, validate
 
 
@@ -67,6 +67,7 @@ def extract_into(doc: PdfDocument, data: bytes, forced_type: str | None = None):
     read = extract_text_layer(t, doc.doc_type) if doc.has_text else None
     if read:
         doc.fields, doc.extra = read
+        locate(data, doc.fields)  # page + region of every value, shown next to the cell
         doc.status = "review"
     elif not doc.has_text and doc.doc_type in ("ca", "wy", "wa", "br", "unknown"):
         # Scan without a text layer: the AI job identifies the form (unless picked by hand) and reads it.
@@ -84,21 +85,24 @@ def request_scan_read(s: Session, doc: PdfDocument):
 def _ocr_read(ctx: JobContext):
     """Scanned page → RapidOCR on this machine (free, nothing sent out) → the boxes of a known form. A form the reader
     does not know goes to the AI when a key is set; otherwise the owner picks the type or types the cells."""
-    from .ocr import extract_ca_scan, ocr_pages
+    from .ocr import extract_ca_scan, ocr_document
 
     doc = ctx.session.get(PdfDocument, ctx.job.payload["doc_id"])
     ctx.step("OCR bản scan (miễn phí, trên máy)")
-    pages = ocr_pages(storage_path(doc.md5).read_bytes())
-    got = extract_ca_scan(pages)
+    data = storage_path(doc.md5).read_bytes()
+    pages = ocr_document(data)  # every page, turned upright
+    got = extract_ca_scan(pages, data)
     manual = doc.detection_reason == "Chọn thủ công"
     if got and (not manual or doc.doc_type == "ca"):
         doc.fields, doc.extra = got
         doc.doc_type, doc.status, doc.error = "ca", "review", None
         if not manual:
             doc.detection_confidence = 0.9
-            doc.detection_reason = f"OCR: mẫu {doc.extra['form']} · State of California · Secretary of State"
+            doc.detection_reason = (f"OCR: mẫu {doc.extra['version']} · State of California · Secretary of State"
+                                    + ("" if doc.extra.get("version_verified") else " · phiên bản chưa kiểm chứng"))
         doc.industry = industry_for(doc)
-        ctx.log(f"OCR đọc xong mẫu {doc.extra['form']} — mọi ô đọc bằng OCR cần anh đối chiếu với phôi trước khi lưu", "ok")
+        ctx.log(f"OCR đọc xong {doc.extra['version']} ({doc.extra['pages_read']} trang) — mọi ô đọc bằng OCR cần anh đánh dấu "
+                f"đã kiểm tra trước khi lưu", "ok")
         return
     if cfg("ANTHROPIC_API_KEY"):
         request_ai_read(ctx.session, doc)
@@ -144,6 +148,12 @@ def save_check(doc: PdfDocument, confirm_missing: bool, critical_checked: bool) 
         reasons.append(f"{k}: {v['message']}")
     if any((doc.fields.get(k) or {}).get("source") == "ai" for k in ("A", "J")) and not critical_checked:
         reasons.append("A/J do AI đọc từ bản scan — cần tick “đã đối chiếu”")
+    # Owner's rule (2026-10-19): nothing read from an image goes to Drive / the Sheet before the owner checked it
+    # against the page — a cell read by OCR or AI must be ticked "đã kiểm tra" (or typed by hand).
+    unchecked = [k for k, f in doc.fields.items() if isinstance(f, dict) and f.get("value") and f.get("source") in ("ocr", "ai")
+                 and not f.get("checked")]
+    if unchecked:
+        reasons.append(f"Ô {', '.join(sorted(unchecked))} đọc từ ảnh scan — anh đánh dấu “đã kiểm tra” từng ô trước khi lưu")
     return reasons
 
 

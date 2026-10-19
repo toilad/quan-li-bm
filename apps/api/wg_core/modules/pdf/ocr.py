@@ -1,18 +1,26 @@
-"""Scanned filings without a text layer, read for free on this machine: RapidOCR (Apache-2.0, ONNX models shipped
-inside the package, nothing leaves the computer). Checked on the owner's first 8 California scans (2026-10-19):
-LLC-1 (REV 03/2005, 04/2007) and LLC-5 (foreign LLC registration, REV 04/2007).
+"""Scanned filings without a text layer, read on this machine (RapidOCR, Apache-2.0, ONNX models inside the package —
+nothing is sent to any outside service).
 
-Every value is read from a known box of the printed form, never guessed; each field keeps the OCR confidence and is
-marked source "ocr" so the owner checks it against the page before saving.
+The reading process (owner's rules, 2026-10-19):
+1. every page is rendered and OCR'd; a page lying sideways or upside down is turned until the text reads best;
+2. the form, its state and its printed version are identified BEFORE any box is read; each version has its own reader,
+   anchored on the printed labels of that version (no fixed positions shared between versions of the same name);
+3. every value keeps its page and region (shown to the owner next to the cell), its confidence and its source;
+4. important cells are read a second time from a zoomed crop; a different second reading, a character pair OCR often
+   confuses (rn/m, nu/tu, 0/O…) or odd punctuation is flagged for checking — never silently corrected;
+5. addresses carry their role on the form. Only the company's own principal office / mailing address fills F–I; a
+   registered agent's or "Return to" address is offered as a suggestion for the owner to confirm, never used by itself.
 """
 import io
+import unicodedata
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dfield
 
 from .fields import field, short_name
 
 DPI = 300  # at 200 dpi the words of the LLC-5 run together ("HOMEAMERICAHOLDINGS"); ~15 s per page on this PC
-MAX_PAGES = 4
+ZOOM_DPI = 450  # second reading of a single cell
+MAX_PAGES = 15
 _engine = None
 
 
@@ -24,10 +32,29 @@ class Box:
     y2: float
     text: str
     conf: float
+    page: int = 0
 
     @property
     def key(self) -> str:
         return re.sub(r"[^A-Z0-9]", "", self.text.upper())
+
+
+@dataclass
+class Page:
+    index: int
+    boxes: list[Box]
+    w: float
+    h: float
+    rotation: int = 0  # degrees the rendered page was turned (counter-clockwise) to read upright
+    words: str = dfield(default="")
+
+    def region(self, boxes: list[Box]) -> dict | None:
+        """Normalised box (0–1) around these boxes on this page, as used by the crop shown to the owner."""
+        if not boxes:
+            return None
+        return {"page": self.index + 1, "rotation": self.rotation,
+                "box": [round(min(b.x for b in boxes) / self.w, 4), round(min(b.y for b in boxes) / self.h, 4),
+                        round(max(b.x2 for b in boxes) / self.w, 4), round(max(b.y2 for b in boxes) / self.h, 4)]}
 
 
 def _ocr():
@@ -39,28 +66,222 @@ def _ocr():
     return _engine
 
 
-def ocr_pages(data: bytes, max_pages: int = MAX_PAGES) -> list[list[Box]]:
+def _read_image(img, page: int) -> list[Box]:
     import numpy as np
+
+    res, _ = _ocr()(np.array(img))
+    out = []
+    for quad, text, conf in res or []:
+        xs, ys = [p[0] for p in quad], [p[1] for p in quad]
+        text = unicodedata.normalize("NFKC", text).strip()  # full-width "，" "：" from the CJK-trained model → , :
+        if text:
+            out.append(Box(min(xs), min(ys), max(xs), max(ys), text, float(conf), page))
+    return sorted(out, key=lambda b: (b.y, b.x))
+
+
+ITEM = re.compile(r"^(\d)(NAME|ADDRESS|IFAN|IFIN|THE|THIS|IDECLARE|ADDITIONAL|INTHE|PURPOSE)")
+TOP_WORDS = ("STATEOFCALIFORNIA", "SECRETARYOFSTATE", "ENTITYNAME", "LIMITEDLIABILITYCOMPANY", "FILEDSECRETARYOFSTATE")
+FOOT_WORDS = ("APPROVEDBYSECRETARYOFSTATE", "EXECUTION", "TYPEORPRINTNAME", "SIGNATUREOF", "THISDOCUMENTISAPUBLICRECORD")
+
+
+def _items_upside_down(boxes: list[Box]) -> bool:
+    """The numbered items of a form (1. NAME…, 2. …, 3. …) run from top to bottom. The text-line classifier turns
+    each line of an upside-down page right way up, so the words read well — but the items then run bottom to top."""
+    # what a form prints at its head must sit above what it prints at its foot
+    heads = [b.y for b in boxes if b.key.startswith(TOP_WORDS)]
+    feet = [b.y for b in boxes if b.key.startswith(FOOT_WORDS)]
+    if heads and feet:
+        return sorted(heads)[len(heads) // 2] > sorted(feet)[len(feet) // 2]
+    items = sorted((int(m.group(1)), b.y) for b in boxes if (m := ITEM.match(b.key)) and len(b.key) >= 12)
+    if len(items) < 3:
+        return False
+    pairs = [(a, b) for i, a in enumerate(items) for b in items[i + 1:] if a[0] != b[0]]
+    down = sum(1 for (n1, y1), (n2, y2) in pairs if (n2 > n1) == (y2 > y1))
+    return down < len(pairs) / 2
+
+
+def _score(boxes: list[Box]) -> float:
+    return sum(b.conf * len(b.text) for b in boxes if b.conf >= 0.6)
+
+
+def _upright(img, page: int) -> tuple[list[Box], int, object]:
+    """OCR the page; when the text looks sideways (tall boxes) or reads poorly, try the other three orientations."""
+    boxes = _read_image(img, page)
+    longish = [b for b in boxes if len(b.text) >= 4]
+    tall = sum(1 for b in longish if (b.y2 - b.y) > 1.3 * (b.x2 - b.x))
+    mean = sum(b.conf for b in longish) / len(longish) if longish else 0
+    # upright unless the text lies sideways (tall boxes) or reads as garbage (upside down): trying the other three
+    # orientations costs three more OCR passes, so only when there is a sign of it
+    if longish and tall <= len(longish) / 2 and mean >= 0.65 and len(longish) >= 5:
+        best = (boxes, 0, img)
+    else:
+        best = (boxes, 0, img)
+        for rot in (90, 270, 180):
+            turned = img.rotate(rot, expand=True)
+            cand = _read_image(turned, page)
+            if _score(cand) > _score(best[0]) * 1.15:
+                best = (cand, rot, turned)
+    if _items_upside_down(best[0]):
+        rot = (best[1] + 180) % 360
+        turned = img.rotate(rot, expand=True) if rot else img
+        best = (_read_image(turned, page), rot, turned)
+    return best
+
+
+def render(data: bytes, page: int, dpi: int, rotation: int = 0):
     import pdfplumber
 
-    pages = []
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        for page in pdf.pages[:max_pages]:
-            img = page.to_image(resolution=DPI).original.convert("RGB")
-            res, _ = _ocr()(np.array(img))
-            boxes = []
-            for quad, text, conf in res or []:
-                xs, ys = [p[0] for p in quad], [p[1] for p in quad]
-                if text.strip():
-                    boxes.append(Box(min(xs), min(ys), max(xs), max(ys), text.strip(), float(conf)))
-            pages.append(sorted(boxes, key=lambda b: (b.y, b.x)))
+        img = pdf.pages[page].to_image(resolution=dpi).original.convert("RGB")
+    return img.rotate(rotation, expand=True) if rotation else img
+
+
+def ocr_document(data: bytes, max_pages: int = MAX_PAGES) -> list[Page]:
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        n = min(len(pdf.pages), max_pages)
+    pages = []
+    for i in range(n):
+        img = render(data, i, DPI)
+        boxes, rot, used = _upright(img, i)
+        pages.append(Page(i, boxes, used.width, used.height, rot, " ".join(b.key for b in boxes)))
     return pages
 
 
-# ───────────────────────── California LLC-1 / LLC-5 ─────────────────────────
+def reread(data: bytes, region: dict, dpi: int = ZOOM_DPI) -> tuple[str, float]:
+    """Second, independent reading of one cell: its region cut out at a higher resolution and OCR'd on its own."""
+    import pdfplumber
+
+    x0, y0, x1, y1 = region["box"]
+    pad_x, pad_y = 0.01, 0.002
+    rot = region.get("rotation", 0)
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        page = pdf.pages[region["page"] - 1]
+        if rot:  # a turned page: render it whole, turn it, then cut
+            img = page.to_image(resolution=dpi).original.convert("RGB").rotate(rot, expand=True)
+            crop = img.crop((max(0, (x0 - pad_x) * img.width), max(0, (y0 - pad_y) * img.height),
+                             min(img.width, (x1 + pad_x) * img.width), min(img.height, (y1 + pad_y) * img.height)))
+            full_h = img.height
+        else:  # render only the cell
+            w, h = float(page.width), float(page.height)
+            bbox = (max(0, (x0 - pad_x) * w), max(0, (y0 - pad_y) * h), min(w, (x1 + pad_x) * w), min(h, (y1 + pad_y) * h))
+            crop = page.crop(bbox).to_image(resolution=dpi).original.convert("RGB")
+            full_h = h * dpi / 72
+    boxes = _read_image(crop, region["page"] - 1)
+    span_top, span_bot = pad_y * full_h, crop.height - pad_y * full_h
+    keep = [b for b in boxes if span_top <= (b.y + b.y2) / 2 <= span_bot]  # not the printed label just above/below
+    if not keep:
+        return "", 0.0
+    lines: list[list[Box]] = []
+    for b in sorted(keep, key=lambda b: (b.y + b.y2) / 2):
+        if lines and abs((lines[-1][0].y + lines[-1][0].y2) / 2 - (b.y + b.y2) / 2) < (b.y2 - b.y) * 0.6:
+            lines[-1].append(b)
+        else:
+            lines.append([b])
+    text = " ".join(" ".join(x.text for x in sorted(line, key=lambda b: b.x)) for line in lines)
+    # the box rules around a cell come out as lone "I", "1", "|" — not part of the value
+    text = " ".join(t for t in text.split() if t not in ("I", "1", "|", "l", "[", "]"))
+    return text.strip(), min(b.conf for b in keep)
+
+
+# ───────────────────────── suspicious readings ─────────────────────────
+# Character groups OCR is known to confuse on these scans (seen: "Westboume" for Westbourne, "Fixnure" for Fixture,
+# "B0x" for Box, "Group. LLC" for "Group, LLC"). A suspicion is shown to the owner with a suggestion; nothing is changed.
+
+CONFUSIONS = [("m", "rn"), ("rn", "m"), ("nu", "tu"), ("tu", "nu"), ("cl", "d"), ("d", "cl"), ("li", "h"), ("vv", "w"),
+              ("rn", "rm"), ("ii", "u")]
+# Common words / word endings of US street and company names: a variant that produces one of them, while the reading
+# itself does not, is suspicious.
+LEXICON = set("""street avenue boulevard road drive lane way court place circle parkway highway suite floor unit building
+terrace trail square plaza center centre north south east west holdings holding group house hotel hotels fixture fixtures
+films film studio studios media services service consulting partners capital properties property management investments
+development construction design international global america american pacific western eastern northern southern
+mountain valley ocean bay river lake park garden gardens company corporation limited liability enterprises industries
+solutions systems technologies technology products supply trading imports exports foods restaurant market markets realty
+estate estates homes home health medical dental care clinic beauty salon auto motors transport logistics energy
+""".split())
+ENDINGS = ("bourne", "bourn", "burne", "borne", "ture", "tures", "stern", "thorn", "horne", "burn", "corner", "turner",
+           "ourne", "ment", "tion", "ston", "field", "wood", "land", "ford", "ville", "ridge", "brook", "burg")
+
+
+def _confusion(tok: str, low: str) -> dict | None:
+    """One swap of a confusable group that turns the word into a common word / word ending."""
+    for a, b in CONFUSIONS:
+        i = low.find(a)
+        while i >= 0:
+            variant = low[:i] + b + low[i + len(a):]
+            if variant in LEXICON or (variant.endswith(ENDINGS) and not low.endswith(ENDINGS)):
+                fixed = tok[:i] + (b.upper() if tok[i:i + len(a)].isupper() else b) + tok[i + len(a):]
+                return {"message": f"“{tok}”: OCR hay nhầm “{a}” với “{b}” — có thể là “{fixed}”", "suggestion": fixed}
+            i = low.find(a, i + 1)
+    return None
+
+
+def suspects(text: str) -> list[dict]:
+    out = []
+    for tok in re.findall(r"[A-Za-z0-9.]+", text):
+        low = tok.lower().strip(".")
+        # a zero among letters / a letter O among digits ("B0x", "P.0.", "2O10")
+        whole = lambda fixed: text.replace(tok, fixed, 1)  # noqa: E731  — a suggestion is always the whole cell
+        if re.search(r"[a-z]0|0[a-z]|^p\.?0\.?$", low) and not re.fullmatch(r"\d+(st|nd|rd|th)", low):
+            out.append({"message": f"“{tok}”: số 0 giữa chữ cái — có thể là chữ O", "suggestion": whole(tok.replace("0", "O"))})
+            continue
+        if re.search(r"\d[oO]\d|\d[oO]$|^[oO]\d", tok) and re.search(r"\d", tok):
+            out.append({"message": f"“{tok}”: chữ O giữa chữ số — có thể là số 0", "suggestion": whole(re.sub(r"[oO]", "0", tok))})
+            continue
+        if not tok.isalpha() or len(low) < 4 or low in LEXICON:
+            continue
+        hit = _confusion(tok, low)
+        if hit:
+            out.append({**hit, "suggestion": whole(hit["suggestion"])})
+    for m in re.finditer(r"\b([NSEW])\.(\d)", text):
+        out.append({"message": f"“{m.group(0)}”: có thể thiếu khoảng trắng sau “{m.group(1)}.”",
+                    "suggestion": text[:m.start()] + f"{m.group(1)}. {m.group(2)}" + text[m.end():]})
+    if re.search(r"\w\.\s+(LLC|L\.L\.C|INC|LTD)\b", text, re.I):
+        out.append({"message": "Dấu chấm ngay trước hậu tố (LLC/Inc.) — có thể là dấu phẩy",
+                    "suggestion": re.sub(r"(\w)\.(\s+(?:LLC|L\.L\.C|INC|LTD)\b)", r"\1,\2", text, flags=re.I)})
+    return out
+
+
+def _same(a: str, b: str) -> bool:
+    return re.sub(r"[^A-Za-z0-9]", "", a).lower() == re.sub(r"[^A-Za-z0-9]", "", b).lower()
+
+
+def _plausible(a: str, b: str) -> bool:
+    """A second reading worth comparing: close to the first (a crop that caught the label below is not)."""
+    from difflib import SequenceMatcher
+
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= 0.7
+
+
+def _respace(orig: str, other: str) -> str:
+    """orig's own characters and punctuation, with a space wherever `other` (same letters and digits) has one —
+    "1000 EastWilliamStreet Suite204" + "1000 East William Street Suite 204"."""
+    gaps, n = set(), 0
+    for ch in other:
+        if ch.isalnum():
+            n += 1
+        elif ch.isspace():
+            gaps.add(n)
+    out, n = [], 0
+    for ch in orig:
+        if ch.isalnum():
+            if n in gaps and out and out[-1] != " ":
+                out.append(" ")
+            n += 1
+        out.append(ch)
+    return "".join(out)
+
+
+# ───────────────────────── California ─────────────────────────
 
 SECTIONS = ("MANAGEMENT", "APPOINTMENT", "OFFICEADDRESSES", "ADDITIONALINFORMATION", "EXECUTION", "PURPOSE", "RETURNTO")
-PO_BOX = re.compile(r"^P\.?\s*O\.?\s*BOX\b", re.I)
+PO_BOX = re.compile(r"^P\.?\s*[O0]\.?\s*B[O0]X\b", re.I)
+US_STATE_NAMES = {"CALIFORNIA": "CA", "NEVADA": "NV", "DELAWARE": "DE", "WASHINGTON": "WA", "OREGON": "OR", "ARIZONA": "AZ",
+                  "TEXAS": "TX", "NEW YORK": "NY", "FLORIDA": "FL", "WYOMING": "WY"}
+# Versions whose layout was checked on real scans; anything else is read by its labels but flagged.
+VERIFIED = {"LLC-1 REV 03/2005", "LLC-1 REV 04/2007", "LLC-5 REV 04/2007", "LLC-1 REV 01/2013"}
 
 
 def _s() -> float:
@@ -68,15 +289,29 @@ def _s() -> float:
     return DPI / 200
 
 
-def ca_form(pages: list[list[Box]]) -> str | None:
-    keys = " ".join(b.key for b in (pages[0] if pages else []))
+def identify(pages: list[Page]) -> dict | None:
+    """State, form and printed version, from the words on the page (before any cell is read)."""
+    if not pages:
+        return None
+    p1 = pages[0]
+    keys = p1.words
     if "CALIFORNIA" not in keys or "SECRETARYOFSTATE" not in keys:
         return None
-    if "APPLICATIONFORREGISTRATION" in keys or "LLC5" in keys:
-        return "LLC-5"
-    if "ARTICLESOFORGANIZATION" in keys or "LLC1" in keys:
-        return "LLC-1"
-    return None
+    rev = None
+    for b in p1.boxes:
+        m = re.search(r"LLC-?\s*([15])\s*[(\[]?\s*REV\.?\s*([0-9OG]{1,2})\s*/\s*(\d{4})", b.text, re.I)
+        if m:
+            rev = f"REV {m.group(2).upper().replace('O', '0').replace('G', '0').zfill(2)}/{m.group(3)}"
+    if "PROPOSEDLLCNAME" in keys or "INITIALSTREETADDRESSOFLLC" in keys:
+        form, layout = "LLC-1", "2013+"
+    elif "APPLICATIONFORREGISTRATION" in keys or "LLC5" in keys:
+        form, layout = "LLC-5", "2007"
+    elif "ARTICLESOFORGANIZATION" in keys or "LLC1" in keys:
+        form, layout = "LLC-1", "2007"
+    else:
+        return None
+    version = f"{form} {rev}" if rev else f"{form} {layout}"
+    return {"state": "CA", "form": form, "layout": layout, "version": version, "verified": version in VERIFIED}
 
 
 def _label(boxes: list[Box], *keys: str) -> Box | None:
@@ -87,88 +322,22 @@ def _same_line(boxes: list[Box], ref: Box, *keys: str) -> Box | None:
     return next((b for b in boxes if abs(b.y - ref.y) < 18 * _s() and any(b.key.startswith(k) for k in keys)), None)
 
 
+HEADERS = ("CITY", "STATE", "ZIPCODE", "ZIP")
+
+
+def _is_label(b: Box) -> bool:
+    """A printed item label ("8 ADDRESS OF THE PRINCIPAL OFFICE…", "5.IF AN INDIVIDUAL…") or a column header."""
+    # "35 Corte Madera Avenue" also starts with digits + letters: an item label is long and starts with label words
+    item = re.match(r"^\d{1,2}(NAME|ADDRESS|IFAN|IFIN|THE|THIS|IDECLARE|ADDITIONAL|INTHE|PURPOSE)", b.key) and len(b.key) >= 15
+    return bool(item) or b.key in HEADERS or b.key.startswith(("CITYANDSTATE", "ZIPCODE")) or b.key.startswith(SECTIONS)
+
+
 def _below(boxes: list[Box], label: Box, depth: float = 75) -> list[Box]:
-    """Values typed under a label line: boxes starting below it, above the next printed line, not section titles."""
-    return [b for b in boxes if label.y2 - 4 < b.y < label.y2 + depth * _s() and b is not label
-            and not b.key.startswith(SECTIONS)]
-
-
-def _file_number(boxes: list[Box], top: bool = True) -> tuple[str, float]:
-    """The 12-digit filing number stamped at the top right (or at the bottom of attachment pages)."""
-    cands = [b for b in boxes if 11 <= len(re.sub(r"\D", "", b.text)) <= 13]
-    if not cands:
-        return "", 0.0
-    b = min(cands, key=lambda c: c.y) if top else max(cands, key=lambda c: c.y)
-    return re.sub(r"\D", "", b.text), b.conf
-
-
-def _split_city_state(text: str) -> tuple[str, str]:
-    m = re.match(r"^(.*?)[,\s]+([A-Z]{2})[.,!]*$", text.strip())
-    return (m.group(1).strip(" ,"), m.group(2)) if m else (text.strip(" ,.!"), "")
-
-
-def _address_row(boxes: list[Box], head: Box) -> dict | None:
-    """Item 4 (LLC-1) / items 5, 7 (LLC-5): street on the left, then the CITY / STATE / ZIP CODE columns of the header."""
-    city_h = _same_line(boxes, head, "CITY")
-    state_h = _same_line(boxes, head, "STATE")
-    zip_h = _same_line(boxes, head, "ZIPCODE", "ZIP")
-    vals = _below(boxes, head)
-    if not vals:
-        return None
-    page_w = max(b.x2 for b in boxes)
-    city_x = city_h.x - 90 * _s() if city_h else page_w * 0.55  # the CITY header itself is sometimes not read
-    out = {"street": [], "city": [], "state": [], "zip": []}
-    for b in sorted(vals, key=lambda v: v.x):
-        if zip_h and b.x >= zip_h.x - 40 * _s():
-            out["zip"].append(b)
-        elif state_h and b.x >= state_h.x - 40 * _s() and city_h and not city_h.key.startswith("CITYANDSTATE"):
-            out["state"].append(b)
-        elif b.x >= city_x:
-            out["city"].append(b)
-        else:
-            out["street"].append(b)
-    txt = {k: " ".join(b.text for b in v).strip() for k, v in out.items()}
-    confs = [b.conf for v in out.values() for b in v]
-    street, city, state, zipc = txt["street"], txt["city"], txt["state"], txt["zip"]
-    if city and not state:
-        city, state = _split_city_state(city)
-    if not city and "," in street:  # "2340 W 230th Street , Torrance": the city typed in the street box
-        street, city = (p.strip() for p in street.rsplit(",", 1))
-    if not street.strip(" ,"):
-        return None  # left blank on the form (e.g. the agent is a corporation)
-    return {"street": street.strip(" ,"), "city": city.strip(" ,.!"), "state": re.sub(r"[^A-Z]", "", state.upper()),
-            "zip": re.sub(r"[^\d-]", "", zipc), "conf": min(confs) if confs else 0.0}
-
-
-def _return_to(boxes: list[Box]) -> dict | None:
-    """LLC-1 item 8 "RETURN TO": ADDRESS … / CITY/STATE/ZIP … (used when item 4 is blank: the agent is a company)."""
-    addr_l = next((b for b in boxes if b.key == "ADDRESS"), None)
-    csz_l = next((b for b in boxes if b.key.startswith("CITYSTATEZIP")), None)
-    if not addr_l or not csz_l:
-        return None
-    right = lambda lab: [b for b in boxes if abs(b.y - lab.y) < 18 * _s() and b.x > lab.x2]  # noqa: E731
-    sb, cb = right(addr_l), right(csz_l)
-    street = " ".join(b.text for b in sb).strip(" [|]")
-    glued = re.split(r"ZIP", csz_l.text, maxsplit=1, flags=re.I)[-1] if re.search(r"\d", csz_l.text) else ""  # label + value read as one
-    csz = (glued + " " + " ".join(b.text for b in cb)).strip(" [|]L")
-    cb = cb or [csz_l]
-    m = re.match(r"^\W*(.*?),?\s+([A-Z]{2})\.?\s+(\d{5}(?:-\d{4})?)\W*$", csz.strip())
-    if not street or not m:
-        return None
-    return {"street": street, "city": m.group(1).strip(" ,"), "state": m.group(2), "zip": m.group(3),
-            "conf": min(b.conf for b in sb + cb)}
-
-
-def tidy(text: str) -> str:
-    """OCR slips seen on the owner's scans that have only one reading: "Group. LLC" → "Group, LLC" (a period never
-    precedes the suffix), "P.O. B0x" → "P.O. Box", "E.17TH" → "E. 17TH"."""
-    text = re.sub(r"\.\s+(LLC|L\.L\.C\.?|INC\.?|LTD\.?)(\W*)$", r", \1\2", text, flags=re.I)
-    text = re.sub(r"\b(P\.?\s*O\.?\s*)B0X\b", lambda m: m.group(1) + ("BOX" if m.group(0).isupper() else "Box"), text, flags=re.I)
-    return re.sub(r"\b([NSEW])\.(\d)", r"\1. \2", text)
-
-
-US_STATE_NAMES = {"CALIFORNIA": "CA", "NEVADA": "NV", "DELAWARE": "DE", "WASHINGTON": "WA", "OREGON": "OR", "ARIZONA": "AZ",
-                  "TEXAS": "TX", "NEW YORK": "NY", "FLORIDA": "FL", "WYOMING": "WY"}
+    """Values typed under a label line: below it, above the next printed label (never into the next item)."""
+    stop = min((b.y for b in boxes if b.y > label.y2 - 4 and b is not label and _is_label(b)
+                and abs(b.y - label.y) > 18 * _s()), default=label.y2 + depth * _s())
+    end = min(stop, label.y2 + depth * _s())
+    return [b for b in boxes if label.y2 - 4 < b.y < end and b is not label and not _is_label(b)]
 
 
 def _above(boxes: list[Box], label: Box, height: float = 70) -> list[Box]:
@@ -176,98 +345,352 @@ def _above(boxes: list[Box], label: Box, height: float = 70) -> list[Box]:
     return [b for b in boxes if label.y - height * _s() < b.y < label.y - 4 and b.conf >= 0.8]
 
 
+def _file_number(boxes: list[Box], top: bool = True) -> Box | None:
+    """The 12-digit filing number stamped at the top right (or at the bottom of attachment pages)."""
+    cands = [b for b in boxes if 11 <= len(re.sub(r"\D", "", b.text)) <= 13 and not re.search(r"[/:]", b.text)]
+    if not cands:
+        return None
+    return min(cands, key=lambda c: c.y) if top else max(cands, key=lambda c: c.y)
+
+
+def _split_city_state(text: str) -> tuple[str, str]:
+    m = re.match(r"^(.*?)[,\s]+([A-Z]{2})[.,!]*$", text.strip())
+    return (m.group(1).strip(" ,"), m.group(2)) if m else (text.strip(" ,.!"), "")
+
+
 def _city_state_zip(text: str) -> tuple[str, str, str]:
-    """"Vernon, California 90058" / "LOS ANGELES CA 90001" → (city, ST, zip)."""
     m = re.match(r"^\W*(.*?)[,\s]+([A-Za-z .]+?)\.?,?\s+(\d{5}(?:-\d{4})?)\W*$", text.strip())
     if not m:
         return text.strip(), "", ""
     city, state, zipc = m.group(1).strip(" ,"), m.group(2).strip(" .").upper(), m.group(3)
-    if state not in US_STATE_NAMES.values():
-        # "Vernon, California" → state name; "Los Angeles CA" lands whole in the city part when the comma is missing
-        state = US_STATE_NAMES.get(state, state)
-    return city, state, zipc
+    return city, US_STATE_NAMES.get(state, state), zipc
 
 
-def _llc1_2013(p1: list[Box]) -> tuple[Box | None, dict | None, str]:
-    """LLC-1 (REV 2013 and later): ① LLC Name over "Proposed LLC Name"; ③a street + city/state/zip over
-    "Initial Street Address of LLC"."""
-    name_l = _label(p1, "PROPOSEDLLCNAME")
-    name_b = next((b for b in reversed(_above(p1, name_l)) if b.x < name_l.x + 600 * _s()), None) if name_l else None
-    street_l = _label(p1, "INITIALSTREETADDRESSOFLLC")
-    if not street_l:
-        return name_b, None, ""
-    vals = _above(p1, street_l)
-    page_w = max(b.x2 for b in p1)
-    left = [b for b in vals if b.x < page_w * 0.55]
-    right = [b for b in vals if b.x >= page_w * 0.55]
-    street = re.sub(r"^\W*(?:[③3]\s*)?a\.\s*", "", " ".join(b.text for b in left)).strip()
-    city, state, zipc = _city_state_zip(" ".join(b.text for b in right))
-    if not street:
-        return name_b, None, ""
-    addr = {"street": street, "city": city, "state": state, "zip": zipc, "conf": min(b.conf for b in vals)}
-    return name_b, addr, "Mục 3a — Initial Street Address of LLC"
+@dataclass
+class Addr:
+    role: str  # principal | mailing | agent | return_to
+    label: str  # where on the form, for the owner
+    street: str
+    city: str
+    state: str
+    zip: str
+    boxes: dict  # part → [Box]
+    conf: float
 
 
-def extract_ca_scan(pages: list[list[Box]]) -> tuple[dict, dict] | None:
-    form = ca_form(pages)
+def _address_row(p: Page, head: Box, role: str, label: str) -> Addr | None:
+    """A row under the CITY / STATE / ZIP CODE headers: street on the left, then the columns of the header line."""
+    boxes = p.boxes
+    city_h = _same_line(boxes, head, "CITY")
+    state_h = _same_line(boxes, head, "STATE")
+    zip_h = _same_line(boxes, head, "ZIPCODE", "ZIP")
+    vals = _below(boxes, head)
+    if not vals:
+        return None
+    city_x = city_h.x - 90 * _s() if city_h else p.w * 0.55  # the CITY header itself is sometimes not read
+    parts: dict[str, list[Box]] = {"street": [], "city": [], "state": [], "zip": []}
+    for b in sorted(vals, key=lambda v: v.x):
+        if zip_h and b.x >= zip_h.x - 40 * _s():
+            parts["zip"].append(b)
+        elif state_h and b.x >= state_h.x - 40 * _s() and city_h and not city_h.key.startswith("CITYANDSTATE"):
+            parts["state"].append(b)
+        elif b.x >= city_x:
+            parts["city"].append(b)
+        else:
+            parts["street"].append(b)
+    txt = {k: " ".join(b.text for b in v).strip() for k, v in parts.items()}
+    street, city, state, zipc = txt["street"], txt["city"], txt["state"], txt["zip"]
+    # "Washington," | "DC 20005" or "Carson City, NV 89701" in one box: read city + state + ZIP together, from the right
+    tail = re.sub(r"[!|]", "", " ".join(x for x in (city, state, zipc) if x)).strip()
+    m = re.match(r"^(.*?)[,.\s]+([A-Za-z]{2})[.,]?\s+(\d{5}(?:-\d{4})?)$", tail)
+    if m and m.group(1).strip(" ,."):
+        city, state, zipc = m.group(1).strip(" ,."), m.group(2).upper(), m.group(3)
+        parts["state"] = parts["state"] or parts["zip"] or parts["city"]
+    elif re.fullmatch(r"[A-Z]{2}", city) and not state:  # the STATE header not read: "CA" landed in the city column
+        city, state = "", city
+    elif city and not state:
+        city, state = _split_city_state(city)
+    if not city and "," in street:  # "2340 W 230th Street , Torrance": the city typed in the street box
+        street, city = (x.strip() for x in street.rsplit(",", 1))
+        parts["city"] = parts["street"]
+    if not street.strip(" ,"):
+        return None  # left blank on the form (e.g. the agent is a corporation)
+    confs = [b.conf for v in parts.values() for b in v]
+    return Addr(role, label, street.strip(" ,"), city.strip(" ,.!"), re.sub(r"[^A-Z]", "", state.upper()),
+                re.sub(r"[^\d-]", "", zipc), parts, min(confs) if confs else 0.0)
+
+
+def _return_to(p: Page) -> tuple[Addr | None, str]:
+    """LLC-1 item 8 "RETURN TO": FIRM … / ADDRESS … / CITY/STATE/ZIP …"""
+    boxes = p.boxes
+    addr_l = next((b for b in boxes if b.key == "ADDRESS"), None)
+    csz_l = next((b for b in boxes if b.key.startswith("CITYSTATEZIP")), None)
+    firm_l = next((b for b in boxes if b.key == "FIRM"), None)
+    if not addr_l or not csz_l:
+        return None, ""
+    right = lambda lab: [b for b in boxes if abs(b.y - lab.y) < 18 * _s() and b.x > lab.x2]  # noqa: E731
+    sb, cb = right(addr_l), right(csz_l)
+    street = " ".join(b.text for b in sb).strip(" [|]")
+    glued = re.split(r"ZIP", csz_l.text, maxsplit=1, flags=re.I)[-1] if re.search(r"\d", csz_l.text) else ""
+    csz = (glued + " " + " ".join(b.text for b in cb)).strip(" [|]L")
+    m = re.match(r"^\W*(.*?),?\s+([A-Z]{2})\.?\s+(\d{5}(?:-\d{4})?)\W*$", csz.strip())
+    if not street or not m:
+        return None, ""
+    firm = " ".join(b.text for b in right(firm_l)).strip(" [|]") if firm_l else ""
+    cb = cb or [csz_l]
+    return Addr("return_to", "Mục 8 — Return to", street, m.group(1).strip(" ,"), m.group(2), m.group(3),
+                {"street": sb, "city": cb, "state": cb, "zip": cb}, min(b.conf for b in sb + cb)), firm
+
+
+def _name_old(p: Page) -> Box | None:
+    """Item 1: the typed line between the ENTITY NAME instructions and the next item (the printed label "1. NAME OF …"
+    is sometimes not read)."""
+    end = _label(p.boxes, "2NAMEOFTHEFOREIGN", "PURPOSE")
+    tops = [b for b in p.boxes if end and b.y < end.y and b.key.startswith(
+        ("ENTITYNAME", "1NAME", "NAMEOFLIMITED", "NAMEUNDERWHICH", "THISSPACEFORFILING"))]
+    top = max(tops, key=lambda b: b.y) if tops else None
+    cands = [b for b in p.boxes if top and end and top.y2 < b.y < end.y and b.conf >= 0.8
+             and not re.search(r"NAMEOF|NAMEUNDER|ABBREVIAT|RESPECTIVELY|PROPOSESTOREGISTER", b.key)]
+    return cands[-1] if cands else None
+
+
+def _read_ca(pages: list[Page], form: dict) -> tuple[Box | None, Box | None, list[Addr], str]:
+    """(name box, file-number box, addresses found with their role, note on the form)"""
+    p1 = pages[0]
+    number = _file_number(p1.boxes)
+    addrs: list[Addr] = []
+    note = ""
+    if form["layout"] == "2013+":
+        name_l = _label(p1.boxes, "PROPOSEDLLCNAME")
+        name = next((b for b in reversed(_above(p1.boxes, name_l)) if b.x < name_l.x + 600 * _s()), None) if name_l else None
+        for key, role, label in (("INITIALSTREETADDRESSOFLLC", "principal", "Mục 3a — Initial Street Address of LLC"),
+                                 ("INITIALMAILINGADDRESS", "mailing", "Mục 3b — Initial Mailing Address of LLC"),
+                                 ("AGENTSSTREETADDRESS", "agent", "Mục 5b — địa chỉ registered agent")):
+            lab = _label(p1.boxes, key)
+            if not lab:
+                continue
+            vals = _above(p1.boxes, lab)
+            left = [b for b in vals if b.x < p1.w * 0.55]
+            right = [b for b in vals if b.x >= p1.w * 0.55]
+            street = re.sub(r"^\W*(?:[③3-5]\s*)?[ab]\.\s*", "", " ".join(b.text for b in left)).strip()
+            street = re.sub(r"\s+[ab]\.$", "", street)  # the item letter of the next line read on this one
+            city, state, zipc = _city_state_zip(" ".join(b.text for b in right))
+            if (not city or re.fullmatch(r"[A-Z]{2}", city)) and "," in street:  # "5051 Santa Fe, Vernon" | "CA 90058"
+                street, city = (x.strip() for x in street.rsplit(",", 1))
+                if not state and right:
+                    m = re.match(r"^([A-Z]{2})\s+(\d{5}(?:-\d{4})?)", " ".join(b.text for b in right))
+                    state, zipc = (m.group(1), m.group(2)) if m else (state, zipc)
+            if street and not (role == "agent" and street.lower().startswith("b.")):
+                addrs.append(Addr(role, label, street, city, state, zipc,
+                                  {"street": left, "city": right, "state": right, "zip": right}, min(b.conf for b in vals)))
+        return name, number, addrs, note
+    name = _name_old(p1)
+    heads = [b for b in p1.boxes if b.key.startswith("ZIPCODE") or b.key == "ZIP"]
+    if form["form"] == "LLC-5":
+        for h in heads:
+            if _same_line(p1.boxes, h, "CITYANDSTATE"):
+                a = _address_row(p1, h, "principal", "Mục 7 — Address of the principal executive office")
+            elif _label([b for b in p1.boxes if abs(b.y - h.y) < 18 * _s()], "PRINCIPALOFFICEINCALIFORNIA", "OFFICEINCALIFORNIA"):
+                # a second company address; item 7 stays the one used (owner: never mix items 7 and 8)
+                a = _address_row(p1, h, "principal_ca", "Mục 8 — principal office in California")
+            else:
+                a = _address_row(p1, h, "agent", "Mục 5 — địa chỉ registered agent")
+            if a and not re.match(r"see above", a.street, re.I):
+                addrs.append(a)
+    else:
+        if heads:
+            a = _address_row(p1, heads[0], "agent", "Mục 4 — địa chỉ registered agent")
+            if a:
+                addrs.append(a)
+        rt, firm = _return_to(p1)
+        if rt:
+            addrs.append(rt)
+            if firm and name and _same(firm, name.text):
+                note = f"Mục 8 “Return to” ghi FIRM là chính công ty này ({firm})"
+        if not any(a.role in ("principal", "mailing") for a in addrs):
+            note = (note + "; " if note else "") + "Mẫu LLC-1 đời 2005–2007 không có ô địa chỉ doanh nghiệp"
+    return name, number, addrs, note
+
+
+MONTHS = {m: i + 1 for i, m in enumerate("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split())}
+
+
+def _filed(p: Page) -> str:
+    """The FILED stamp date ("JUL 08 2010", "OCT 2 9 2009") as MM/DD/YYYY."""
+    for b in p.boxes:
+        m = re.fullmatch(r"([A-Z]{3})\s*(\d)\s*(\d)?\s*(\d{4})", b.text.strip().upper())
+        if m and m.group(1) in MONTHS:
+            day = int(m.group(2) + (m.group(3) or ""))
+            return f"{MONTHS[m.group(1)]:02d}/{day:02d}/{m.group(4)}"
+    return ""
+
+
+def _formation(p: Page) -> dict:
+    """LLC-5 item 3: "THIS FOREIGN LIMITED LIABILITY COMPANY WAS FORMED ON 09 - 14 - 2009 IN NEVADA"."""
+    lab = _label(p.boxes, "WASFORMEDON", "3THISFOREIGN")
+    if not lab:
+        return {}
+    line = sorted([b for b in p.boxes if abs((b.y + b.y2) / 2 - (lab.y + lab.y2) / 2) < 22 * _s() and b.x > lab.x2 - 5],
+                  key=lambda b: b.x)
+    nums = [n for b in line for n in re.findall(r"\d+", b.text)]  # "09 - 14 - 2007" may come as one box
+    words = [b.text.strip(" .") for b in line if re.fullmatch(r"[A-Za-z][A-Za-z .]{2,}", b.text.strip()) and b.key not in ("IN", "N")]
+    out = {}
+    if len(nums) >= 3:
+        y = nums[2] if len(nums[2]) == 4 else f"20{nums[2]}" if len(nums[2]) == 2 else nums[2]
+        out["formation_date"] = f"{int(nums[0]):02d}/{int(nums[1]):02d}/{y}"
+        out["formation_date_note"] = "năm in 2 chữ số trên phôi" if len(nums[2]) == 2 else ""
+    if words:
+        out["formation_state"] = words[-1]
+    return out
+
+
+def _zoom_between(p: Page, data: bytes | None, top: Box, bottom_y: float) -> tuple[str, float, dict | None]:
+    """A line the full-page OCR missed (seen: the agent line of 38776980): read the band between a label and the next
+    printed line again, zoomed."""
+    if data is None or bottom_y <= top.y2:
+        return "", 0.0, None
+    region = {"page": p.index + 1, "rotation": p.rotation,
+              "box": [round(top.x / p.w, 4), round((top.y2 + 2) / p.h, 4), 0.95, round((bottom_y - 2) / p.h, 4)]}
+    text, conf = reread(data, region)
+    if not text:
+        text, conf = read_band(data, region)
+    return text, conf, region
+
+
+def read_band(data: bytes, region: dict, dpi: int = DPI) -> tuple[str, float]:
+    """A wide band with one typed line somewhere in it: the text detector misses such a line among blank space and box
+    rules, but reads it when given a strip one line high. Slide a one-line strip down the band, recognise each strip
+    on its own, keep the clearest line."""
+    import numpy as np
+
+    img = render(data, region["page"] - 1, dpi, region.get("rotation", 0))
+    x0, y0, x1, y1 = region["box"]
+    band = img.crop((int(x0 * img.width), int(y0 * img.height), int(x1 * img.width), int(y1 * img.height)))
+    strip = max(20, int(0.0135 * img.height))  # one typed line on these forms
+    best = ("", 0.0, 0.0)
+    for top in range(0, max(1, band.height - strip // 2), max(1, strip // 3)):
+        piece = band.crop((0, top, band.width, min(band.height, top + strip)))
+        res, _ = _ocr()(np.array(piece), use_det=False, use_cls=False)
+        for item in res or []:
+            text, conf = item[-2], float(item[-1])
+            text = text.strip()
+            if conf >= 0.9 and len(text) >= 3 and conf * len(text) > best[2]:
+                best = (text, conf, conf * len(text))
+    return best[0], best[1]
+
+
+def _agent_name(p: Page, data: bytes | None = None) -> str:
+    """Name of the agent for service of process (kept only to tell it apart from the company; never written to the
+    Sheet or a website)."""
+    lab = _label(p.boxes, "NAMEOFAGENTFORSERVICE", "NAMEOFINITIALAGENT")
+    if not lab:
+        return ""
+    vals = [b for b in _below(p.boxes, lab, 60) if b.conf >= 0.8]
+    if vals:
+        return " ".join(b.text for b in vals[:2]).strip()
+    nxt = min((b.y for b in p.boxes if b.y > lab.y2 + 5 * _s()), default=lab.y2 + 70 * _s())
+    return _zoom_between(p, data, lab, nxt)[0]
+
+
+def _cell(page: Page, boxes: list[Box], value: str, conf: float, note: str | None = None, **extra) -> dict:
+    f = {**field(value, "ocr", note), "confidence": round(conf * 100), "checked": False}
+    if value:
+        f["region"] = page.region(boxes)
+        f.update({k: v for k, v in extra.items() if v})
+    return f
+
+
+def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict, dict] | None:
+    """data (the PDF bytes) enables the zoomed second reading; tests may pass pre-read pages only."""
+    form = identify(pages)
     if not form:
         return None
     p1 = pages[0]
-    j, j_conf = _file_number(p1)
-    if form == "LLC-1" and _label(p1, "PROPOSEDLLCNAME", "INITIALSTREETADDRESSOFLLC"):
-        name_b, addr, src = _llc1_2013(p1)
-        return _fields(pages, "LLC-1 (2013)", j, j_conf, name_b, addr, src)
-    # Item 1, the name: the typed line between the "ENTITY NAME" instructions and the next item (the printed label
-    # "1. NAME OF …" is sometimes not read by the OCR).
-    end = _label(p1, "2NAMEOFTHEFOREIGN", "PURPOSE")
-    tops = [b for b in p1 if end and b.y < end.y and b.key.startswith(("ENTITYNAME", "1NAME", "NAMEOFLIMITED", "NAMEUNDERWHICH",
-                                                                         "THISSPACEFORFILING"))]
-    top = max(tops, key=lambda b: b.y) if tops else None
-    cands = [b for b in p1 if top and end and top.y2 < b.y < end.y and b.conf >= 0.8
-             and not re.search(r"NAMEOF|NAMEUNDER|ABBREVIAT|RESPECTIVELY|PROPOSESTOREGISTER", b.key)]
-    name_b = cands[-1] if cands else None
-    # Addresses: the header lines with CITY / STATE / ZIP CODE (found by "ZIP CODE": the item label is often misread)
-    heads = [b for b in p1 if b.key.startswith("ZIPCODE") or b.key == "ZIP"]
-    if form == "LLC-5":
-        head = next((h for h in heads if _same_line(p1, h, "CITYANDSTATE")), None)
-        src = "Mục 7 — Address of the principal executive office"
-        addr = _address_row(p1, head) if head else None
-        if not addr and heads:
-            addr, src = _address_row(p1, heads[0]), "Mục 5 — địa chỉ agent (mục 7 không đọc được)"
-    else:
-        src = "Mục 4 — địa chỉ agent (mẫu LLC-1 không có ô địa chỉ công ty)"
-        addr = _address_row(p1, heads[0]) if heads else None
-        if not addr:
-            addr, src = _return_to(p1), "Mục 8 — Return to (mục 4 để trống vì agent là công ty)"
-    return _fields(pages, form, j, j_conf, name_b, addr, src)
+    name, number, addrs, note = _read_ca(pages, form)
+    name_problem = ""
+    if name and not re.sub(r"\b(LLC|L\.L\.C\.?|INC\.?|LTD\.?|CO\.?|COMPANY|LIMITED|LIABILITY)\b|[^A-Za-z0-9]", "", name.text, flags=re.I):
+        # only the legal suffix came out: the name is handwritten or unreadable — never fill it with a fragment
+        name_problem = f"OCR chỉ đọc được “{name.text}” — tên trên phôi có thể viết tay hoặc quá mờ; anh nhập tay"
+        name = None
+    business = next((a for a in addrs if a.role == "principal"), None) or next((a for a in addrs if a.role == "mailing"), None)
+    candidates = [a for a in addrs if a is not business]
 
-
-def _fields(pages: list[list[Box]], form: str, j: str, j_conf: float, name_b: Box | None, addr: dict | None,
-            src: str) -> tuple[dict, dict]:
-    p1 = pages[0]
-    if addr and PO_BOX.match(addr["street"]):
-        src += " · đây là hộp thư P.O. Box, không phải địa chỉ nhà"
-    a = addr or {"street": "", "city": "", "state": "", "zip": "", "conf": 0.0}
-    a = {**a, "street": tidy(a["street"])}
-    if name_b:
-        name_b = Box(name_b.x, name_b.y, name_b.x2, name_b.y2, tidy(name_b.text), name_b.conf)
-    pct = lambda c: round(c * 100)  # noqa: E731
-    ocr_field = lambda v, c, note=None: {**field(v, "ocr", note), "confidence": pct(c)} if v else field("", "missing", note)  # noqa: E731
     fields = {
-        "A": ocr_field(name_b.text if name_b else "", name_b.conf if name_b else 0),
-        "D": field("", "missing", f"Mẫu {form} không có ô số điện thoại — anh điền tay"),
-        "F": ocr_field(", ".join(x for x in (a["street"], a["city"], f'{a["state"]} {a["zip"]}'.strip()) if x), a["conf"],
-                       src if addr else "Không đọc được địa chỉ trên phôi — nhập tay"),
-        "G": ocr_field(a["city"], a["conf"]),
-        "H": ocr_field(a["state"], a["conf"]),
-        "I": ocr_field(a["zip"], a["conf"]),
-        "J": ocr_field(j, j_conf, "File # góc trên bên phải"),
+        "A": _cell(p1, [name] if name else [], name.text if name else "", name.conf if name else 0, name_problem or None),
+        "D": field("", "missing", f"Mẫu {form['form']} không có ô số điện thoại — để trống"),
+        "J": _cell(p1, [number] if number else [], re.sub(r"\D", "", number.text) if number else "", number.conf if number else 0,
+                   "File # góc trên bên phải"),
     }
-    # the filing number stamped again at the bottom of attachment pages (LLC-5 certificates of good standing…)
-    later = [n for n, _ in (_file_number(p, top=False) for p in pages[1:]) if n]
-    if j:
-        fields["J"]["check"] = {"other": later[0], "match": later[0] == j} if later else {"other": "", "match": None}
+    for a in candidates:  # suggested addresses: fix only run-together words (same characters, more spaces)
+        if data is not None and a.boxes["street"]:
+            text, _ = reread(data, p1.region(a.boxes["street"]))
+            if text and _same(text, a.street):
+                a.street = _respace(a.street, text)
+    street_flags = []
+    if business and data is not None and business.boxes["street"]:
+        # second reading of the street from a zoomed crop: words that ran together ("EastWilliamStreet") come apart;
+        # only spaces are taken from it — the characters and punctuation stay those of the first reading
+        text, _ = reread(data, p1.region(business.boxes["street"]))
+        if text and _same(text, business.street):
+            business.street = _respace(business.street, text)
+        elif text and _plausible(text, business.street):
+            street_flags.append({"message": f"Hai lần đọc tên đường khác nhau: “{business.street}” / “{text}”", "suggestion": ""})
+    if business:
+        b = business
+        fields["F"] = _cell(p1, [x for v in b.boxes.values() for x in v],
+                            ", ".join(x for x in (b.street, b.city, f"{b.state} {b.zip}".strip()) if x), b.conf, b.label, role=b.role)
+        fields["G"] = _cell(p1, b.boxes["city"], b.city, b.conf, role=b.role)
+        fields["H"] = _cell(p1, b.boxes["state"] or b.boxes["city"], b.state, b.conf, role=b.role)
+        fields["I"] = _cell(p1, b.boxes["zip"], b.zip, b.conf, role=b.role)
+        if PO_BOX.match(b.street):
+            fields["F"]["warning"] = "Địa chỉ là hộp thư P.O. Box, không phải địa chỉ nhà"
+    else:
+        why = "Phôi không có địa chỉ doanh nghiệp (trụ sở / nhận thư) — xem địa chỉ gợi ý, anh xác nhận"
+        for k in "FGHI":
+            fields[k] = field("", "missing", why)
+    # zoomed second reading of the important cells + characters OCR often confuses
+    for k in ("A", "J", "F", "G"):
+        f = fields[k]
+        if not f.get("value") or "region" not in f:
+            continue
+        flags = (suspects(f["value"]) if k != "J" else []) + (street_flags if k == "F" else [])
+        # (J is not re-read from a crop: its widely spaced typewriter digits break apart there — it is checked by its
+        # digit count and against the copy stamped on later pages instead)
+        if data is not None and k == "A":
+            text, conf = reread(data, f["region"])
+            f["reads"] = [{"how": f"Toàn trang {DPI} dpi", "text": f["value"], "confidence": f["confidence"]},
+                          {"how": f"Phóng to vùng {ZOOM_DPI} dpi", "text": text, "confidence": round(conf * 100)}]
+            if text and not _same(text, f["value"]) and _plausible(text, f["value"]):
+                flags.insert(0, {"message": f"Hai lần đọc khác nhau: “{f['value']}” / “{text}”", "suggestion": text})
+        if flags:
+            f["suspects"] = flags
+    if fields["J"].get("value"):
+        j = fields["J"]
+        if len(j["value"]) != 12:
+            j.setdefault("suspects", []).append({"message": f"Mã số có {len(j['value'])} chữ số (mẫu CA có 12)", "suggestion": ""})
+        later = [b for b in (_file_number(p.boxes, top=False) for p in pages[1:]) if b]
+        other = re.sub(r"\D", "", later[0].text) if later else ""
+        j["check"] = {"other": other, "match": other == j["value"]} if other else {"other": "", "match": None}
     fields["E"] = field(short_name(fields["A"]["value"]), "auto", "Tự sinh từ A")
-    extra = {"form": form, "address_source": src if addr else "", "reader": "OCR RapidOCR (miễn phí, chạy trên máy)",
-             "filed": next((b.text for b in p1 if re.fullmatch(r"[A-Z]{3}\s*\d{1,2}\s*\d{4}", b.text.strip())), "")}
+    extra = {
+        "form": form["form"], "version": form["version"], "state_of_form": form["state"],
+        "version_verified": form["verified"], "reader": "OCR trên máy (RapidOCR, không gửi ra ngoài)",
+        "pages_read": len(pages), "rotations": [p.rotation for p in pages],
+        "address_source": business.label if business else "",
+        "address_candidates": [{"role": a.role, "label": a.label, "street": a.street, "city": a.city, "state": a.state,
+                                "zip": a.zip, "confidence": round(a.conf * 100),
+                                "region": p1.region([x for v in a.boxes.values() for x in v]),
+                                "suspects": suspects(f"{a.street}, {a.city}")} for a in candidates],
+        "filed_date": _filed(p1),
+        "agent_name": _agent_name(p1, data),  # internal only: tells the agent apart from the company
+    }
+    if form["form"] == "LLC-5":
+        extra.update({k: v for k, v in _formation(p1).items() if v})
+    for a in extra["address_candidates"]:
+        if not a["suspects"]:
+            del a["suspects"]
+    if note:
+        extra["note"] = note
+    if not form["verified"]:
+        extra["warning"] = f"Phiên bản biểu mẫu {form['version']} chưa được kiểm chứng trên phôi thật — đối chiếu kỹ từng ô"
     return fields, extra

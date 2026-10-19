@@ -24,7 +24,8 @@ def wa(text: str, lines: list | None = None) -> dict:
     t = PdfText(pages=2, text=HEAD + text, lines=lines or [])
     assert detect(t).doc_type == "wa"
     fields, extra = extract_text_layer(t, "wa")
-    return {k: v["value"] for k, v in fields.items()} | {"_src": extra["address_source"]}
+    return {k: v["value"] for k, v in fields.items()} | {"_src": extra["address_source"], "_cands": extra["address_candidates"],
+                                                        "_warn": fields["F"].get("warning", ""), "_note": fields["F"].get("note", "")}
 
 
 def test_annual_report_principal_office():
@@ -63,16 +64,21 @@ def test_individual_agent_at_the_same_street_keeps_the_principal_office():
     assert f["F"] == "3219 NE SUNSET BLVD STE B, RENTON, WA 98056"
 
 
-def test_po_box_principal_office_falls_back_to_the_agent_street_and_no_office_uses_the_agent():
+def test_agent_address_is_only_a_suggestion_po_box_office_kept_and_flagged():
+    """Owner's rule (2026-10-19): a registered agent's address never fills F–I by itself."""
     agent = agent_lines("JANE SAMPLE", "2551 DONOVAN AVE, BELLINGHAM, WA, 98225-7621,", "PO BOX 257, OLYMPIA, WA, 98507-0257,")
     f = wa("CERTIFICATE OF FORMATION BUSINESS NAME Business Name BRAIDS L.L.C. REGISTERED AGENT x PRINCIPAL OFFICE Phone: "
            "678-555-0104 Email: Street Address: PO BOX 257, OLYMPIA, WA, 98507-0257, UNITED STATES Mailing Address: PO BOX 257, "
            "OLYMPIA, WA, 98507-0257, UNITED STATES", agent)
-    assert f["F"] == "2551 DONOVAN AVE, BELLINGHAM, WA 98225-7621" and "PO BOX" in f["_src"]
+    assert f["F"] == "PO BOX 257, OLYMPIA, WA 98507-0257" and "PO BOX" in f["_warn"]  # the company's own, as printed
+    assert [(c["role"], c["street"]) for c in f["_cands"]] == [("agent", "2551 DONOVAN AVE")]
     f = wa("ARTICLES OF INCORPORATION BUSINESS NAME Business Name: 401 SUMMIT OWNERS ASSOCIATION NONPROFIT GROSS REVENUE x",
            agent_lines("BRYCE SAMPLE", "1620 WOODARD AVE NW UNIT C3, OLYMPIA, WA, 98502-", "1620 WOODARD AVE NW UNIT C3, OLYMPIA, WA,")
            + [(372, [(135, "4225,"), (165, "UNITED"), (200, "STATES")])])
-    assert f["A"] == "401 SUMMIT OWNERS ASSOCIATION" and f["F"] == "1620 WOODARD AVE NW UNIT C3, OLYMPIA, WA 98502"
+    assert f["A"] == "401 SUMMIT OWNERS ASSOCIATION" and f["F"] == f["G"] == f["I"] == ""  # no office printed
+    assert "không có địa chỉ trụ sở" in f["_note"]
+    [c] = f["_cands"]
+    assert (c["role"], c["street"], c["city"], c["zip"]) == ("agent", "1620 WOODARD AVE NW UNIT C3", "OLYMPIA", "98502")
 
 
 def test_a_company_named_registered_agent():

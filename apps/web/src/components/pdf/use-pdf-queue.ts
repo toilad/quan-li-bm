@@ -44,10 +44,11 @@ export type Blockers = {
   format: FieldKey[];
   missing: FieldKey[]; // confirmable
   needCriticalCheck: boolean; // A or J read by AI from a scan
+  unchecked: FieldKey[]; // read from an image (OCR / AI) and not yet ticked "đã kiểm tra"
 };
 
 export function saveBlockers(file: PdfFile): Blockers {
-  const empty: Blockers = { unknownType: false, criticalMissing: [], format: [], missing: [], needCriticalCheck: false };
+  const empty: Blockers = { unknownType: false, criticalMissing: [], format: [], missing: [], needCriticalCheck: false, unchecked: [] };
   if (!file.fields) return empty;
   const issues = validate(file.fields, file.docType);
   const of = (kind: string) => FIELD_META.map((m) => m.key).filter((k) => issues[k]?.level === "error" && issues[k]?.kind === kind);
@@ -57,6 +58,10 @@ export function saveBlockers(file: PdfFile): Blockers {
     format: of("format"),
     missing: of("missing"),
     needCriticalCheck: (["A", "J"] as FieldKey[]).some((k) => file.fields![k].source === "ai"),
+    unchecked: FIELD_META.map((m) => m.key).filter((k) => {
+      const fl = file.fields![k];
+      return (fl.source === "ai" || fl.source === "ocr") && !!fl.value && !fl.checked;
+    }),
   };
 }
 
@@ -68,7 +73,8 @@ export function canSave(file: PdfFile) {
     b.criticalMissing.length === 0 &&
     b.format.length === 0 &&
     (b.missing.length === 0 || !!file.confirmMissing) &&
-    (!b.needCriticalCheck || !!file.criticalChecked)
+    (!b.needCriticalCheck || !!file.criticalChecked) &&
+    b.unchecked.length === 0
   );
 }
 
@@ -76,7 +82,8 @@ export function canSave(file: PdfFile) {
 const isClean = (file: PdfFile) => {
   if (file.status !== "review" || !file.fields || file.docType === "unknown") return false;
   if (Object.keys(validate(file.fields, file.docType)).length) return false;
-  return !Object.values(file.fields).some((fl) => fl.source === "ai");
+  // nothing read from an image goes out unless the owner ticked it "đã kiểm tra"
+  return !Object.values(file.fields).some((fl) => (fl.source === "ai" || fl.source === "ocr") && !!fl.value && !fl.checked);
 };
 
 const startSaving = (f: PdfFile): PdfFile => ({ ...f, status: "saving", step: 0, progress: 0 });

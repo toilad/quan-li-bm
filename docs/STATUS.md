@@ -314,3 +314,25 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - "JDS Fixnure" → "JDS Fixture" (ô này có cảnh báo độ tin cậy 93%).
 - Mẫu LLC-1/LLC-5 không có ô số điện thoại: D để trống, anh điền tay.
 - Mẫu OCR chưa biết: chuyển sang AI nếu có khoá; không có khoá thì báo rõ để anh nhập tay.
+
+## ✔ Quy trình đọc PDF theo yêu cầu của anh (19/10/2026)
+- **Thứ tự đọc:** kiểm tra lớp chữ → có chữ thì đọc chữ; scan thì OCR trên máy (RapidOCR, không gửi ra ngoài).
+  - Đọc **mọi trang** (tối đa 15).
+  - Tự xoay trang nằm ngang hoặc lộn ngược. Đã thử bằng phôi thật xoay 90° và 180°: đọc đúng.
+  - Nhận diện **bang, mẫu và phiên bản** (vd "LLC-5 REV 04/2007") trước khi đọc ô.
+  - Mỗi phiên bản có cách đọc riêng, neo theo nhãn in trên phôi đó. Phiên bản chưa gặp thì gắn cảnh báo.
+- **Đọc lại vùng phóng to:** tên công ty và tên đường được đọc thêm một lần từ vùng cắt phóng to.
+  - Lần đọc lại chỉ được thêm khoảng trắng, giữ nguyên ký tự và dấu câu của lần đọc đầu.
+  - Hai lần đọc khác chữ thì gắn cờ.
+  - Dòng mà OCR toàn trang bỏ sót thì đọc lại theo từng dải cao một dòng (vd dòng agent của 38776980).
+- **Không tự sửa ngầm:** "Westboume", "Fixnure", "B0x", "E.17TH", "Group. LLC" đều được giữ nguyên và gắn cờ "có thể đọc nhầm" kèm gợi ý; anh bấm "Dùng gợi ý" nếu đúng.
+- **Địa chỉ:**
+  - F–I chỉ lấy địa chỉ của chính doanh nghiệp: trụ sở chính, hoặc địa chỉ nhận thư.
+  - Địa chỉ registered agent, "Return to" và văn phòng thứ hai (mục 8 LLC-5) chỉ hiện là "Địa chỉ khác trên phôi", kèm nút "Dùng cho F–I".
+  - Áp dụng cho cả California và WA.
+  - Ngày thành lập, bang thành lập và ngày nộp tại CA được lưu riêng, không gộp vào cột H.
+- **Giao diện:** mỗi ô có ảnh vùng đọc (khung đỏ) và số trang, nguồn (lớp chữ / OCR / AI), độ tin cậy, ô "Đã kiểm tra với ảnh", cờ nghi vấn.
+- **Chặn lưu ở máy chủ:** ô đọc từ ảnh (OCR/AI) chưa tick "đã kiểm tra" thì không lưu lên Drive/Sheet, kể cả khi bật "Tự lưu".
+- **Test:**
+  - Giả lập (mock), chạy cùng bộ test chung: các mẫu LLC-1 2005/2007, LLC-5 (giống 38776980), tên viết tay, từng lỗi OCR đã gặp, API kiểm tra/gợi ý/chặn lưu.
+  - **OCR thật** (bật bằng `RUN_REAL_OCR=1`): 11 phôi scan của anh, file và đáp án nằm ngoài Git.
