@@ -57,7 +57,8 @@ def facts_of(cells: dict) -> dict:
 def issue_ssl(ctx, domain: str, nick) -> None:
     """B2 step 2: the cPanel "Let's Encrypt SSL" plugin's Issue for exactly this domain — never AutoSSL for the whole
     account. Only when DNS already points to the hosting, at most once every ISSUE_RETRY_MINUTES (a domain made in B1
-    needs about 30 minutes). Without the stored cPanel password: log it and keep waiting (nothing is issued)."""
+    needs about 30 minutes). The cPanel session comes from the iNET API (key scope Hosting + POST); without it: log and
+    keep waiting (nothing is issued)."""
     from datetime import datetime, timezone
 
     from ...integrations.fleetssl import FleetSSL
@@ -70,15 +71,16 @@ def issue_ssl(ctx, domain: str, nick) -> None:
         ctx.log(f"{domain}: DNS chưa trỏ về {nick.ip} — chưa Issue SSL", "info")
         return
     try:
-        plugin = FleetSSL(nick.id, nick.cpanel_host)
+        plugin = FleetSSL(nick.id, nick.hosting)
     except NotConfigured as e:
         ctx.log(f"Chưa Issue SSL tự động được: {e}", "warn")
         return
     ctx.checkpoint(ssl_issue_at=datetime.now(timezone.utc).isoformat(), ssl_issue_tries=int(st.get("ssl_issue_tries") or 0) + 1)
     try:
-        plugin.issue(domain)
+        with plugin:  # a cPanel session opened through the iNET API, closed right after
+            plugin.issue(domain)
         ctx.log(f"Let's Encrypt (plugin): đã Issue chứng chỉ cho {domain} (chỉ tên này, xác thực http-01)", "ok")
-    except Permanent as e:  # e.g. validation failed because DNS is still fresh: try again later
+    except (Permanent, NotConfigured, Transient) as e:  # e.g. validation failed because DNS is still fresh: try again later
         ctx.log(f"Issue SSL cho {domain} chưa được: {e} — thử lại sau {ISSUE_RETRY_MINUTES} phút", "warn")
 
 

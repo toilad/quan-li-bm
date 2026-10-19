@@ -216,6 +216,7 @@ def test_no_certificate_yet_means_nothing_is_uploaded_and_autossl_is_never_start
     from wg_core.integrations import net
 
     monkeypatch.setattr(net, "cert_valid", lambda d: (False, "chưa có chứng chỉ hợp lệ (SSLCertVerificationError)"))
+    monkeypatch.setattr(web, "issue_ssl", lambda ctx, domain, nick: None)  # the plugin Issue has its own tests (test_fleetssl.py)
     sheet = _sheet()
     with respx.mock(assert_all_called=False) as m:
         upload, ai = _routes(m, sheet)

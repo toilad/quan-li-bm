@@ -47,7 +47,6 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     **{f"INET_API_KEY_{n}": (f"nick:{n.lower()}", "Khoá API iNET", True) for n in NICKS},
     **{f"CPANEL_USER_{n}": (f"nick:{n.lower()}", "User cPanel", True) for n in NICKS},
     **{f"CPANEL_TOKEN_{n}": (f"nick:{n.lower()}", "API token cPanel", True) for n in NICKS},
-    **{f"CPANEL_PASSWORD_{n}": (f"nick:{n.lower()}", "Mật khẩu cPanel — chỉ dùng cho nút Issue của plugin Let's Encrypt (bước 2)", True) for n in NICKS},
     **{f"CPANEL_ADDON_API_{n}": (f"nick:{n.lower()}", "API tạo addon domain: auto (mặc định: cPanel ≥ 138 dùng UAPI, thấp hơn dùng API 2), uapi hoặc api2", False) for n in NICKS},
 }
 SET_ONLY_BY_SERVER = {"GOOGLE_TOKEN"}
@@ -69,8 +68,6 @@ def credential_problem(name: str, value: str) -> str | None:
     if name == "ANTHROPIC_API_KEY":
         if not v.startswith("sk-ant-") or not v.isascii() or any(c.isspace() for c in v):
             return "Khoá Anthropic có dạng sk-ant-… (một chuỗi liền) — có vẻ đã dán nhầm nội dung khác"
-    if name.startswith("CPANEL_PASSWORD_") and any(ch in v for ch in "\r\n\t"):
-        return "Mật khẩu cPanel là một dòng (không xuống dòng) — có vẻ đã dán nhầm nội dung khác"
     if name.startswith("CPANEL_USER_"):
         if not v.isascii() or any(c.isspace() for c in v) or len(v) > 64:
             return "User cPanel là một chuỗi liền, không dấu, không khoảng trắng"
