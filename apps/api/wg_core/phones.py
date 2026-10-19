@@ -120,7 +120,7 @@ def tag(fields: dict) -> None:
         d["phone_source"] = "source_pdf"
     else:
         d["phone_source"] = "needs_setup"
-        where = f"bang {state}" if state else "bang của doanh nghiệp (chưa có ô H)"
+        where = f"bang {state}" if state else "bang của doanh nghiệp (ô H trống — LLC-1 California dùng CA)"
         d["note"] = (d.get("note") + " · " if d.get("note") else "") + \
             f"Phôi không có số — cần cấp số có mã vùng của {where} từ nhà cung cấp của anh; không tự điền số"
 

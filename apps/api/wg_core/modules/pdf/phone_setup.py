@@ -12,7 +12,19 @@ from ...phones import US_AREA_CODES, check, country_of, e164, us_digits
 
 
 def _state(doc: PdfDocument) -> str:
-    return ((doc.fields.get("H") or {}).get("value") or "").strip().upper()
+    """The company's state for the area code: its address (H); without an address, a California LLC-1 (Articles of
+    Organization — the LLC is formed in California) gives CA. A foreign LLC (LLC-5) is never placed in its home state."""
+    h = ((doc.fields.get("H") or {}).get("value") or "").strip().upper()
+    if h:
+        return h
+    extra = doc.extra or {}
+    return "CA" if extra.get("state_of_form") == "CA" and extra.get("form") == "LLC-1" else ""
+
+
+def state_source(doc: PdfDocument) -> str:
+    if ((doc.fields.get("H") or {}).get("value") or "").strip():
+        return "ô H (địa chỉ doanh nghiệp)"
+    return "hồ sơ LLC-1: LLC thành lập tại California" if _state(doc) else ""
 
 
 def _in_sheet() -> set[str]:
@@ -36,9 +48,10 @@ def options(s: Session, doc: PdfDocument) -> dict:
     from ...integrations.phone_provider import PhoneProvider
 
     state = _state(doc)
-    out = {"state": state, "country": country_of(state), "provider": None, "owned": [], "available": [], "message": ""}
+    out = {"state": state, "state_from": state_source(doc), "country": country_of(state), "provider": None, "owned": [],
+           "available": [], "message": ""}
     if out["country"] != "US":
-        out["message"] = ("Chưa biết bang của doanh nghiệp (ô H trống)" if not state else
+        out["message"] = ("Chưa biết bang của doanh nghiệp (ô H trống, hồ sơ không cho biết) — anh xác định bang trước" if not state else
                           f"Cấp số tự động hiện chỉ hỗ trợ bang của Mỹ — {state} cần anh xử lý riêng")
         return out
     try:

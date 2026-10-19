@@ -104,7 +104,7 @@ function PhoneSetup({ file, dispatch, editable }: { file: PdfFile; dispatch: Que
   return (
     <div className="mt-1 rounded-lg border border-amber-400/30 bg-amber-500/[0.05] p-2.5 text-[11.5px]">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-amber-100">Phôi không có số. Cấp số có mã vùng của bang {(file.fields?.H.value || "?").toUpperCase()} từ nhà cung cấp của anh — không tự điền số.</span>
+        <span className="text-amber-100">Phôi không có số. Cấp số có mã vùng đúng bang của doanh nghiệp từ nhà cung cấp của anh — không tự điền số.{opts?.state && ` Bang: ${opts.state} (theo ${(opts as PhoneOptions & { state_from?: string }).state_from}).`}</span>
         {editable && (
           <button type="button" onClick={load} disabled={busy}
             className="shrink-0 rounded border border-amber-400/40 px-2 py-0.5 text-[11px] text-amber-100 hover:bg-amber-500/15 disabled:opacity-60">

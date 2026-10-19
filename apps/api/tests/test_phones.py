@@ -181,3 +181,12 @@ def test_the_website_build_takes_the_checked_number():
     assert site_phone(cells)[0] == "" and "555" in site_phone(cells)[1]
     assert facts_of(cells)["Phone"] == ""  # the site copy never mentions it either
     assert site_phone({**cells, "D": "(619) 234-5678"}) == ("(619) 234-5678", "")
+
+
+def test_state_for_the_area_code():
+    from wg_core.modules.pdf.phone_setup import _state
+
+    llc1 = PdfDocument(fields={"H": {"value": ""}}, extra={"form": "LLC-1", "state_of_form": "CA"})
+    llc5 = PdfDocument(fields={"H": {"value": ""}}, extra={"form": "LLC-5", "state_of_form": "CA", "formation_state": "MARYLAND"})
+    wa = PdfDocument(fields={"H": {"value": "WA"}}, extra={})
+    assert (_state(llc1), _state(llc5), _state(wa)) == ("CA", "", "WA")  # a foreign LLC is never put in its home state
