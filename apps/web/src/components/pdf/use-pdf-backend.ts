@@ -112,6 +112,8 @@ function toFile(d: Doc, job: Job | undefined, aiJob: Job | undefined, local: { c
       form: x.form, version: x.version, versionVerified: (x as unknown as { version_verified?: boolean }).version_verified,
       pagesRead: Number(x.pages_read) || undefined, filedDate: x.filed_date || x.date_filed, formationState: x.formation_state,
       formationDate: x.formation_date, warning: x.warning, note: x.note, addressSource: x.address_source,
+      status: x.status, reason: x.extraction_reason,
+      selected: (x as unknown as { address_selected?: { text: string; label: string; reason: string } }).address_selected,
     },
   } as PdfFile;
 }

@@ -234,7 +234,7 @@ def test_scan_is_classified_and_read_by_ai_then_needs_owner_check(monkeypatch):
     from tests.mocks import anthropic_json
     from wg_core.modules.pdf import ocr
 
-    monkeypatch.setattr(ocr, "ocr_document", lambda data: [])  # a form the free OCR reader does not know → the AI
+    monkeypatch.setattr(ocr, "ocr_document", lambda data, **kw: [])  # a form the free OCR reader does not know → the AI
 
     ai_reply = {"doc_type": "ca", "evidence": "LLC-1, Secretary of State, State of California",
                 "A": {"value": "EXAMPLE SUPPLY CO., LLC", "found": True}, "D": {"value": "", "found": False},
@@ -271,7 +271,8 @@ def test_scan_of_an_unknown_form_without_ai_key_says_what_to_do(monkeypatch):
     if not CA:
         pytest.skip("California sample not present")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
-    monkeypatch.setattr(ocr, "ocr_document", lambda data: [])
+    other = [ocr.Page(0, [ocr.Box(10, 10, 90, 20, "INVOICE NO 12", 0.99)], 100, 100, words="INVOICENO12")]  # read, but no known form
+    monkeypatch.setattr(ocr, "ocr_document", lambda data, **kw: other)
     with session_scope() as s:
         doc, _ = pdf.ingest(s, "scan.pdf", open(CA[0], "rb").read())
         assert doc.status == "needs_ai"
@@ -279,7 +280,7 @@ def test_scan_of_an_unknown_form_without_ai_key_says_what_to_do(monkeypatch):
     assert drain() == 1  # the free OCR read only; no AI call without a key
     with session_scope() as s:
         d = s.get(PdfDocument, doc_id)
-        assert d.status == "needs_ai" and "OCR chưa biết mẫu" in d.error
+        assert d.status == "needs_ai" and d.error.startswith("UNKNOWN_DOCUMENT") and "INVOICE" in d.error
 
 
 @pytest.mark.skipif(not CA, reason="California sample not present")

@@ -61,6 +61,7 @@ function Candidates({ file, dispatch, editable }: { file: PdfFile; dispatch: Que
             <div className="text-[10.5px] font-semibold uppercase tracking-wide text-sky-300">{ROLE[c.role] ?? c.role} · {c.label}</div>
             <div className="text-[13px]">{[c.street, c.city, `${c.state} ${c.zip}`.trim()].filter(Boolean).join(", ")}</div>
             {c.region && <div className="text-[10.5px] text-fg-subtle">Trang {c.region.page}{c.confidence !== undefined && ` · OCR ${c.confidence}%`}</div>}
+            {c.reason && <div className="text-[11px] text-fg-muted">KHÔNG CHỌN — {c.reason}</div>}
             {c.suspects?.map((x, j) => (
               <div key={j} className="mt-1 flex items-start gap-1 text-[11px] text-amber-200"><AlertTriangle className="mt-px size-3 shrink-0" />{x.message}</div>
             ))}
@@ -214,7 +215,7 @@ function SheetMatchBox({ file, editable }: { file: PdfFile; editable: boolean })
 
 function ScanFacts({ file }: { file: PdfFile }) {
   const s = file.scan;
-  if (!s?.version && !s?.warning && !s?.note) return null;
+  if (!s?.version && !s?.warning && !s?.note && !s?.status) return null;
   const facts = [
     s.version && `Mẫu ${s.version}${s.versionVerified === false ? " (chưa kiểm chứng)" : ""}`,
     s.pagesRead && `đọc ${s.pagesRead} trang`,
@@ -223,6 +224,12 @@ function ScanFacts({ file }: { file: PdfFile }) {
   ].filter(Boolean);
   return (
     <div className="col-span-2 space-y-1 rounded-lg border border-line bg-ink-850/50 px-3 py-2 text-[11.5px] text-fg-muted">
+      {s.status && (
+        <div className={s.status === "OK" ? "text-emerald-300" : s.status === "NO_BUSINESS_ADDRESS_ON_FORM" ? "text-sky-200" : "text-amber-300"}>
+          <span className="font-semibold">{s.status}</span>{s.reason && ` — ${s.reason}`}
+        </div>
+      )}
+      {s.selected && <div className="text-emerald-200">ĐÃ CHỌN cho F–I: {s.selected.text} — {s.selected.reason}</div>}
       {facts.length > 0 && <div>{facts.join(" · ")}</div>}
       {s.warning && <div className="flex items-start gap-1 text-amber-300"><AlertTriangle className="mt-px size-3 shrink-0" />{s.warning}</div>}
       {s.note && <div className="flex items-start gap-1 text-sky-200"><Info className="mt-px size-3 shrink-0" />{s.note}</div>}

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from wg_core.modules.pdf.ocr import extract_ca_scan, ocr_document
+from wg_core.modules.pdf.ocr import extract_ca_scan, ocr_document, read_scan
 
 ROOT = Path(__file__).resolve().parents[3] / "test-fixtures"
 FILES = ROOT / "pdf" / "ca"
@@ -74,3 +74,14 @@ def test_real_scan(name):
         assert norm(extra["agent_name"]) == norm(want["agent"])
     if "version" in want:
         assert extra["version"] == want["version"] and extra["version_verified"]
+
+
+@pytest.mark.parametrize("name", sorted(n for n, w in EXPECTED.items() if "status" in w))
+def test_real_scan_status_and_rejected_addresses(name):
+    """The whole reading (read_scan, image variants included): status per form, and the addresses turned down."""
+    want = EXPECTED[name]
+    r = read_scan((FILES / name).read_bytes())
+    assert r["status"] == want["status"], (name, r["reason"])
+    assert not {c["role"] for c in r["selected_candidates"]} & {"agent", "return_to", "general_partner", "organizer"}
+    if "rejected" in want:
+        assert sorted(c["role"] for c in r["rejected_candidates"]) == sorted(want["rejected"])

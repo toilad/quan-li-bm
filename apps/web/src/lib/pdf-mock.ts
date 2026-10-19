@@ -33,11 +33,13 @@ export type Field = {
 /** An address printed on the form that is not the company's own (agent, Return to, a second office): offered only. */
 export type AddressCandidate = {
   role: string; label: string; street: string; city: string; state: string; zip: string; confidence?: number;
-  region?: Region; suspects?: Suspect[];
+  region?: Region; suspects?: Suspect[]; reason?: string;
 };
 export type ScanInfo = {
   form?: string; version?: string; versionVerified?: boolean; pagesRead?: number; filedDate?: string;
   formationState?: string; formationDate?: string; warning?: string; note?: string; addressSource?: string;
+  /** OK | NO_BUSINESS_ADDRESS_ON_FORM | LOW_CONFIDENCE | REVIEW_REQUIRED | OCR_FAILED | UNKNOWN_DOCUMENT */
+  status?: string; reason?: string; selected?: { text: string; label: string; reason: string };
 };
 export type Fields = Record<FieldKey, Field>;
 

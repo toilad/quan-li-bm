@@ -21,6 +21,7 @@ from ...models import PdfDocument, SheetWrite
 from ..websites.templates import detect as detect_template, template_for_cnae
 from .extract import detect, extract_text_layer, fields_from_ai, locate, read_pdf
 from .sheet_match import drive_name, key_state, name_verified, same_company
+from .doc_rules import problems, rule_key
 from .fields import FIELD_KEYS, blocking, field, short_name, validate
 
 
@@ -67,17 +68,34 @@ def extract_into(doc: PdfDocument, data: bytes, forced_type: str | None = None):
     doc.detection_reason = "Chọn thủ công" if forced_type else det.reason
     doc.error = None
     read = extract_text_layer(t, doc.doc_type) if doc.has_text else None
-    if read:
+    why_not = text_layer_problem(t, doc.doc_type, read)
+    if read and not why_not:
         doc.fields, doc.extra = read
         locate(data, doc.fields)  # page + region of every value, shown next to the cell
         tag_phone(doc.fields, doc.extra)  # D: the PDF's number, or a temporary one of the state
+        doc.extra = {**doc.extra, "status": "OK", "extraction_reason": f"Đọc từ lớp chữ PDF ({doc.detection_reason})"}
         doc.status = "review"
-    elif not doc.has_text and doc.doc_type in ("ca", "wy", "wa", "br", "unknown"):
-        # Scan without a text layer: the AI job identifies the form (unless picked by hand) and reads it.
-        doc.fields, doc.status = {}, "needs_ai"
     else:
-        doc.fields, doc.status = {k: field("", "missing") for k in FIELD_KEYS}, "review"
+        # No usable text layer (none, garbage, an unknown form, or the main cells empty): the page images are read by
+        # OCR. What the text layer did give is kept to compare with — never used on its own when it is not valid.
+        doc.fields, doc.status = {}, "needs_ai"
+        doc.extra = {"text_layer": {"problem": why_not, "fields": read[0] if read else {}}} if doc.has_text else {}
     doc.industry = industry_for(doc) if doc.fields else {}
+
+
+def text_layer_problem(t, doc_type: str, read) -> str:
+    """Why the text layer cannot be used as it is ("" = it can)."""
+    text = t.text.strip()
+    if len(text) <= 20:
+        return "PDF không có lớp chữ (bản scan)"
+    letters = sum(ch.isalnum() or ch.isspace() for ch in text) / len(text)
+    if letters < 0.7:
+        return f"Lớp chữ nhiều ký tự rác ({round((1 - letters) * 100)}% không phải chữ/số)"
+    if doc_type == "unknown" or not read:
+        return "Lớp chữ không khớp mẫu phôi nào đã biết"
+    # what this document type must have (doc_rules.RULES) — not a fixed "A and J" list
+    probs = problems(rule_key(doc_type), read[0])
+    return "Lớp chữ nhận ra mẫu nhưng: " + "; ".join(probs) if probs else ""
 
 
 def request_scan_read(s: Session, doc: PdfDocument):
@@ -88,16 +106,34 @@ def request_scan_read(s: Session, doc: PdfDocument):
 def _ocr_read(ctx: JobContext):
     """Scanned page → RapidOCR on this machine (free, nothing sent out) → the boxes of a known form. A form the reader
     does not know goes to the AI when a key is set; otherwise the owner picks the type or types the cells."""
-    from .ocr import extract_ca_scan, ocr_document
+    from .ocr import read_scan, scan_report, with_text_layer
 
     doc = ctx.session.get(PdfDocument, ctx.job.payload["doc_id"])
     ctx.step("OCR bản scan (miễn phí, trên máy)")
     data = storage_path(doc.md5).read_bytes()
-    pages = ocr_document(data)  # every page, turned upright
-    got = extract_ca_scan(pages, data)
+    res = read_scan(data, force=bool(ctx.job.payload.get("force")))  # every page, upright, cached; image variants if needed
+    got = res.pop("sheet")
     manual = doc.detection_reason == "Chọn thủ công"
+    text_layer = (doc.extra or {}).get("text_layer") or {}
+    text_fields = text_layer.get("fields") or {}
+    if not got and (text_fields.get("A") or {}).get("value"):
+        # OCR found no known form, but the (doubtful) text layer gave something: shown for review, never "OK"
+        doc.fields = text_fields
+        tag_phone(doc.fields, doc.extra)
+        doc.extra = {**(doc.extra or {}), "status": "REVIEW_REQUIRED", "debug": res,
+                     "extraction_reason": f"{res['reason']} — dùng tạm phần đọc được từ lớp chữ, cần kiểm tra"}
+        doc.status, doc.error = "review", None
+        return
+    if not got:
+        doc.extra = {**(doc.extra or {}), "status": res["status"], "extraction_reason": res["reason"], "debug": res}
     if got and (not manual or doc.doc_type == "ca"):
-        doc.fields, doc.extra = got
+        fields, extra = got
+        if text_fields:  # both readings kept with their source; any difference → REVIEW_REQUIRED
+            extra["text_layer"] = text_layer
+            with_text_layer(fields, extra, text_fields)
+            res = scan_report(fields, extra)
+        extra["debug"] = res
+        doc.fields, doc.extra = fields, extra
         tag_phone(doc.fields, doc.extra)
         doc.doc_type, doc.status, doc.error = "ca", "review", None
         if not manual:
@@ -112,7 +148,7 @@ def _ocr_read(ctx: JobContext):
         request_ai_read(ctx.session, doc)
         ctx.log("OCR chưa biết mẫu phôi này — chuyển cho AI đọc", "info")
         return
-    doc.error = "OCR chưa biết mẫu phôi này (đang đọc được: California LLC-1, LLC-5) — nhập tay các ô, hoặc báo em mẫu mới"
+    doc.error = f"{res['status']}: {res['reason']}"
     ctx.log(doc.error, "warn")
 
 

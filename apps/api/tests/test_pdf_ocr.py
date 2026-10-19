@@ -169,6 +169,90 @@ def test_respace_keeps_characters_and_punctuation():
     assert _respace("1234 E.17TH STREET", "1234 E 17TH : STREET") == "1234 E. 17TH STREET"
 
 
+# ───── Certificate of Limited Partnership (LP-1), layout of the 31230213 scan, made-up values ─────
+
+def lp1():
+    boxes = [b(172, 1662, "200799910006"), b(276, 668, "State of California"), b(360, 740, "Secretary of State"),
+             b(605, 260, "CERTIFICATE OF LIMITED PARTNERSHIP"), b(832, 1681, "This Space For Filing Use Only"),
+             b(893, 151, 'ENTITY NAME (End the name with the words "Limited Partnership"or the abbreviation "L P ")'),
+             b(947, 207, "NAME OF LIMITEO PARTNERSHIP"), b(982, 211, "Sample Canyon Housing Group, LP", 0.99),
+             b(1049, 148, "PRINCIPAL EXECUTIVE OFFICE ADDRESS (Do not abbreviate the name of the city."),
+             b(1105, 207, "STREETADDRESS"), b(1105, 1417, "CITY AND STATE"), b(1108, 2090, "ZIP CODE"),
+             b(1149, 214, "100 Sample Vista Blvd., Ste. 640"), b(1149, 1365, "Los Angeles, CA"), b(1151, 2118, "90049"),
+             b(1210, 150, "COUNTY INFORMATION (Complete Item 3 only if the limited partnership was formed"),
+             b(1556, 207, "NAMEOFAGENTFORSERVICEOFPROCESS"), b(1590, 211, "Sample Agent, Inc."),
+             b(1651, 202, "IF AN INDIVIDUAL, ADORESS OF AGENT FOR SERVICE OF PROCESS IN CALIFORNIA"),
+             b(1655, 1494, "CITY"), b(1655, 1892, "STATE"), b(1655, 2070, "ZIP CODE"), b(1699, 1928, "CA"),
+             b(1755, 146, "GENERAL PARTNERS{Enter the names and addresses of all of the general partners."),
+             b(1811, 783, "ADDRESS"), b(1811, 1496, "CITY AND STATE"), b(1812, 2068, "ZIP CODE"),
+             b(1847, 1471, "Pasadena, CA"), b(1852, 2100, "91101"), b(1857, 140, "Sample Edge Inc. 9 Partner Way"),
+             b(1911, 783, "ADDRESS"), b(1906, 1496, "CITY AND STATE"), b(1911, 2070, "ZIP CODE"),
+             b(2311, 153, "EXECUTION"), b(2836, 206, "FIRM"), b(2897, 476, "77 Filing Road"), b(2905, 206, "ADDRESS"),
+             b(2974, 452, "[Long Beach, CA 90802"), b(2976, 207, "CITY/STATE/ZIP", w=238), b(3064, 151, "LP-1 (REV 03/2005)")]
+    return [page(boxes)]
+
+
+def test_lp1_principal_executive_office_never_general_partner_agent_or_return_to():
+    f, extra = extract_ca_scan(lp1())
+    v = vals(f)
+    assert extra["version"] == "LP-1 REV 03/2005" and extra["version_verified"]
+    assert v["A"] == "Sample Canyon Housing Group, LP" and v["J"] == "200799910006"
+    assert (v["G"], v["H"], v["I"]) == ("Los Angeles", "CA", "90049") and f["F"]["street"] == "100 Sample Vista Blvd., Ste. 640"
+    roles = {c["role"]: c for c in extra["address_candidates"]}
+    assert set(roles) == {"general_partner", "return_to"} and roles["return_to"]["city"] == "Long Beach"
+    assert extra["status"] == "OK"
+
+
+# ───── status per document type; readings never merged silently ─────
+
+def test_status_follows_the_form_not_a_fixed_list():
+    from wg_core.modules.pdf.doc_rules import problems
+
+    f, extra = extract_ca_scan(llc1())  # old LLC-1: no business-address box → empty F–I is the right answer
+    assert extra["status"] == "NO_BUSINESS_ADDRESS_ON_FORM"
+    pages = llc1()
+    pages[0].boxes = [x for x in pages[0].boxes if x.text != "201099910123"]
+    f, extra = extract_ca_scan(pages)  # J missing: still usable on a California form
+    assert f["J"]["value"] == "" and extra["status"] == "NO_BUSINESS_ADDRESS_ON_FORM"
+    assert extract_ca_scan(llc1(name_text="LLC", name_conf=0.91))[1]["status"] == "REVIEW_REQUIRED"
+    assert extract_ca_scan(llc1(name_text="Y LLC"))[1]["failure_category"] == "đọc được label nhưng không đọc được value"
+    assert problems("br", {"A": {"value": "X LTDA"}, "F": {"value": "RUA A, 1"}, "G": {"value": "SP"}, "H": {"value": "SP"},
+                           "I": {"value": "01001000"}}) == ["Thiếu J: không đọc được"]
+    assert problems("wa", {"A": {"value": "X LLC"}}) == []  # UBI may be missing on a Washington filing
+
+
+def test_text_layer_and_ocr_disagreeing_goes_to_review_with_both_readings():
+    from wg_core.modules.pdf.ocr import scan_report, with_text_layer
+
+    f, extra = extract_ca_scan(lp1())
+    with_text_layer(f, extra, {"A": {"value": "Sample Canyon Housing Group, LP"}, "J": {"value": "200799910008"}})
+    assert extra["status"] == "REVIEW_REQUIRED" and "200799910008" in extra["extraction_reason"]
+    assert f["J"]["value"] == "200799910006"  # the cell is not switched to either side
+    assert [r["source"] for r in f["J"]["readings"]] == ["ocr", "text"] and f["A"]["sources_agree"] is True
+    rep = scan_report(f, extra)
+    assert rep["fields"]["file_number"]["readings"][1] == {"value": "200799910008", "source": "text", "confidence": 100}
+
+
+def test_read_scan_report_and_a_processed_image_contradicting_the_original(monkeypatch):
+    from wg_core.modules.pdf import ocr
+
+    plain, handwritten = lp1(), lp1()
+    handwritten[0].boxes = [x if not x.text.startswith("Sample Canyon") else b(982, 211, "LP", 0.9) for x in handwritten[0].boxes]
+    monkeypatch.setattr(ocr, "ocr_document", lambda data, variant="original", **kw: handwritten if variant == "original" else plain)
+    monkeypatch.setattr(ocr, "reread", lambda *a, **kw: ("", 0.0))
+    monkeypatch.setattr(ocr, "read_band", lambda *a, **kw: ("", 0.0))
+    r = ocr.read_scan(b"%PDF")
+    assert r["status"] == "REVIEW_REQUIRED" and r["failure_category"] == "các lần đọc OCR mâu thuẫn"
+    assert set(r) >= {"document_type", "entity_name", "business_address", "file_number", "status", "reason",
+                      "selected_candidates", "rejected_candidates", "fields", "sheet"}
+    assert r["selected_candidates"][0]["role"] == "principal"
+    assert {c["role"] for c in r["rejected_candidates"]} == {"general_partner", "return_to"}
+    assert all(set(c) == {"value", "role", "reason"} for c in r["rejected_candidates"])
+    street = r["fields"]["business_street"]
+    assert street["value"] == "100 Sample Vista Blvd., Ste. 640" and street["source"] == "ocr" and street["page"] == 1
+    assert len(street["bbox"]) == 4 and street["confidence"] > 0
+
+
 # ───── the review screen's API: crops, "đã kiểm tra", suggested addresses, no save before checking ─────
 
 def _ocr_doc():
