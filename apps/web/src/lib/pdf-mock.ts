@@ -8,7 +8,7 @@
 import { detectTemplate, type SiteTemplate } from "./templates";
 
 export type FieldKey = "A" | "D" | "E" | "F" | "G" | "H" | "I" | "J";
-export type FieldSource = "text" | "ai" | "ocr" | "auto" | "manual" | "missing";
+export type FieldSource = "text" | "ai" | "ocr" | "auto" | "manual" | "missing" | "placeholder" | "provisioned";
 /** `note` explains a normalisation, e.g. "California" → "CA" or how a BR address was assembled. */
 export type Region = { page: number; rotation?: number; box: [number, number, number, number] };
 export type Suspect = { message: string; suggestion: string };

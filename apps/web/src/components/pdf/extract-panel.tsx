@@ -24,6 +24,8 @@ const SOURCE: Record<FieldSource, { label: string; icon: typeof Bot; cls: string
   auto: { label: "Tự sinh từ A", icon: Wand2, cls: "text-violet-300" },
   manual: { label: "Đã sửa tay", icon: PenLine, cls: "text-amber-200" },
   missing: { label: "Thiếu", icon: AlertCircle, cls: "text-rose-300" },
+  placeholder: { label: "Số tạm", icon: Hash, cls: "text-amber-300" },
+  provisioned: { label: "Nhà cung cấp số", icon: Hash, cls: "text-sky-300" },
 };
 
 const ROLE: Record<string, string> = {
@@ -258,7 +260,8 @@ export function ExtractPanel({
             {FIELD_META.map((m) => {
               const fld = file.fields![m.key];
               const issue = issues[m.key];
-              const src = SOURCE[fld.source];
+              // a source this screen does not know yet must never break the page
+              const src = SOURCE[fld.source] ?? { label: String(fld.source || "—"), icon: Info, cls: "text-fg-subtle" };
               const origin = DOC_TYPES[file.docType].origin[m.key];
               const keepZero = (m.key === "I" || m.key === "J") && !issue && hasLeadingZero(fld.value);
               return (
