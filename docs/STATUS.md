@@ -213,3 +213,13 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - `Fileman::upload_files`: 6 trang + 7 ảnh. Chứng chỉ Let's Encrypt đã có sẵn (hết hạn 28/12/2026). Đã ghi C705 và tự khoá.
   - **Hosting chặn mọi web khi truy cập từ mạng Việt Nam** (403 của LiteSpeed, cả web cũ, cả 3 hosting). Từ nước ngoài trang hiển thị bình thường (đã kiểm tra bằng công cụ đọc web).
   - Vì vậy job xác minh bằng chứng chỉ hợp lệ + file có trên cPanel, thay cho việc đọc trang từ máy này.
+
+## ✔ Bổ sung bản ghi A cho 4 miền nick 1 (19/10/2026, anh duyệt đúng 4 tên)
+- Các miền `condominioedificiomatheus`, `condominioresidencialatlantico`, `condominiopontevedra`, `condominioedificioportinari` thuộc `.ganeshabrands.space`.
+  Trước đó chúng đã là addon trên cPanel nhưng thiếu bản ghi A.
+- Đã thêm A → 103.75.187.26 (id 2828512–2828515) qua iNET ACTION_ADD, từng miền một, khoá lại sau mỗi miền.
+  Bản ghi của miền gốc tăng 521 → 525, không bản ghi nào khác bị đổi. DNS công khai trỏ đúng sau 1–9 phút.
+- **SSL:** không chạy AutoSSL, vì `SSL::start_autossl_check` không có tham số miền mà luôn chạy cho cả hosting.
+  - 3 miền đang có chứng chỉ Let's Encrypt cũ, **hết hạn 28/10/2026**; `condominioedificioportinari` chưa có chứng chỉ.
+  - Chờ AutoSSL định kỳ của hosting cấp hoặc gia hạn.
+- Từ nay job dựng web kiểm tra SSL trước khi tải lên, và không tự kích hoạt AutoSSL.
