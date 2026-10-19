@@ -41,7 +41,12 @@ def host_for(s: Session, domain: str):
 
 
 def address_of(cells: dict) -> str:
-    return ", ".join(x for x in (cells["F"], cells["G"], f'{cells["H"]} {cells["I"]}'.strip()) if x)
+    """F is the street line; G city, H state, I postal code. Some rows already carry city/state/code inside F
+    (e.g. "R …, 117, VILA MENEZES, ITAQUAQUECETUBA, SP 08599390") — then F alone, never the same place twice."""
+    f, g, h, i = (" ".join(cells.get(k, "").split()) for k in ("F", "G", "H", "I"))
+    if f and g and g.casefold() in f.casefold():
+        return f
+    return ", ".join(x for x in (f, g, f"{h} {i}".strip()) if x)
 
 
 def facts_of(cells: dict) -> dict:
@@ -200,6 +205,7 @@ def _build(ctx: JobContext):
     if not st.get("uploaded"):
         ctx.step(f"Dựng HTML ({template.name}) + upload")
         company = {"company": row.cells["A"], "domain": domain, "phone": row.cells["D"], "email": email_of(s, row.cells),
+                   "reg_id": row.cells["J"].strip(),
                    "address": address_of(row.cells)}
         chosen = st.get("photos") or []
         files = render_site(company, st["copy"], template.id,

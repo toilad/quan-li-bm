@@ -228,3 +228,23 @@ def test_no_certificate_yet_means_nothing_is_uploaded_and_autossl_is_never_start
         assert j.status == "queued" and "Chưa có SSL" in j.last_error and "chưa tải web lên" in j.last_error
         assert not j.state.get("uploaded")
     assert not upload.called and not autossl.called and status.called and sheet.writes == []
+
+
+
+def test_address_is_never_repeated_and_the_top_bar_shows_the_sheet_facts():
+    from wg_core.modules.websites.brand_render import render_site
+    from wg_core.modules.websites.offline_copy import write_site_copy
+
+    cells = {"F": "R ANTONIO GARCIA DOMINGUES, 117, VILA MENEZES, ITAQUAQUECETUBA, SP 08599390", "G": "ITAQUAQUECETUBA", "H": "SP", "I": "8599390"}
+    assert web.address_of(cells) == cells["F"]
+    assert web.address_of({"F": "1 Main St", "G": "Cheyenne", "H": "WY", "I": "82001"}) == "1 Main St, Cheyenne, WY 82001"
+    c = {"company": "IMPORTADORA COMERCIAL DUPASA LTDA", "domain": "importador.example.com", "phone": "(11) 5071-1620",
+         "email": "", "address": cells["F"], "reg_id": "03.596.261/0002-95"}
+    facts = {"Company": c["company"], "Phone": c["phone"], "Address": c["address"], "City": "ITAQUAQUECETUBA", "State": "SP"}
+    html = render_site(c, write_site_copy(facts, "corporate-firm", c["domain"]), "corporate-firm")["index.html"].decode()
+    top = html[html.index("<header"):html.index("</header>")]
+    for fact in ("IMPORTADORA COMERCIAL DUPASA LTDA", "CNPJ: <span", "03.596.261/0002-95", "VILA MENEZES", "(11) 5071-1620"):
+        assert fact in top, fact
+    assert html.count("08599390") >= 1 and "SP 8599390" not in html
+    us = render_site({**c, "reg_id": "2024-001234567"}, write_site_copy(facts, "corporate-firm", c["domain"]), "corporate-firm")["index.html"].decode()
+    assert "Control ID: <span" in us

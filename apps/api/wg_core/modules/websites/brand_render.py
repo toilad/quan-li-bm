@@ -150,6 +150,8 @@ def head(c: dict, d: dict, title: str, desc: str, page: str) -> str:
         data["address"] = {"@type": "PostalAddress", "streetAddress": c["address"]}
     if c.get("email"):
         data["email"] = c["email"]
+    if c.get("reg_id"):
+        data["taxID"] = c["reg_id"]
     fonts = "family=Barlow:wght@400;500;600;700&family=" + d["heading"].replace(" ", "+") + ":wght@600;700;800"
     if d["heading"] in ("DM Serif Display",):
         fonts = "family=Barlow:wght@400;500;600;700&family=DM+Serif+Display"
@@ -181,6 +183,30 @@ def head(c: dict, d: dict, title: str, desc: str, page: str) -> str:
     )
 
 
+def reg_label(reg_id: str) -> str:
+    """Brazilian CNPJ (00.000.000/0000-00) or the US state filing number the Sheet calls control id (column J)."""
+    import re
+
+    return "CNPJ" if re.fullmatch(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", reg_id.strip()) else "Control ID"
+
+
+def topbar(c: dict) -> str:
+    """Company facts at the very top of every page, straight from the Sheet: legal name, full address, phone and the
+    registration number (column J). Nothing is shown that the Sheet does not have."""
+    items = [f'<span class="font-semibold text-white">{escape(c["company"])}</span>']
+    if c.get("reg_id"):
+        items.append(f'<span>{reg_label(c["reg_id"])}: <span class="font-semibold text-white">{escape(c["reg_id"])}</span></span>')
+    if c.get("address"):
+        items.append(f'<a href="{maps_link(c["address"])}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 hover:text-white">'
+                     f'{icon("pin", "w-4 h-4")}{escape(c["address"])}</a>')
+    if c.get("phone"):
+        items.append(f'<a href="tel:{_tel(c["phone"])}" class="inline-flex items-center gap-1.5 hover:text-white">'
+                     f'{icon("phone", "w-4 h-4")}{escape(c["phone"])}</a>')
+    return ('  <div class="bg-slate-900 text-slate-300 text-[13px]">\n'
+            '    <div class="max-w-6xl mx-auto px-6 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-1.5">'
+            + "".join(items) + '</div>\n  </div>\n')
+
+
 def header(c: dict, d: dict, active: str) -> str:
     links = [("index.html", "Home"), ("about.html", "About Us"), ("index.html#services", "Our Services"), ("faq.html", "FAQ"),
              ("contact.html", "Contact Us")]
@@ -192,6 +218,7 @@ def header(c: dict, d: dict, active: str) -> str:
             f'px-5 py-2.5 rounded-md shadow-lg">{icon("phone", "w-4 h-4")}{escape(c["phone"].split("/")[0].strip())}</a>') if c.get("phone") else ""
     return (
         '<header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-100">\n'
+        + topbar(c) +
         '  <div class="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between gap-6">\n'
         f'    <a href="index.html" class="font-heading text-xl font-extrabold text-slate-900 leading-tight max-w-[16rem]">{escape(c["company"])}</a>\n'
         f'    <nav class="hidden md:flex items-center gap-8">{nav}</nav>\n'

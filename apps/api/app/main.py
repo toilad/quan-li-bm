@@ -432,7 +432,7 @@ def photos_check(provider: str = "pixabay"):
 
 @app.get("/api/websites/preview", response_class=HTMLResponse)
 def web_preview(template: str, domain: str = "example.com", company: str = "Example Company LLC", phone: str = "",
-                address: str = "", page: str = "index.html"):
+                address: str = "", reg_id: str = "", page: str = "index.html"):
     """The real template output for this domain (same renderer, design and photos the build will use), with
     placeholder copy. In this owner-only preview the photos load from Pexels / Pixabay (temporary display); the build ships them as files."""
     from wg_core.modules.websites.brand_render import render_site
@@ -440,7 +440,7 @@ def web_preview(template: str, domain: str = "example.com", company: str = "Exam
     if template not in TEMPLATE_IDS:
         raise HTTPException(404)
     chosen = _preview_photos(domain.lower(), template)
-    files = render_site({"company": company, "domain": domain.lower(), "phone": phone, "email": "", "address": address},
+    files = render_site({"company": company, "domain": domain.lower(), "phone": phone, "email": "", "address": address, "reg_id": reg_id},
                         PREVIEW_COPY, template, photos={p["slot"]: {"src": p["src"], "alt": p["alt"]} for p in chosen},
                         credits=websites.photos.credits(chosen))
     if page not in files or not page.endswith(".html"):
