@@ -297,3 +297,20 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - nếu trụ sở trùng văn phòng của công ty dịch vụ registered agent thì lấy Mailing Address;
   - nếu trụ sở chỉ là PO BOX, hoặc phôi không có trụ sở, thì lấy địa chỉ registered agent.
 - Báo cáo chi tiết (có tên doanh nghiệp, không vào Git): `apps/api/data/reports/pdf-accuracy-2026-10-19.json`.
+
+## ✔ PDF scan California: đọc bằng OCR miễn phí trên máy (19/10/2026)
+- 8 PDF đầu tiên anh tải lên đều là bản scan không có lớp chữ (LLC-1 đời 2005/2007, LLC-5). Trước đây chúng nằm ở trạng thái "cần AI".
+- App dùng RapidOCR (Apache-2.0, chạy offline, không gửi file ra ngoài), khoảng 10–20 giây mỗi file. Các ô đọc được:
+  - File # (mã số);
+  - tên ở mục 1;
+  - địa chỉ:
+    - LLC-1: mục 4, địa chỉ agent;
+    - LLC-5: mục 7, trụ sở chính;
+    - mục 4 trống thì lấy "Return to";
+    - LLC-1 đời 2013: mục 3a.
+- So với đáp án em đọc bằng mắt trên 9 phôi thật: đúng 47/48 ô của 8 phôi mới. Phôi 2013 đúng hết, trừ tên.
+- 2 lỗi chữ OCR cần anh sửa tay:
+  - "Westboume" → "Westbourne";
+  - "JDS Fixnure" → "JDS Fixture" (ô này có cảnh báo độ tin cậy 93%).
+- Mẫu LLC-1/LLC-5 không có ô số điện thoại: D để trống, anh điền tay.
+- Mẫu OCR chưa biết: chuyển sang AI nếu có khoá; không có khoá thì báo rõ để anh nhập tay.
