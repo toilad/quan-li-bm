@@ -223,3 +223,11 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - 3 miền đang có chứng chỉ Let's Encrypt cũ, **hết hạn 28/10/2026**; `condominioedificioportinari` chưa có chứng chỉ.
   - Chờ AutoSSL định kỳ của hosting cấp hoặc gia hạn.
 - Từ nay job dựng web kiểm tra SSL trước khi tải lên, và không tự kích hoạt AutoSSL.
+
+## ✔ Bước 2 chạy thử trên domain có sẵn (19/10/2026)
+- `hemisferioholdingsltda.ntp88.com` (dòng 2803, nick 2), job #15.
+- SSL đã hợp lệ (AutoSSL, hết hạn 16/01/2027) nên không cần Issue. App kiểm SSL trước khi dựng.
+- Nội dung không AI, mẫu Corporate Firm, 7 ảnh Pexels. `Fileman::upload_files` 6 trang + 7 ảnh vào thư mục sạch.
+- Từ máy này bị 403 do chặn khu vực; xác minh bằng chứng chỉ + đủ 15 file trên cPanel. Từ nước ngoài trang hiển thị đầy đủ (tiêu đề, menu, ảnh, chân trang có địa chỉ và điện thoại).
+- Đã ghi C2803 và tự khoá.
+- **Còn vướng:** domain chưa có SSL thì Bước 2 chưa tự bấm Issue được, vì plugin FleetSSL không nhận token cPanel (HTTP 403).
