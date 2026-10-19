@@ -269,3 +269,9 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - Xếp lại hàng sau khi khởi động lại worker đã tạo job trùng cho các dòng đã xong.
   - Job 74 thấy C519 đã có thì dừng, không ghi đè, và tự khoá. Các job trùng khác đã huỷ trước khi chạy.
   - Bài học: không gọi lại enqueue cho cả lô; chỉ mở lại khoá.
+- **Giao diện mới (anh duyệt 19/10)**, các thay đổi:
+  - Tên công ty to ở đầu trang chủ.
+  - Ngay dưới là thẻ chữ to: Điện thoại / Địa chỉ / CNPJ hoặc Control ID / Dịch vụ.
+  - Có bản đồ Google Maps tìm theo đúng địa chỉ, ở cả trang chủ và trang liên hệ.
+  - Đã cập nhật lại **60/60 web** app dựng (dòng 705, 2803 và lô 58 dòng). Mỗi web chỉ thay 15 file của chính nó, `php.ini` giữ nguyên, khoá đã đóng lại.
+  - Đọc lại file trên cPanel: có bản đồ, khối thông tin ở đầu trang, hết "LTDA..".
