@@ -40,7 +40,11 @@ def test_every_template_renders_six_pages_with_no_unverifiable_content(t):
             for bad in NEVER + REFERENCE_FAKES:
                 assert bad not in text, (t.id, name, bad)
             assert "loremflickr" not in html
-            assert "<img" not in html and "<iframe" not in html  # no hot-linked photos, no guessed map pin
+            assert "<img" not in html  # no hot-linked photos
+            # the only frame: Google Maps searching the printed address (no guessed pin)
+            for src in re.findall(r'<iframe src="([^"]+)"', html):
+                assert src == "https://maps.google.com/maps?q=1+Main+St%2C+Cheyenne%2C+WY+82001&amp;z=15&amp;output=embed", src
+            assert html.count("<iframe") == (1 if name in ("index.html", "contact.html") else 0), name
             for url in re.findall(r'href="(https?://[^"]+)"', html):
                 assert url.startswith(("https://www.google.com/maps/search/?api=1&query=", "https://fonts.", f"https://{c['domain']}/")), url
         assert "Please contact us for current business hours." in files["contact.html"].decode()

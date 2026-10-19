@@ -374,7 +374,7 @@ def info_strip(c: dict, content: dict) -> str:
 
 def map_embed(address: str, cls: str) -> str:
     """Google Maps embed of the printed address (a search, no key, no guessed pin)."""
-    src = f"https://maps.google.com/maps?q={quote_plus(address)}&z=15&output=embed"
+    src = f"https://maps.google.com/maps?q={quote_plus(address)}&amp;z=15&amp;output=embed"
     return (f'<iframe src="{src}" class="{cls}" style="border:0" loading="lazy" referrerpolicy="no-referrer-when-downgrade" '
             f'allowfullscreen title="{escape(address)} — Google Maps"></iframe>')
 
