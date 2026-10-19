@@ -90,7 +90,7 @@ def check(number: str, state: str, provisioned: bool = False, placeholder_ok: bo
             return [{"level": "error", "message": f"Mã vùng / đầu số không hợp lệ theo chuẩn Bắc Mỹ ({npa}-{nxx})"}]
         if nxx == "555":
             if placeholder_ok and is_placeholder(first):
-                return [{"level": "warn", "message": "Số TẠM (dải 555-01xx dành cho số giả) — thay bằng số thật sau; website không hiện số này"}]
+                return [{"level": "warn", "message": "Số TẠM (dải 555-01xx dành cho số giả) — thay bằng số thật sau; website vẫn hiện số này"}]
             return [{"level": "error", "message": f"Đầu số 555 là số dành cho phim ảnh / ví dụ — không phải số doanh nghiệp thật"}]
         codes = US_AREA_CODES.get(state)
         if codes is None:
@@ -160,7 +160,7 @@ def tag(fields: dict, extra: dict | None = None) -> None:
     if temp:
         d.update(value=temp, source="placeholder", phone_source="placeholder", checked=True, state=state,
                  note=f"Số TẠM mã vùng {state} (dải 555-01xx dành cho số giả, không phải số của ai) — phôi không có số; "
-                      f"anh thay bằng số thật sau. Website không hiện số tạm này")
+                      f"anh thay bằng số thật sau. Website vẫn hiện số này như số thường")
     else:
         d["phone_source"] = "needs_setup"
         where = f"bang {state}" if state else "bang của doanh nghiệp (chưa xác định được)"
