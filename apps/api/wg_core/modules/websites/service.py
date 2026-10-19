@@ -50,8 +50,16 @@ def address_of(cells: dict) -> str:
     return ", ".join(x for x in (f, g, f"{h} {i}".strip()) if x)
 
 
+def site_phone(cells: dict) -> tuple[str, str]:
+    """Column D as the website may show it: a number failing the checks (a "555" movie number, a broken format) is never
+    published — the site then shows no phone (wg_core/phones.py)."""
+    from ...phones import website_phone
+
+    return website_phone(cells.get("D", ""), cells.get("H", ""))
+
+
 def facts_of(cells: dict) -> dict:
-    return {"Company": cells["A"], "Phone": cells["D"], "Address": address_of(cells), "City": cells["G"], "State": cells["H"]}
+    return {"Company": cells["A"], "Phone": site_phone(cells)[0], "Address": address_of(cells), "City": cells["G"], "State": cells["H"]}
 
 
 def issue_ssl(ctx, domain: str, nick) -> None:
@@ -238,7 +246,10 @@ def _build(ctx: JobContext):
 
     if not st.get("uploaded"):
         ctx.step(f"Dựng HTML ({template.name}) + upload")
-        company = {"company": row.cells["A"], "domain": domain, "phone": row.cells["D"], "email": email_of(s, row.cells),
+        phone, hidden = site_phone(row.cells)
+        if hidden:
+            ctx.log(f"Không đưa số điện thoại ở D{cell[1:]} lên web: {hidden}", "warn")
+        company = {"company": row.cells["A"], "domain": domain, "phone": phone, "email": email_of(s, row.cells),
                    "reg_id": row.cells["J"].strip(),
                    "address": address_of(row.cells)}
         chosen = st.get("photos") or []

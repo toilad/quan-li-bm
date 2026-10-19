@@ -25,6 +25,10 @@ export type Field = {
   /** Address cells: principal | mailing | agent | return_to | principal_ca */
   role?: string;
   warning?: string;
+  /** Column D only: source_pdf (printed on the PDF) | provisioned (from the owner's provider) | needs_setup | manual */
+  phone_source?: "source_pdf" | "provisioned" | "needs_setup" | "manual";
+  provider?: string;
+  verified_active?: boolean;
 };
 /** An address printed on the form that is not the company's own (agent, Return to, a second office): offered only. */
 export type AddressCandidate = {

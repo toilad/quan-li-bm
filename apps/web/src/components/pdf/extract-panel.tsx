@@ -9,7 +9,8 @@ import {
   DOC_TYPES, FIELD_LABEL, FIELD_META, INDUSTRIES, KNOWN_DOC_TYPES, SAVE_STEPS, fieldHint, hasLeadingZero, templateFor, validate,
   type DocType, type FieldKey, type FieldSource, type IndustryKey, type PdfFile,
 } from "@/lib/pdf-mock";
-import { API_URL } from "@/lib/api";
+import { API_URL, api, errorText } from "@/lib/api";
+import { useState } from "react";
 import type { AddressCandidate, Region } from "@/lib/pdf-mock";
 import { PdfStatusChip } from "./status";
 import { canSave, saveBlockers } from "./use-pdf-queue";
@@ -70,6 +71,70 @@ function Candidates({ file, dispatch, editable }: { file: PdfFile; dispatch: Que
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+const PHONE_SOURCE: Record<string, { label: string; cls: string }> = {
+  source_pdf: { label: "Số in trên PDF", cls: "text-emerald-300" },
+  provisioned: { label: "Số cấp từ nhà cung cấp của anh", cls: "text-sky-300" },
+  needs_setup: { label: "Chưa có số — cần cấp", cls: "text-amber-300" },
+  manual: { label: "Anh nhập tay", cls: "text-amber-200" },
+};
+
+type PhoneOption = { number: string; display: string; in_use?: boolean; problems?: string[]; locality?: string; cost?: boolean };
+type PhoneOptions = { state: string; provider: string | null; owned: PhoneOption[]; available: PhoneOption[]; message: string };
+
+/** No number on the PDF: one of the owner's own numbers with the state's area code — never a made-up one. */
+function PhoneSetup({ file, dispatch, editable }: { file: PdfFile; dispatch: QueueDispatch; editable: boolean }) {
+  const [opts, setOpts] = useState<PhoneOptions | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const load = async () => {
+    setBusy(true); setErr("");
+    try { setOpts(await api.get<PhoneOptions>(`/api/pdf/${file.id}/phone`)); } catch (e) { setErr(errorText(e)); }
+    setBusy(false);
+  };
+  const buy = (o: PhoneOption) => {
+    const ok = window.confirm(`Mua số ${o.display} là bước CÓ PHÍ trên tài khoản ${opts?.provider} của anh.\n` +
+      "Cần mở “Mua số điện thoại (có phí)” ở Cài đặt › Ghi thật trước; mua xong app tự khoá lại.\nAnh xác nhận mua số này?");
+    if (ok) dispatch({ type: "phoneAssign", id: file.id, number: o.number, buy: true });
+  };
+  const usable = (opts?.owned ?? []).filter((o) => !o.in_use && !o.problems?.length);
+  return (
+    <div className="mt-1 rounded-lg border border-amber-400/30 bg-amber-500/[0.05] p-2.5 text-[11.5px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-amber-100">Phôi không có số. Cấp số có mã vùng của bang {(file.fields?.H.value || "?").toUpperCase()} từ nhà cung cấp của anh — không tự điền số.</span>
+        {editable && (
+          <button type="button" onClick={load} disabled={busy}
+            className="shrink-0 rounded border border-amber-400/40 px-2 py-0.5 text-[11px] text-amber-100 hover:bg-amber-500/15 disabled:opacity-60">
+            {busy ? "Đang tìm…" : "Tìm số (miễn phí)"}
+          </button>
+        )}
+      </div>
+      {err && <div className="mt-1 text-rose-300">{err}</div>}
+      {opts && (
+        <div className="mt-2 space-y-1.5">
+          {opts.message && <div className="text-amber-200">{opts.message}</div>}
+          {usable.map((o) => (
+            <div key={o.number} className="flex items-center justify-between gap-2">
+              <span className="font-mono">{o.display} <span className="font-sans text-fg-subtle">· đã có trong tài khoản (không tốn phí)</span></span>
+              <button type="button" onClick={() => dispatch({ type: "phoneAssign", id: file.id, number: o.number, buy: false })}
+                className="rounded border border-sky-400/40 px-2 py-0.5 text-[11px] text-sky-100 hover:bg-sky-500/15">Dùng số này</button>
+            </div>
+          ))}
+          {(opts.owned ?? []).filter((o) => o.in_use || o.problems?.length).map((o) => (
+            <div key={o.number} className="text-fg-subtle"><span className="font-mono">{o.display}</span> · {o.in_use ? "đã dùng cho doanh nghiệp khác" : o.problems?.[0]}</div>
+          ))}
+          {(opts.available ?? []).map((o) => (
+            <div key={o.number} className="flex items-center justify-between gap-2">
+              <span className="font-mono">{o.display} <span className="font-sans text-fg-subtle">· {o.locality} · đang bán (CÓ PHÍ)</span></span>
+              <button type="button" onClick={() => buy(o)}
+                className="rounded border border-rose-400/40 px-2 py-0.5 text-[11px] text-rose-100 hover:bg-rose-500/15">Mua số này…</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -264,6 +329,15 @@ export function ExtractPanel({
                         )}
                       </div>
                     ))}
+                    {m.key === "D" && fld.phone_source && (
+                      <span className={clsx("block text-[10.5px]", PHONE_SOURCE[fld.phone_source]?.cls)}>
+                        Nguồn số: {PHONE_SOURCE[fld.phone_source]?.label ?? fld.phone_source}
+                        {fld.phone_source === "provisioned" && !fld.verified_active && " · chưa xác minh đang hoạt động"}
+                      </span>
+                    )}
+                    {m.key === "D" && !fld.value && (fld.phone_source ?? "needs_setup") === "needs_setup" && file.fields && (
+                      <PhoneSetup file={file} dispatch={dispatch} editable={editable} />
+                    )}
                     {fld.region && fld.value && (
                       <div className="flex items-end gap-2 pt-0.5">
                         <RegionCrop docId={file.id} region={fld.region} alt={`Vùng đọc ô ${m.key}`} />

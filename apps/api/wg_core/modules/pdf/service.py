@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from ...config import settings
 from ...runtime_config import get as cfg
 from ...integrations import ai
+from ...phones import tag as tag_phone
 from ...integrations.errors import Conflict, Permanent
 from ...integrations.google import Drive, Sheets, hyperlink_formula
 from ...jobs import JobContext, enqueue, handler
@@ -68,6 +69,7 @@ def extract_into(doc: PdfDocument, data: bytes, forced_type: str | None = None):
     if read:
         doc.fields, doc.extra = read
         locate(data, doc.fields)  # page + region of every value, shown next to the cell
+        tag_phone(doc.fields)  # where the number in D comes from: the PDF, or still to be provided
         doc.status = "review"
     elif not doc.has_text and doc.doc_type in ("ca", "wy", "wa", "br", "unknown"):
         # Scan without a text layer: the AI job identifies the form (unless picked by hand) and reads it.
@@ -95,6 +97,7 @@ def _ocr_read(ctx: JobContext):
     manual = doc.detection_reason == "Chọn thủ công"
     if got and (not manual or doc.doc_type == "ca"):
         doc.fields, doc.extra = got
+        tag_phone(doc.fields)
         doc.doc_type, doc.status, doc.error = "ca", "review", None
         if not manual:
             doc.detection_confidence = 0.9
@@ -129,6 +132,7 @@ def _ai_read(ctx: JobContext):
     elif ai_type not in (doc.doc_type, "unknown"):
         ctx.log(f"AI cho rằng đây là loại {ai_type}, khác loại đã chọn tay ({doc.doc_type}) — giữ loại đã chọn, cần kiểm tra", "warn")
     doc.fields = fields_from_ai(result, doc.doc_type)
+    tag_phone(doc.fields)
     doc.industry = industry_for(doc)
     doc.status = "review"
     ctx.log("AI đã đọc phôi — mọi ô do AI đọc phải được đối chiếu trước khi lưu", "ok")

@@ -336,3 +336,26 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
 - **Test:**
   - Giả lập (mock), chạy cùng bộ test chung: các mẫu LLC-1 2005/2007, LLC-5 (giống 38776980), tên viết tay, từng lỗi OCR đã gặp, API kiểm tra/gợi ý/chặn lưu.
   - **OCR thật** (bật bằng `RUN_REAL_OCR=1`): 11 phôi scan của anh, file và đáp án nằm ngoài Git.
+
+## ✔ Số điện thoại doanh nghiệp (cột D) — quy tắc của anh (19/10/2026)
+- **Nguồn của số D:**
+  - `source_pdf`: PDF có số → giữ đúng như in trên phôi.
+  - `needs_setup`: PDF không có số → để trống, kèm ghi chú cần cấp số có mã vùng của bang ở ô H. **Không bao giờ điền số giả.**
+  - `provisioned`: số lấy từ tài khoản nhà cung cấp của anh (Twilio). Gán bằng nút "Dùng số này" trong PDF Manager.
+  - `manual`: anh tự nhập.
+- **Kiểm tra trước khi ghi:**
+  - định dạng chuẩn Bắc Mỹ / Brazil;
+  - chặn **số 555** (đầu số dành cho phim ảnh);
+  - mã vùng ↔ bang (Mỹ) và DDD ↔ UF (Brazil): số từ PDF lệch bang thì cảnh báo; số được cấp lệch bang thì **chặn**;
+  - mỗi số chỉ gán cho một doanh nghiệp (đối chiếu cả cột D trên Sheet).
+- **Trạng thái hoạt động:** số được cấp ghi rõ "chưa xác minh đang hoạt động", app không tự khẳng định số đã chạy.
+- **Mua số là bước riêng, có phí:** cần anh mở "Mua số điện thoại (có phí)" ở Ghi thật **và** xác nhận phí cho đúng số đó; mua xong app tự khoá lại.
+  - Xem số đã có và tìm số đang bán là miễn phí.
+  - **Chưa cấu hình Twilio** → chỉ báo, không làm gì.
+  - Adapter Twilio làm theo tài liệu API công khai; **chưa thử với tài khoản thật** (anh chưa có), test dùng giả lập.
+- **Website:** số không qua kiểm tra (vd 555) không bao giờ được đưa lên web; có ghi nhật ký.
+- **Hiện trạng Sheet (chỉ đọc):**
+  - 270/464 dòng WA mang mã vùng không thuộc WA (209 của California: 193 dòng);
+  - số 16268017084 dùng cho 10 công ty;
+  - 4 dòng CA mang số 555.
+  - App không tự sửa các dòng này.

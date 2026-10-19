@@ -280,6 +280,7 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
                 old = f.get(k) or {}
                 # typed by the owner: checked by definition; the page region stays for reference, OCR doubts go
                 f[k] = {"value": v.strip(), "source": "manual" if v.strip() else "missing", "checked": bool(v.strip()),
+                        **({"phone_source": "manual" if v.strip() else "needs_setup"} if k == "D" else {}),
                         **({"region": old["region"]} if old.get("region") else {}), **({"role": old["role"]} if old.get("role") else {})}
         d.fields = f
     if body.checked:
@@ -302,6 +303,36 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
                     "G": {**base, "value": c["city"]}, "H": {**base, "value": c["state"]}, "I": {**base, "value": c["zip"]}}
     if body.industry:
         d.industry = {**(d.industry or {}), "category": body.industry, "source": "manual"}
+    return doc_out(d)
+
+
+class PhoneAssignBody(BaseModel):
+    number: str
+    buy: bool = False  # buy this number (a cost) instead of using one already in the owner's account
+    confirm_cost: bool = False  # the owner confirmed the cost of this very number
+
+
+@app.get("/api/pdf/{doc_id}/phone")
+def phone_options(doc_id: int, s: Session = Depends(db)):
+    """No phone on the PDF: numbers of the company's state the owner already has (free) or could buy (a cost)."""
+    from wg_core.modules.pdf import phone_setup
+
+    d = s.get(PdfDocument, doc_id)
+    if not d:
+        raise HTTPException(404)
+    return phone_setup.options(s, d)
+
+
+@app.post("/api/pdf/{doc_id}/phone")
+def phone_assign(doc_id: int, body: PhoneAssignBody, s: Session = Depends(db)):
+    from wg_core.modules.pdf import phone_setup
+
+    d = s.get(PdfDocument, doc_id)
+    if not d:
+        raise HTTPException(404)
+    if d.status == "saved" or _live_save(s, d):
+        raise HTTPException(409, "Đã lưu / đang lưu — không sửa")
+    phone_setup.assign(s, d, body.number, body.buy, body.confirm_cost)
     return doc_out(d)
 
 

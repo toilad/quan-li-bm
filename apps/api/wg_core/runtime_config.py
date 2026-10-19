@@ -42,6 +42,8 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "SITE_COPY_AI": ("ai", "Viết nội dung website bằng AI: off (mặc định, miễn phí, viết sẵn theo ngành) hoặc on (cần khoá Anthropic, tốn phí)", False),
     "PEXELS_API_KEY": ("photos", "Khoá API Pexels", True),
     "PIXABAY_API_KEY": ("photos", "Khoá API Pixabay", True),
+    "TWILIO_ACCOUNT_SID": ("phone", "Twilio Account SID (AC…)", True),
+    "TWILIO_AUTH_TOKEN": ("phone", "Twilio Auth Token", True),
     "PUBLIC_API_URL": ("server", "Địa chỉ API công khai (cho OAuth redirect)", False),
     "PUBLIC_WEB_URL": ("server", "Địa chỉ giao diện", False),
     **{f"INET_API_KEY_{n}": (f"nick:{n.lower()}", "Khoá API iNET", True) for n in NICKS},
@@ -68,6 +70,10 @@ def credential_problem(name: str, value: str) -> str | None:
     if name == "ANTHROPIC_API_KEY":
         if not v.startswith("sk-ant-") or not v.isascii() or any(c.isspace() for c in v):
             return "Khoá Anthropic có dạng sk-ant-… (một chuỗi liền) — có vẻ đã dán nhầm nội dung khác"
+    if name == "TWILIO_ACCOUNT_SID" and not (v.startswith("AC") and len(v) == 34 and v.isalnum()):
+        return "Twilio Account SID có dạng AC + 32 ký tự (một chuỗi liền) — có vẻ đã dán nhầm nội dung khác"
+    if name == "TWILIO_AUTH_TOKEN" and not (len(v) == 32 and v.isalnum()):
+        return "Twilio Auth Token là chuỗi 32 ký tự chữ và số — có vẻ đã dán nhầm nội dung khác"
     if name.startswith("CPANEL_USER_"):
         if not v.isascii() or any(c.isspace() for c in v) or len(v) > 64:
             return "User cPanel là một chuỗi liền, không dấu, không khoảng trắng"

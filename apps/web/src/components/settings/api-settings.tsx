@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
-import { KeyRound, Save, Trash2, ShieldCheck, FileSpreadsheet, Bot, Server, Users, Link2, PlugZap, CheckCircle2, AlertCircle, Copy, Image as ImageIcon } from "lucide-react";
+import { KeyRound, Save, Trash2, ShieldCheck, FileSpreadsheet, Bot, Server, Users, Link2, PlugZap, CheckCircle2, AlertCircle, Copy, Image as ImageIcon, Phone } from "lucide-react";
 import { API_URL, api, errorText } from "@/lib/api";
 import { DnsWriteCard } from "./dns-write";
 
@@ -14,6 +14,7 @@ const GROUPS: { key: string; title: string; icon: typeof Bot; note: string }[] =
   { key: "google", title: "Google Sheets & Drive", icon: FileSpreadsheet, note: "OAuth của chính anh: quyền Sheets + chỉ các file do app tạo trên Drive." },
   { key: "ai", title: "AI (Anthropic)", icon: Bot, note: "Dùng để đọc phôi scan và viết nội dung website." },
   { key: "photos", title: "Ảnh cho website (Pexels / Pixabay)", icon: ImageIcon, note: "Có khoá Pexels thì dùng Pexels, không thì Pixabay. Khoá Pexels: pexels.com/api/key · khoá Pixabay: pixabay.com/api/docs (mục Parameters). Ảnh tải về và upload kèm web; chân trang ghi nguồn + tên tác giả. Chưa có khoá → web dùng khung màu." },
+  { key: "phone", title: "Số điện thoại doanh nghiệp (Twilio)", icon: Phone, note: "Cấp số có mã vùng đúng bang cho doanh nghiệp mà PDF không in số. Chỉ dùng số trong tài khoản Twilio của chính anh; xem và tìm số là miễn phí, mua số là bước có phí — chỉ khi anh mở “Mua số điện thoại” ở Ghi thật và xác nhận phí cho từng số. Chưa nhập → ô D để trống (needs_setup), không bao giờ điền số giả." },
   { key: "server", title: "Máy chủ", icon: Server, note: "Địa chỉ công khai khi đưa app lên server (dùng cho OAuth redirect)." },
   { key: "nick:n1", title: "Nick iNET-1", icon: Users, note: "Khoá iNET + user/token cPanel của hosting nick này." },
   { key: "nick:n2", title: "Nick iNET-2", icon: Users, note: "Khoá iNET + user/token cPanel của hosting nick này." },

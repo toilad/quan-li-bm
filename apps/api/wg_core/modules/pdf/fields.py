@@ -58,12 +58,18 @@ def validate(fields: dict, doc_type: str) -> dict[str, dict]:
             issues[k] = {"level": "warn", "kind": "review", "message": f["warning"]}
     j, h, i, d = val("J"), val("H"), val("I"), val("D")
     if d:
-        # a country code in front is fine: +55 (Brazil), +1 (US)
-        parts = [re.sub(r"^1(?=\d{10}$)", "", re.sub(r"^55(?=\d{10,11}$)", "", re.sub(r"\D", "", x))) for x in d.split("/")]
-        if any(len(x) not in (10, 11) for x in parts):
-            issues["D"] = {"level": "error", "kind": "format", "message": "Mỗi số điện thoại phải có 10–11 chữ số"}
-        elif len(parts) > 1:
-            issues["D"] = {"level": "warn", "kind": "format", "message": f"Phôi có {len(parts)} số — giữ nguyên như phôi"}
+        # format, area code ↔ the company's state (H), no "555" movie numbers (wg_core/phones.py)
+        from ...phones import check as check_phone
+
+        fd = fields.get("D") or {}
+        problems = check_phone(d, h, provisioned=fd.get("phone_source") == "provisioned")
+        err = next((p for p in problems if p["level"] == "error"), None)
+        if err:
+            issues["D"] = {"level": "error", "kind": "format", "message": err["message"]}
+        elif problems:
+            issues["D"] = {"level": "warn", "kind": "review", "message": problems[0]["message"]}
+        elif "/" in d:
+            issues["D"] = {"level": "warn", "kind": "format", "message": f"Phôi có {len(d.split('/'))} số — giữ nguyên như phôi"}
     if doc_type == "br":
         if j and not re.fullmatch(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", j):
             issues["J"] = {"level": "error", "kind": "format", "message": "CNPJ phải dạng 00.000.000/0000-00"}

@@ -186,7 +186,8 @@ def _ocr_doc():
     w = PdfWriter()
     w.add_blank_page(612, 792)
     w.write(buf)
-    data = buf.getvalue() + b"%test-ocr"
+    _ocr_doc.n = getattr(_ocr_doc, "n", 0) + 1  # a different file each call (md5 is unique)
+    data = buf.getvalue() + f"%test-ocr-{_ocr_doc.n}".encode()
     md5 = hashlib.md5(data).hexdigest()
     storage_path(md5).write_bytes(data)
     fields, extra = extract_ca_scan(llc1())

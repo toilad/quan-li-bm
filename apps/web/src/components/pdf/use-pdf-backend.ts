@@ -38,7 +38,8 @@ type Action =
   | { type: "tab"; tab: SheetTab }
   | { type: "aiRead"; id: string }
   | { type: "check"; id: string; key: FieldKey; on: boolean }
-  | { type: "useCandidate"; id: string; index: number };
+  | { type: "useCandidate"; id: string; index: number }
+  | { type: "phoneAssign"; id: string; number: string; buy: boolean };
 
 export type QueueDispatch = (a: Action) => void;
 
@@ -214,6 +215,9 @@ export function usePdfBackend(onMessage: (msg: string) => void) {
         setDocs((ds) => ds.map((d) => (String(d.id) === a.id ? { ...d, fields: { ...d.fields, [a.key]: { ...(d.fields as Fields)[a.key], checked: a.on } } as Fields } : d)));
         return void call(() => api.patch(`/api/pdf/${a.id}`, { checked: { [a.key]: a.on } }));
       }
+      case "phoneAssign":
+        return void call(() => api.post(`/api/pdf/${a.id}/phone`, { number: a.number, buy: a.buy, confirm_cost: a.buy }),
+          a.buy ? "Đã mua và gán số cho ô D" : "Đã gán số trong tài khoản của anh cho ô D");
       case "useCandidate":
         return void call(() => api.patch(`/api/pdf/${a.id}`, { use_candidate: a.index }), "Đã dùng địa chỉ gợi ý cho F–I (anh đã chọn)");
       case "edit": {

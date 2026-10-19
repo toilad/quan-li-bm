@@ -97,7 +97,8 @@ def test_wa_validation_warns_but_does_not_block_a_foreign_office():
     fields = {k: {"value": v} for k, v in {"A": "X LLC", "D": "+1 206 555 0100", "E": "xllc", "F": "f", "G": "g", "H": "JALISCO",
                                               "I": "45640", "J": "600111222"}.items()}
     issues = validate(fields, "wa")
-    assert {k: v["level"] for k, v in issues.items()} == {"H": "warn"}
+    # a foreign office: warnings only — H not a US state, and D's area code cannot be matched to a state
+    assert {k: v["level"] for k, v in issues.items()} == {"H": "warn", "D": "warn"}
 
 
 def test_ficha_cadastral():

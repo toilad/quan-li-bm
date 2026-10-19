@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 from .integrations.errors import NotAvailable
 
 KEY = "dns_write"
-OPS = {"dns": "Thêm bản ghi A (iNET)", "host": "Tạo miền trên cPanel", "upload": "Tải website lên hosting", "ssl": "Chạy AutoSSL"}
+OPS = {"dns": "Thêm bản ghi A (iNET)", "host": "Tạo miền trên cPanel", "upload": "Tải website lên hosting", "ssl": "Chạy AutoSSL",
+       "phone": "Mua số điện thoại (có phí)"}
 DEFAULT = {"enabled": False, "trial_fqdn": "", "ops": [], "trial_passed": False, "trial_job": None,
            "web_trial_passed": False, "web_trial_job": None, "changed_at": None, "locked_reason": None,
            "also": []}  # other names the owner approved for this opening (e.g. AutoSSL on both trial domains)
@@ -43,6 +44,8 @@ def why_not(sw: dict, op: str, fqdn: str) -> str | None:
         return f"Ghi thật đang KHOÁ — chưa {name.lower()} cho {fqdn}. Anh mở ở Cài đặt › Ghi thật khi duyệt chạy thử"
     if op not in (sw.get("ops") or []):
         return f"Anh chưa cho phép thao tác “{name}” — bật nó ở Cài đặt › Ghi thật"
+    if op == "phone":  # no trial: each purchase also needs the owner's confirmation of its cost, and relocks after
+        return None
     passed = sw["trial_passed"] if op in ("dns", "host") else sw["web_trial_passed"]
     allowed = {(sw["trial_fqdn"] or "").lower()} | {n.lower() for n in sw.get("also") or []}
     if not passed and fqdn.lower() not in allowed:

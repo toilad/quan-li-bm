@@ -86,6 +86,17 @@ class PdfDocument(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class PhoneAssignment(Base):
+    """A number from the owner's provider account given to one company — never to two."""
+
+    __tablename__ = "phone_assignments"
+    number: Mapped[str] = mapped_column(String(20), primary_key=True)  # E.164
+    doc_id: Mapped[int] = mapped_column(ForeignKey("pdf_documents.id"))
+    state: Mapped[str] = mapped_column(String(10))
+    bought: Mapped[bool] = mapped_column(Boolean, default=False)  # bought for this company (a cost) vs already owned
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Nick(Base):
     __tablename__ = "nicks"
     id: Mapped[str] = mapped_column(String(20), primary_key=True)  # n1, n2… (secrets: *_N1 env vars)
