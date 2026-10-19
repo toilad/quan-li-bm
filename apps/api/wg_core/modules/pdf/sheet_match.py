@@ -41,9 +41,16 @@ def name_verified(doc: PdfDocument) -> tuple[bool, str]:
     return False, "Tên (A) chưa được đối chiếu với ảnh gốc — anh xem vùng ảnh bên cạnh ô A rồi tick “Đã kiểm tra”"
 
 
+def key_state(doc: PdfDocument) -> str:
+    """H; without an address, a California LLC-1 (its number is a California filing number) is matched under CA."""
+    from ...phones import state_of
+
+    return state_of(doc.fields, doc.extra)
+
+
 def _key(doc: PdfDocument) -> tuple[str, str, str]:
     v = lambda k: ((doc.fields.get(k) or {}).get("value") or "").strip()  # noqa: E731
-    return v("A"), v("J"), v("H")
+    return v("A"), v("J"), key_state(doc)
 
 
 def match(doc: PdfDocument, rows=None) -> dict:

@@ -135,3 +135,12 @@ def test_drive_file_is_named_after_the_company():
     assert sm.drive_name(d) == "A B C D.pdf"
     d.fields = {"A": {"value": ""}}
     assert sm.drive_name(d) == "38076809-1.pdf"
+
+
+def test_a_california_llc1_without_address_is_matched_under_ca():
+    doc_id = doc_with("Holiday GP House, LLC", "200809410058", "")
+    with session_scope() as s:
+        d = s.get(PdfDocument, doc_id)
+        d.extra = {**d.extra, "form": "LLC-1", "state_of_form": "CA"}
+    out, _ = run(doc_id, lambda s, d: sm.match(d))
+    assert out["h"] == "CA" and out["status"] == "name_differs" and out["rows"][0]["row"] == 4

@@ -20,7 +20,7 @@ from ...jobs import JobContext, enqueue, handler
 from ...models import PdfDocument, SheetWrite
 from ..websites.templates import detect as detect_template, template_for_cnae
 from .extract import detect, extract_text_layer, fields_from_ai, locate, read_pdf
-from .sheet_match import drive_name, name_verified, same_company
+from .sheet_match import drive_name, key_state, name_verified, same_company
 from .fields import FIELD_KEYS, blocking, field, short_name, validate
 
 
@@ -181,7 +181,7 @@ def row_values(doc: PdfDocument) -> list[str]:
 def _save(ctx: JobContext):
     s, doc = ctx.session, ctx.session.get(PdfDocument, ctx.job.payload["doc_id"])
     j = (doc.fields.get("J") or {}).get("value", "")
-    h = (doc.fields.get("H") or {}).get("value", "")
+    h = key_state(doc)  # H, or CA for a California LLC-1 without an address (same rule as "Đối chiếu Sheet")
 
     if not ctx.state.get("dup_checked") and not doc.sheet_row:  # already written by an earlier run → nothing to check
         ctx.step("Kiểm tra trùng")
