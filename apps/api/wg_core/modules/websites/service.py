@@ -9,6 +9,7 @@ from ...integrations import ai, net
 from ...integrations.cpanel import CPanel
 from ...integrations.errors import Conflict, NotConfigured, Permanent, Transient, wait_or_fail
 
+ISSUE_RETRY_MINUTES = 30  # a new domain needs ~30 min (DNS) before Let's Encrypt can validate it
 SSL_WAIT_HOURS = 48  # the hosting's own scheduled AutoSSL issues the certificate; past two days something is wrong
 # The app never starts AutoSSL itself: SSL::start_autossl_check has no domain parameter and runs for every domain of the
 # hosting account (owner's rule, 2026-10-19). A site is built only once its name already has a valid certificate.
@@ -51,6 +52,34 @@ def address_of(cells: dict) -> str:
 
 def facts_of(cells: dict) -> dict:
     return {"Company": cells["A"], "Phone": cells["D"], "Address": address_of(cells), "City": cells["G"], "State": cells["H"]}
+
+
+def issue_ssl(ctx, domain: str, nick) -> None:
+    """B2 step 2: the cPanel "Let's Encrypt SSL" plugin's Issue for exactly this domain — never AutoSSL for the whole
+    account. Only when DNS already points to the hosting, at most once every ISSUE_RETRY_MINUTES (a domain made in B1
+    needs about 30 minutes). Without the stored cPanel password: log it and keep waiting (nothing is issued)."""
+    from datetime import datetime, timezone
+
+    from ...integrations.fleetssl import FleetSSL
+
+    st = ctx.state
+    last = st.get("ssl_issue_at")
+    if last and (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() < ISSUE_RETRY_MINUTES * 60:
+        return
+    if nick.ip not in net.resolve_a(domain):
+        ctx.log(f"{domain}: DNS chưa trỏ về {nick.ip} — chưa Issue SSL", "info")
+        return
+    try:
+        plugin = FleetSSL(nick.id, nick.cpanel_host)
+    except NotConfigured as e:
+        ctx.log(f"Chưa Issue SSL tự động được: {e}", "warn")
+        return
+    ctx.checkpoint(ssl_issue_at=datetime.now(timezone.utc).isoformat(), ssl_issue_tries=int(st.get("ssl_issue_tries") or 0) + 1)
+    try:
+        plugin.issue(domain)
+        ctx.log(f"Let's Encrypt (plugin): đã Issue chứng chỉ cho {domain} (chỉ tên này, xác thực http-01)", "ok")
+    except Permanent as e:  # e.g. validation failed because DNS is still fresh: try again later
+        ctx.log(f"Issue SSL cho {domain} chưa được: {e} — thử lại sau {ISSUE_RETRY_MINUTES} phút", "warn")
 
 
 def use_ai() -> bool:
@@ -174,6 +203,9 @@ def _build(ctx: JobContext):
     if not st.get("cert_ok"):
         ctx.step("Kiểm tra SSL trước khi dựng web")
         cert_ok, cert_info = net.cert_valid(domain)
+        if not cert_ok:
+            issue_ssl(ctx, domain, nick)  # the plugin's Issue button for this one name (when the owner stored the password)
+            cert_ok, cert_info = net.cert_valid(domain)
         if not cert_ok:
             try:
                 status = cp._call("SSL", "get_autossl_renewal_status", {"domain": domain})  # read-only, this domain only
