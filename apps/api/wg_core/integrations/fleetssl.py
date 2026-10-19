@@ -8,7 +8,9 @@ So the app opens a real cPanel session the official way, exactly like OnePortal'
   GET   data.url (follows redirects)        → cPanel session cookie + /cpsessNNN/ path            (checked live, nick 2)
   Plugin (documented: cpanel.fleetssl.com › For developers › Plugin JSON API):
   GET  …/cpsessNNN/frontend/jupiter/letsencrypt/letsencrypt.live.cgi?api_version=1&api_function=list-certificates
-  POST …&api_function=issue-certificate  virtual_host, dns_identifiers, challenge_method (http-01), dry_run
+  POST …&api_function=issue-certificate  JSON {"virtual_host", "dns_identifiers": [..], "challenge_method": "http-01", "dry_run"}
+       (a form body returns the HTML page; JSON answered {"success": true, "data": "The dry run succeeded, a test
+       certificate was issued and discarded: https://acme-staging-v02…"} live on nick 2)
   Answer: {"success": true|false, "errors": [..]|null, "data": {"virtual_hosts": {"<vhost>": {…}}}} (seen live)
 No password, no cookie of the owner's browser. One issue call = one virtual host, exactly the name given — never an
 account-wide AutoSSL run. The session lives only for this object (it is not stored anywhere).
@@ -73,12 +75,13 @@ class FleetSSL:
     def __exit__(self, *exc):
         self.close()
 
-    def _call(self, method: str, function: str, data: dict | None = None) -> dict:
+    def _call(self, method: str, function: str, body: dict | None = None) -> dict:
         what = f"Let's Encrypt plugin {function}"
         if not self._client:
             self._login()
         try:
-            r = self._client.request(method, self._base, params={"api_version": 1, "api_function": function}, data=data,
+            # POST needs a JSON body: form fields get the plugin's HTML page back (checked live 2026-10-19)
+            r = self._client.request(method, self._base, params={"api_version": 1, "api_function": function}, json=body,
                                      headers={"Accept": "application/json"})
         except httpx.TransportError as e:
             raise Transient(f"{what}: lỗi mạng ({type(e).__name__})") from None
@@ -104,5 +107,5 @@ class FleetSSL:
         """The Issue button for exactly this name: its own virtual host, only this DNS identifier, HTTP validation."""
         if not dry_run:
             write_guard.check("ssl", fqdn)
-        data = {"virtual_host": fqdn, "dns_identifiers": fqdn, "challenge_method": "http-01", "dry_run": 1 if dry_run else 0}
-        return self._call("POST", "issue-certificate", data)
+        body = {"virtual_host": fqdn, "dns_identifiers": [fqdn], "challenge_method": "http-01", "dry_run": dry_run}
+        return self._call("POST", "issue-certificate", body)

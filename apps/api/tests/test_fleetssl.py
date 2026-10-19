@@ -55,9 +55,9 @@ def test_issue_is_for_exactly_one_name_and_checks_the_lock_first(monkeypatch):
         route = m.post(url__startswith=PLUGIN).mock(return_value=httpx.Response(200, json={"success": True, "errors": None, "data": {}}))
         with FleetSSL("n1", "levantoan.000web.com") as p:
             p.issue("new.example.com")
-    body = parse_qs(route.calls[0].request.content.decode())
+    body = json.loads(route.calls[0].request.content)
     assert route.calls[0].request.url.params["api_function"] == "issue-certificate"
-    assert body == {"virtual_host": ["new.example.com"], "dns_identifiers": ["new.example.com"], "challenge_method": ["http-01"], "dry_run": ["0"]}
+    assert body == {"virtual_host": "new.example.com", "dns_identifiers": ["new.example.com"], "challenge_method": "http-01", "dry_run": False}
     assert calls == [("ssl", "new.example.com")]
 
 
@@ -125,7 +125,7 @@ def _b2(monkeypatch, cert_answers):
 def test_b2_issues_ssl_for_this_domain_then_builds(monkeypatch):
     status, err, st, issue, upload, autossl, sheet = _b2(monkeypatch, [(False, "chưa có"), (True, "chứng chỉ hợp lệ · Let's Encrypt")])
     assert status == "done", err
-    assert issue.call_count == 1 and parse_qs(issue.calls[0].request.content.decode())["virtual_host"] == ["acme.huxma.life"]
+    assert issue.call_count == 1 and json.loads(issue.calls[0].request.content)["virtual_host"] == "acme.huxma.life"
     assert upload.called and not autossl.called and st["ssl_issue_tries"] == 1
 
 

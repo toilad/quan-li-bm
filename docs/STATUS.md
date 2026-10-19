@@ -239,3 +239,13 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - tải lại 15 file của chính mỗi web (`overwrite=1`, chỉ các tên file do web đó tạo trước đây);
   - `php.ini` của hosting giữ nguyên; cột C không đổi; khoá lại sau mỗi web.
 - Kiểm tra từ nước ngoài: phần đầu trang hiện đúng tên, CNPJ, địa chỉ (một lần) và điện thoại của cả 2 web.
+
+## ✔ Issue SSL tự động qua plugin Let's Encrypt (19/10/2026)
+- Plugin FleetSSL không nhận token cPanel (403). App mở phiên cPanel bằng **API chính thức của iNET**:
+  `POST /hosting/{id}/login`, trả về WHM `create_user_session`, đúng như nút "Đăng nhập cPanel" trên OnePortal.
+  Không mật khẩu, không cookie của trình duyệt.
+- Plugin API: `list-certificates` (GET) và `issue-certificate` (POST, **thân JSON**; gửi dạng form thì nhận về trang HTML).
+- Kiểm tra thật trên nick 2: phiên cPanel đúng user `msvalljjhosting`; list OK; **dry run thành công**
+  ("a test certificate was issued and discarded" trên máy chủ thử của Let's Encrypt), không cài gì lên hosting.
+- Bước 2: domain chưa có SSL thì app Issue cho đúng domain đó (http-01, chỉ tên đó). Có khoá ghi "ssl", tối đa 30 phút/lần, chỉ khi DNS đã trỏ đúng.
+- Cần quyền khoá iNET: **Domain + Hosting, GET + PATCH + POST**. Nick 2 đã đủ; nick 1 và nick 3 cần thêm Hosting + POST.
