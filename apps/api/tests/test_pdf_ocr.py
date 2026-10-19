@@ -205,8 +205,9 @@ def test_cells_read_from_a_scan_cannot_be_saved_before_the_owner_checks_them(cli
     from wg_core.modules.pdf import service as pdf
 
     doc_id = _ocr_doc()
-    r = client.post(f"/api/pdf/{doc_id}/save", json={"confirm_missing": True, "critical_checked": True})
-    assert r.status_code == 422 and any("đã kiểm tra" in x for x in r.json()["detail"]["reasons"])
+    r = client.post(f"/api/pdf/{doc_id}/save", json={"confirm_missing": False, "critical_checked": True})
+    # no business address on an old LLC-1: F–I missing is named (agent address never used by itself)
+    assert r.status_code == 422 and any(x.startswith("F:") for x in r.json()["detail"]["reasons"])
     with session_scope() as s:
         assert not s.query(Job).filter(Job.kind == "pdf_save").count()  # nothing queued for Drive / the Sheet
 

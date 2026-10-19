@@ -467,8 +467,7 @@ export function ExtractPanel({
           {b.format.length > 0 && <Blocker>Sai định dạng: {list(b.format)} — sửa trước khi lưu</Blocker>}
           {b.unchecked.length > 0 && (
             <Blocker>
-              Chưa đánh dấu đã kiểm tra: {list(b.unchecked)} — so từng ô với vùng ảnh bên cạnh rồi tick “Đã kiểm tra” (hoặc sửa tay).
-              Ô đọc từ ảnh scan và tên công ty (A) phải kiểm tra xong mới lưu lên Drive / Sheet.
+              Có nhiều cách đọc: {list(b.unchecked)} — xem vùng ảnh bên cạnh rồi sửa ô hoặc bấm “Dùng gợi ý”.
             </Blocker>
           )}
 

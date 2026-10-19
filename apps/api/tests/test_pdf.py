@@ -94,9 +94,6 @@ def test_save_flow_drive_then_sheet_and_resume_after_sheet_error():
         install_drive(m, calls=drive_calls)
         with session_scope() as s:
             doc, _ = pdf.ingest(s, "doc.pdf", data)
-            # column A must be checked against the page first (owner, 2026-10-19)
-            assert any("Tên (A)" in r for r in pdf.save_check(doc, confirm_missing=True, critical_checked=False))
-            doc.fields = {**doc.fields, "A": {**doc.fields["A"], "checked": True}}
             assert not pdf.save_check(doc, confirm_missing=True, critical_checked=False)
             company = doc.fields["A"]["value"]
             job, _ = pdf.request_save(s, doc)
@@ -261,9 +258,6 @@ def test_scan_is_classified_and_read_by_ai_then_needs_owner_check(monkeypatch):
         assert d.fields["E"]["value"] == "examplesupplycollc"
         # scanned → A/J read by AI → cannot be saved until the owner ticks "đã đối chiếu"
         assert any("đối chiếu" in r for r in pdf.save_check(d, confirm_missing=True, critical_checked=False))
-        # every cell read from the image must also be ticked "đã kiểm tra" (owner's rule, 2026-10-19)
-        assert any("đã kiểm tra" in r for r in pdf.save_check(d, confirm_missing=True, critical_checked=True))
-        d.fields = {k: {**v, "checked": True} for k, v in d.fields.items()}
         assert not pdf.save_check(d, confirm_missing=True, critical_checked=True)
     sent = _json.loads(route.calls[0].request.content)
     assert sent["model"] == "claude-opus-5-5"

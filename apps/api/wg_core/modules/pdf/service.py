@@ -153,15 +153,11 @@ def save_check(doc: PdfDocument, confirm_missing: bool, critical_checked: bool) 
         reasons.append(f"{k}: {v['message']}")
     if any((doc.fields.get(k) or {}).get("source") == "ai" for k in ("A", "J")) and not critical_checked:
         reasons.append("A/J do AI đọc từ bản scan — cần tick “đã đối chiếu”")
-    # Owner's rule (2026-10-19): nothing read from an image goes to Drive / the Sheet before the owner checked it
-    # against the page — a cell read by OCR or AI must be ticked "đã kiểm tra" (or typed by hand).
-    ok, why = name_verified(doc)  # column A = the legal name checked against the page (owner, 2026-10-19)
-    if not ok and (doc.fields.get("A") or {}).get("value"):
-        reasons.append(why)
-    unchecked = [k for k, f in doc.fields.items() if isinstance(f, dict) and f.get("value") and f.get("source") in ("ocr", "ai")
-                 and not f.get("checked")]
-    if unchecked:
-        reasons.append(f"Ô {', '.join(sorted(unchecked))} đọc từ ảnh scan — anh đánh dấu “đã kiểm tra” từng ô trước khi lưu")
+    # Owner (2026-10-19): read clearly and cross-checked → saved without ticking every cell; stop only on a real
+    # problem — a cell with several possible readings (OCR doubt the owner has not settled) names the field.
+    for k, f in sorted(doc.fields.items()):
+        if isinstance(f, dict) and f.get("value") and f.get("suspects") and f.get("source") not in ("manual",) and not f.get("checked"):
+            reasons.append(f"{k}: có nhiều cách đọc — {f['suspects'][0]['message']}")
     return reasons
 
 

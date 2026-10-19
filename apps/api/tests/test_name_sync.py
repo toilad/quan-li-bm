@@ -59,9 +59,12 @@ def test_different_name_same_number_and_state_updates_only_that_cell():
 
 def test_unverified_ocr_name_is_blocked():
     doc_id = doc_with("Holiday GP I House, LLC 1", "200809410058", "CA", checked=False)
+    with session_scope() as s:  # an OCR doubt on the name (two readings)
+        d = s.get(PdfDocument, doc_id)
+        d.fields = {**d.fields, "A": {**d.fields["A"], "suspects": [{"message": "Hai lần đọc khác nhau", "suggestion": ""}]}}
     out, _ = run(doc_id, lambda s, d: sm.match(d))
-    assert out["status"] == "name_differs" and out["name_verified"] is False and "Đã kiểm tra" in out["why"]
-    with pytest.raises(Permanent, match="chưa được đối chiếu"):
+    assert out["status"] == "name_differs" and out["name_verified"] is False and "nhiều cách đọc" in out["why"]
+    with pytest.raises(Permanent, match="nhiều cách đọc"):
         run(doc_id, lambda s, d: sm.rename(s, d, 4, "Holiday GP House LLC"))
 
 

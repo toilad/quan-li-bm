@@ -36,9 +36,9 @@ def name_verified(doc: PdfDocument) -> tuple[bool, str]:
     a = doc.fields.get("A") or {}
     if not a.get("value"):
         return False, "Chưa có tên công ty (A)"
-    if a.get("source") == "manual" or a.get("checked"):
+    if a.get("source") == "manual" or a.get("checked") or not a.get("suspects"):
         return True, ""
-    return False, "Tên (A) chưa được đối chiếu với ảnh gốc — anh xem vùng ảnh bên cạnh ô A rồi tick “Đã kiểm tra”"
+    return False, f"Tên (A) có nhiều cách đọc — {a['suspects'][0]['message']}"
 
 
 def key_state(doc: PdfDocument) -> str:
