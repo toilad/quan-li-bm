@@ -20,6 +20,7 @@ from ...jobs import JobContext, enqueue, handler
 from ...models import PdfDocument, SheetWrite
 from ..websites.templates import detect as detect_template, template_for_cnae
 from .extract import detect, extract_text_layer, fields_from_ai, locate, read_pdf
+from .sheet_match import drive_name, name_verified, same_company
 from .fields import FIELD_KEYS, blocking, field, short_name, validate
 
 
@@ -154,6 +155,9 @@ def save_check(doc: PdfDocument, confirm_missing: bool, critical_checked: bool) 
         reasons.append("A/J do AI đọc từ bản scan — cần tick “đã đối chiếu”")
     # Owner's rule (2026-10-19): nothing read from an image goes to Drive / the Sheet before the owner checked it
     # against the page — a cell read by OCR or AI must be ticked "đã kiểm tra" (or typed by hand).
+    ok, why = name_verified(doc)  # column A = the legal name checked against the page (owner, 2026-10-19)
+    if not ok and (doc.fields.get("A") or {}).get("value"):
+        reasons.append(why)
     unchecked = [k for k, f in doc.fields.items() if isinstance(f, dict) and f.get("value") and f.get("source") in ("ocr", "ai")
                  and not f.get("checked")]
     if unchecked:
@@ -182,12 +186,14 @@ def _save(ctx: JobContext):
     if not ctx.state.get("dup_checked") and not doc.sheet_row:  # already written by an earlier run → nothing to check
         ctx.step("Kiểm tra trùng")
         for other in s.scalars(select(PdfDocument).where(PdfDocument.id != doc.id, PdfDocument.status == "saved")):
-            if (other.fields.get("J") or {}).get("value") == j and (other.fields.get("H") or {}).get("value") == h:
+            if same_company({"J": (other.fields.get("J") or {}).get("value", ""), "H": (other.fields.get("H") or {}).get("value", "")}, j, h):
                 doc.status, doc.error = "failed", f"Trùng mã {j} ({h}) với file đã lưu “{other.original_name}”"
                 raise Conflict(doc.error)
         for r in Sheets().read_rows():
-            if r.cells["J"].strip() == j and r.cells["H"].strip() == h and r.row != doc.sheet_row:
-                doc.status, doc.error = "failed", f"Sheet đã có mã {j} ({h}) ở dòng {r.row} — không thêm trùng"
+            if same_company(r.cells, j, h) and r.row != doc.sheet_row:
+                doc.status = "failed"
+                doc.error = (f"Sheet đã có mã {j} ({h}) ở dòng {r.row} (tên “{r.cells.get('A', '')}”) — không thêm dòng trùng; "
+                             f"nếu tên trên PDF đúng hơn, dùng “Đối chiếu Sheet” để cập nhật cột A của dòng {r.row}")
                 raise Conflict(doc.error)
         ctx.checkpoint(dup_checked=True)
         ctx.log("Không trùng (database + Sheet)", "ok")
@@ -199,7 +205,8 @@ def _save(ctx: JobContext):
         if res:
             ctx.log("Drive đã có file cùng nội dung (md5) do app upload trước đó → dùng lại, không upload lần 2", "info")
         else:
-            res = drive.upload_pdf(doc.original_name, storage_path(doc.md5).read_bytes(), doc.md5)
+            # named after the company's verified legal name (the owner's files on Drive are); content unchanged
+            res = drive.upload_pdf(drive_name(doc), storage_path(doc.md5).read_bytes(), doc.md5)
         if res.get("md5Checksum") != doc.md5:
             raise Permanent(f"md5 trên Drive ({res.get('md5Checksum')}) khác file gốc ({doc.md5}) — dừng, không ghi Sheet")
         doc.drive_file_id, doc.drive_link = res["id"], res.get("webViewLink") or f"https://drive.google.com/file/d/{res['id']}/view"

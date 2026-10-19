@@ -83,6 +83,7 @@ def test_pdf_to_domain_to_website_on_one_sheet():
         # 1 · PDF Manager: save → Drive → Sheet A, D–K (B, C empty)
         with session_scope() as s:
             doc = _doc(s)
+            doc.fields = {**doc.fields, "A": {**doc.fields["A"], "checked": True}}  # the owner checked the name on the page
             assert not pdf.save_check(doc, confirm_missing=False, critical_checked=False)
             pdf.request_save(s, doc)
         drain()

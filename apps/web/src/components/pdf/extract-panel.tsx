@@ -142,6 +142,76 @@ function PhoneSetup({ file, dispatch, editable }: { file: PdfFile; dispatch: Que
   );
 }
 
+type SheetMatch = {
+  status: "new" | "same_name" | "name_differs" | "ambiguous" | "no_key"; pdf_name: string; j: string; h: string;
+  name_verified: boolean; why: string; rows: { row: number; A: string; B: string; C: string }[]; evidence?: Region | null;
+};
+
+/** Column A = the legal name verified on the PDF: compare with the Sheet row of the same number + state (read-only);
+ *  a different name is rewritten in that one cell only after the owner confirms. */
+function SheetMatchBox({ file, editable }: { file: PdfFile; editable: boolean }) {
+  const [m, setM] = useState<SheetMatch | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const load = async () => {
+    setBusy(true); setMsg("");
+    try { setM(await api.get<SheetMatch>(`/api/pdf/${file.id}/sheet-match`)); } catch (e) { setMsg(errorText(e)); }
+    setBusy(false);
+  };
+  const rename = async (row: number, old: string) => {
+    if (!m) return;
+    if (!window.confirm(`Đổi cột A dòng ${row} trên Google Sheet:\n\n  Cũ:  ${old}\n  Mới: ${m.pdf_name}\n\n` +
+      "Chỉ ô A của dòng này thay đổi (B–K giữ nguyên). Anh xác nhận tên mới đúng như trên PDF?")) return;
+    setBusy(true);
+    try {
+      await api.post(`/api/pdf/${file.id}/rename`, { row, expected_old: old, confirm: true });
+      setMsg(`Đã cập nhật A${row} thành “${m.pdf_name}” (đã ghi nhật ký tên cũ).`);
+      setM(await api.get<SheetMatch>(`/api/pdf/${file.id}/sheet-match`));
+    } catch (e) { setMsg(errorText(e)); }
+    setBusy(false);
+  };
+  return (
+    <div className="col-span-2 rounded-xl border border-violet-400/25 bg-violet-500/[0.05] p-3 text-[12px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-violet-200">Đối chiếu tên với Google Sheet (theo mã J + bang H)</span>
+        <button type="button" onClick={load} disabled={busy}
+          className="rounded border border-violet-400/40 px-2 py-0.5 text-[11px] text-violet-100 hover:bg-violet-500/15 disabled:opacity-60">
+          {busy ? "Đang đọc…" : "Đối chiếu (chỉ đọc)"}
+        </button>
+      </div>
+      {msg && <div className="mt-1.5 text-sky-200">{msg}</div>}
+      {m && (
+        <div className="mt-2 space-y-1.5">
+          {m.status === "no_key" && <div className="text-amber-200">{m.why}</div>}
+          {m.status === "new" && <div className="text-fg-muted">Chưa có dòng nào cùng mã {m.j} ({m.h}) — khi lưu sẽ thêm dòng mới với A = “{m.pdf_name}”.</div>}
+          {m.status === "same_name" && <div className="text-emerald-300">Đã có ở dòng {m.rows[0].row}, tên khớp với PDF — không cần cập nhật.</div>}
+          {m.status === "ambiguous" && (
+            <div className="text-amber-200">Sheet có {m.rows.length} dòng cùng mã {m.j} ({m.h}): {m.rows.map((r) => `dòng ${r.row} “${r.A}”`).join(", ")} — anh xử lý tay, app không chọn hộ.</div>
+          )}
+          {m.status === "name_differs" && m.rows[0] && (
+            <>
+              <div>Dòng <b>{m.rows[0].row}</b> (cùng mã {m.j}, bang {m.h}) đang ghi tên khác PDF:</div>
+              <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+                <span className="text-fg-subtle">Cột A hiện tại</span><span className="font-medium text-rose-200">{m.rows[0].A || "(trống)"}</span>
+                <span className="text-fg-subtle">Tên trên PDF</span><span className="font-medium text-emerald-200">{m.pdf_name}</span>
+              </div>
+              {m.evidence && <RegionCrop docId={file.id} region={m.evidence} alt="Tên công ty trên phôi" />}
+              {!m.name_verified ? (
+                <div className="text-amber-200">{m.why}</div>
+              ) : editable && (
+                <button type="button" onClick={() => rename(m.rows[0].row, m.rows[0].A)} disabled={busy}
+                  className="rounded-md border border-violet-400/50 px-2.5 py-1 text-[11.5px] font-medium text-violet-100 hover:bg-violet-500/15 disabled:opacity-60">
+                  Cập nhật tên dòng {m.rows[0].row}…
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScanFacts({ file }: { file: PdfFile }) {
   const s = file.scan;
   if (!s?.version && !s?.warning && !s?.note) return null;
@@ -361,6 +431,7 @@ export function ExtractPanel({
               );
             })}
             <Candidates file={file} dispatch={dispatch} editable={editable} />
+            <SheetMatchBox file={file} editable={editable} />
 
             {(["B", "C"] as const).map((c) => (
               <div key={c}>
@@ -396,8 +467,8 @@ export function ExtractPanel({
           {b.format.length > 0 && <Blocker>Sai định dạng: {list(b.format)} — sửa trước khi lưu</Blocker>}
           {b.unchecked.length > 0 && (
             <Blocker>
-              Đọc từ ảnh scan, chưa đánh dấu đã kiểm tra: {list(b.unchecked)} — so từng ô với vùng ảnh bên cạnh rồi tick “Đã kiểm tra”
-              (hoặc sửa tay). Chưa kiểm tra thì không lưu lên Drive / Sheet.
+              Chưa đánh dấu đã kiểm tra: {list(b.unchecked)} — so từng ô với vùng ảnh bên cạnh rồi tick “Đã kiểm tra” (hoặc sửa tay).
+              Ô đọc từ ảnh scan và tên công ty (A) phải kiểm tra xong mới lưu lên Drive / Sheet.
             </Blocker>
           )}
 

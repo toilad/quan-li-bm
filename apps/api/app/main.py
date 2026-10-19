@@ -278,8 +278,11 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
         for k, v in body.fields.items():
             if k in FIELD_KEYS:
                 old = f.get(k) or {}
+                # the first reading is kept (read_value) so a rename can always be traced back to what the PDF gave
+                first = old.get("read_value") or (old.get("value") if old.get("source") in ("text", "ocr", "ai") else "")
                 # typed by the owner: checked by definition; the page region stays for reference, OCR doubts go
                 f[k] = {"value": v.strip(), "source": "manual" if v.strip() else "missing", "checked": bool(v.strip()),
+                        **({"read_value": first} if first else {}),
                         **({"phone_source": "manual" if v.strip() else "needs_setup"} if k == "D" else {}),
                         **({"region": old["region"]} if old.get("region") else {}), **({"role": old["role"]} if old.get("role") else {})}
         d.fields = f
@@ -304,6 +307,36 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
     if body.industry:
         d.industry = {**(d.industry or {}), "category": body.industry, "source": "manual"}
     return doc_out(d)
+
+
+class RenameBody(BaseModel):
+    row: int
+    expected_old: str  # column A as the owner saw it — refused if it changed since
+    confirm: bool = False
+
+
+@app.get("/api/pdf/{doc_id}/sheet-match")
+def sheet_match(doc_id: int, s: Session = Depends(db)):
+    """Read-only: the Sheet row(s) of this company (same number + state) and whether column A differs from the PDF."""
+    from wg_core.modules.pdf import sheet_match as sm
+
+    d = s.get(PdfDocument, doc_id)
+    if not d:
+        raise HTTPException(404)
+    return sm.match(d)
+
+
+@app.post("/api/pdf/{doc_id}/rename")
+def rename_row(doc_id: int, body: RenameBody, s: Session = Depends(db)):
+    """Owner confirmed: column A of that one row becomes the legal name verified on the PDF."""
+    from wg_core.modules.pdf import sheet_match as sm
+
+    d = s.get(PdfDocument, doc_id)
+    if not d:
+        raise HTTPException(404)
+    if not body.confirm:
+        raise HTTPException(422, "Cần anh xác nhận đổi tên")
+    return sm.rename(s, d, body.row, body.expected_old)
 
 
 class PhoneAssignBody(BaseModel):

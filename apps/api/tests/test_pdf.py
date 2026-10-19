@@ -94,7 +94,11 @@ def test_save_flow_drive_then_sheet_and_resume_after_sheet_error():
         install_drive(m, calls=drive_calls)
         with session_scope() as s:
             doc, _ = pdf.ingest(s, "doc.pdf", data)
+            # column A must be checked against the page first (owner, 2026-10-19)
+            assert any("Tên (A)" in r for r in pdf.save_check(doc, confirm_missing=True, critical_checked=False))
+            doc.fields = {**doc.fields, "A": {**doc.fields["A"], "checked": True}}
             assert not pdf.save_check(doc, confirm_missing=True, critical_checked=False)
+            company = doc.fields["A"]["value"]
             job, _ = pdf.request_save(s, doc)
             doc_id, job_id = doc.id, job.id
         drain()
@@ -108,6 +112,9 @@ def test_save_flow_drive_then_sheet_and_resume_after_sheet_error():
             assert job.status == "done" and doc.status == "saved" and doc.sheet_row == 4
             assert s.query(SheetWrite).count() == 2  # the row (A, D–K) + K as “Xem phôi” link
     assert len(drive_calls) == 1  # never uploaded twice
+    meta = json.loads(re.search(rb"application/json; charset=UTF-8\r\n\r\n(\{.*?\})\r\n", drive_calls[0].content).group(1))
+    # named after the company, not "doc.pdf"; "/" (not allowed in Windows file names) becomes a space
+    assert meta["name"] == company.replace("/", " ") + ".pdf"
     row = sheet.appends[0]
     assert row[1] == "" and row[2] == ""  # B, C empty
     assert row[10] == "https://drive.google.com/file/d/DRIVE123/view"  # K first written as the plain link…

@@ -60,7 +60,8 @@ export function saveBlockers(file: PdfFile): Blockers {
     needCriticalCheck: (["A", "J"] as FieldKey[]).some((k) => file.fields![k].source === "ai"),
     unchecked: FIELD_META.map((m) => m.key).filter((k) => {
       const fl = file.fields![k];
-      return (fl.source === "ai" || fl.source === "ocr") && !!fl.value && !fl.checked;
+      // read from an image, or the company name (column A must be the verified legal name, owner 2026-10-19)
+      return (fl.source === "ai" || fl.source === "ocr" || (k === "A" && fl.source !== "manual")) && !!fl.value && !fl.checked;
     }),
   };
 }
@@ -83,7 +84,8 @@ const isClean = (file: PdfFile) => {
   if (file.status !== "review" || !file.fields || file.docType === "unknown") return false;
   if (Object.keys(validate(file.fields, file.docType)).length) return false;
   // nothing read from an image goes out unless the owner ticked it "đã kiểm tra"
-  return !Object.values(file.fields).some((fl) => (fl.source === "ai" || fl.source === "ocr") && !!fl.value && !fl.checked);
+  return !Object.entries(file.fields).some(([k, fl]) =>
+    (fl.source === "ai" || fl.source === "ocr" || (k === "A" && fl.source !== "manual")) && !!fl.value && !fl.checked);
 };
 
 const startSaving = (f: PdfFile): PdfFile => ({ ...f, status: "saving", step: 0, progress: 0 });
