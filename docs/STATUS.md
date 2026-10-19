@@ -231,3 +231,11 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
 - Từ máy này bị 403 do chặn khu vực; xác minh bằng chứng chỉ + đủ 15 file trên cPanel. Từ nước ngoài trang hiển thị đầy đủ (tiêu đề, menu, ảnh, chân trang có địa chỉ và điện thoại).
 - Đã ghi C2803 và tự khoá.
 - **Còn vướng:** domain chưa có SSL thì Bước 2 chưa tự bấm Issue được, vì plugin FleetSSL không nhận token cPanel (HTTP 403).
+
+## ✔ Cập nhật giao diện 2 web đã dựng (19/10/2026, anh duyệt)
+- Đầu mọi trang có dải thông tin lấy từ Sheet: tên công ty, mã đăng ký cột J (CNPJ / Control ID), địa chỉ đầy đủ, điện thoại.
+  Đã sửa lỗi địa chỉ bị lặp khi cột F đã chứa sẵn thành phố, bang, mã bưu chính.
+- `importador.ganeshabrands.space` (dòng 705) và `hemisferioholdingsltda.ntp88.com` (dòng 2803):
+  - tải lại 15 file của chính mỗi web (`overwrite=1`, chỉ các tên file do web đó tạo trước đây);
+  - `php.ini` của hosting giữ nguyên; cột C không đổi; khoá lại sau mỗi web.
+- Kiểm tra từ nước ngoài: phần đầu trang hiện đúng tên, CNPJ, địa chỉ (một lần) và điện thoại của cả 2 web.
