@@ -293,7 +293,9 @@ def test_california_2013_scan_is_read_by_the_free_ocr_on_this_machine(monkeypatc
         f = {k: v["value"] for k, v in d.fields.items()}
         assert f["J"] == "201335710358" and f["H"] == "CA" and f["I"] == "90058" and f["G"] == "Vernon"
         assert f["F"] == "5051 Santa Fe Ave., Vernon, CA 90058" and d.fields["A"]["source"] == "ocr"
-        assert f["A"].endswith("Co., LLC") and f["D"] == ""
+        assert f["A"].endswith("Co., LLC")
+        # no phone on the form: a temporary number with the state's area code (owner, 2026-10-19)
+        assert f["D"].startswith("(213) 555-01") and d.fields["D"]["phone_source"] == "placeholder"
 
 
 def test_california_number_that_differs_on_page_2_blocks_saving_until_fixed_by_hand():

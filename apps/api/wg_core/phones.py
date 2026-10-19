@@ -47,6 +47,7 @@ SOURCES = {
     "provisioned": "Số được cấp từ nhà cung cấp của anh",
     "needs_setup": "Chưa có số — cần cấp từ nhà cung cấp",
     "manual": "Anh nhập tay",
+    "placeholder": "Số tạm 555-01xx đúng mã vùng bang — anh thay sau",
 }
 
 
@@ -72,7 +73,7 @@ def e164(number: str, state: str) -> str:
     return ""
 
 
-def check(number: str, state: str, provisioned: bool = False) -> list[dict]:
+def check(number: str, state: str, provisioned: bool = False, placeholder_ok: bool = False) -> list[dict]:
     """Problems of one number for a company in `state`: [{level: error|warn, message}]. Empty list = fine."""
     out: list[dict] = []
     if not (number or "").strip():
@@ -88,6 +89,8 @@ def check(number: str, state: str, provisioned: bool = False) -> list[dict]:
         if npa[0] in "01" or nxx[0] in "01" or npa[1:] == "11":
             return [{"level": "error", "message": f"Mã vùng / đầu số không hợp lệ theo chuẩn Bắc Mỹ ({npa}-{nxx})"}]
         if nxx == "555":
+            if placeholder_ok and is_placeholder(first):
+                return [{"level": "warn", "message": "Số TẠM (dải 555-01xx dành cho số giả) — thay bằng số thật sau; website không hiện số này"}]
             return [{"level": "error", "message": f"Đầu số 555 là số dành cho phim ảnh / ví dụ — không phải số doanh nghiệp thật"}]
         codes = US_AREA_CODES.get(state)
         if codes is None:
@@ -110,24 +113,66 @@ def check(number: str, state: str, provisioned: bool = False) -> list[dict]:
     return out
 
 
-def tag(fields: dict) -> None:
-    """Mark where the number in D came from, right after a document is read."""
+def state_of(fields: dict, extra: dict | None = None) -> str:
+    """The company's state for the area code: its address (H); without an address, a California LLC-1 (Articles of
+    Organization — the LLC is formed in California) gives CA. A foreign LLC (LLC-5) is never placed in its home state."""
+    h = ((fields.get("H") or {}).get("value") or "").strip().upper()
+    if h:
+        return h
+    extra = extra or {}
+    return "CA" if extra.get("state_of_form") == "CA" and extra.get("form") == "LLC-1" else ""
+
+
+# Owner (2026-10-19): "tạm thời điền số trùng với bang đó, mã vùng đó để không bị trống; sau đó anh tự bổ sung".
+# A random number with the state's area code may be someone's real line, so the temporary number is taken from the
+# block North American numbering reserves for fiction (555-0100…555-0199): nobody owns it. It is labelled
+# "placeholder", never published on a website, and listed for the owner to replace.
+PRIMARY_AREA_CODE = {"WA": "206", "OR": "503", "CA": "213", "NV": "702", "FL": "305", "DC": "202", "MD": "410", "WY": "307"}
+
+
+def is_placeholder(number: str) -> bool:
+    d = us_digits(number)
+    return len(d) == 10 and d[3:6] == "555" and "0100" <= d[6:] <= "0199"
+
+
+def placeholder(state: str, key: str) -> str:
+    """(206) 555-01xx — the state's main area code + a reserved fictional line; xx is stable per company."""
+    import hashlib
+
+    npa = PRIMARY_AREA_CODE.get((state or "").upper())
+    if not npa:
+        return ""
+    n = int(hashlib.md5((key or "").encode()).hexdigest(), 16) % 100
+    return f"({npa}) 555-01{n:02d}"
+
+
+def tag(fields: dict, extra: dict | None = None) -> None:
+    """Mark where the number in D came from, right after a document is read. No number on the PDF: a temporary
+    reserved number with the state's area code (owner's instruction), or — state unknown — left empty."""
     d = fields.get("D")
     if not isinstance(d, dict):
         return
-    state = ((fields.get("H") or {}).get("value") or "").upper()
+    state = state_of(fields, extra)
     if d.get("value"):
-        d["phone_source"] = "source_pdf"
+        d["phone_source"] = "placeholder" if is_placeholder(d["value"]) else d.get("phone_source") or "source_pdf"
+        return
+    temp = placeholder(state, (fields.get("A") or {}).get("value", ""))
+    if temp:
+        d.update(value=temp, source="placeholder", phone_source="placeholder", checked=True,
+                 note=f"Số TẠM mã vùng {state} (dải 555-01xx dành cho số giả, không phải số của ai) — phôi không có số; "
+                      f"anh thay bằng số thật sau. Website không hiện số tạm này")
     else:
         d["phone_source"] = "needs_setup"
-        where = f"bang {state}" if state else "bang của doanh nghiệp (ô H trống — LLC-1 California dùng CA)"
+        where = f"bang {state}" if state else "bang của doanh nghiệp (chưa xác định được)"
         d["note"] = (d.get("note") + " · " if d.get("note") else "") + \
-            f"Phôi không có số — cần cấp số có mã vùng của {where} từ nhà cung cấp của anh; không tự điền số"
+            f"Phôi không có số và chưa có số tạm cho {where} — anh nhập tay hoặc cấp từ nhà cung cấp"
 
 
 def website_phone(number: str, state: str) -> tuple[str, str]:
-    """(number to show on a website, reason when hidden). A number that fails the checks is never published."""
+    """(number to show on a website, reason when hidden). A number that fails the checks is never published — except
+    the app's temporary number (state area code + reserved 555-01xx): the owner wants it shown like any other until
+    he replaces it (2026-10-19). Nobody owns that block, so no stranger gets the calls."""
     if not (number or "").strip():
         return "", ""
-    errors = [p["message"] for p in check(number, state) if p["level"] == "error"]
+    errors = [p["message"] for p in check(number, state, placeholder_ok=True) if p["level"] == "error"]
     return ("", errors[0]) if errors else (number, "")

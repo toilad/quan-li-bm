@@ -80,6 +80,7 @@ const PHONE_SOURCE: Record<string, { label: string; cls: string }> = {
   provisioned: { label: "Số cấp từ nhà cung cấp của anh", cls: "text-sky-300" },
   needs_setup: { label: "Chưa có số — cần cấp", cls: "text-amber-300" },
   manual: { label: "Anh nhập tay", cls: "text-amber-200" },
+  placeholder: { label: "Số TẠM đúng mã vùng bang (555-01xx, không phải số của ai) — anh thay sau", cls: "text-amber-300" },
 };
 
 type PhoneOption = { number: string; display: string; in_use?: boolean; problems?: string[]; locality?: string; cost?: boolean };
@@ -104,7 +105,7 @@ function PhoneSetup({ file, dispatch, editable }: { file: PdfFile; dispatch: Que
   return (
     <div className="mt-1 rounded-lg border border-amber-400/30 bg-amber-500/[0.05] p-2.5 text-[11.5px]">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-amber-100">Phôi không có số. Cấp số có mã vùng đúng bang của doanh nghiệp từ nhà cung cấp của anh — không tự điền số.{opts?.state && ` Bang: ${opts.state} (theo ${(opts as PhoneOptions & { state_from?: string }).state_from}).`}</span>
+        <span className="text-amber-100">Phôi không có số (đang dùng số tạm nếu có). Cấp số thật có mã vùng đúng bang của doanh nghiệp từ nhà cung cấp của anh — không tự điền số.{opts?.state && ` Bang: ${opts.state} (theo ${(opts as PhoneOptions & { state_from?: string }).state_from}).`}</span>
         {editable && (
           <button type="button" onClick={load} disabled={busy}
             className="shrink-0 rounded border border-amber-400/40 px-2 py-0.5 text-[11px] text-amber-100 hover:bg-amber-500/15 disabled:opacity-60">
@@ -335,7 +336,7 @@ export function ExtractPanel({
                         {fld.phone_source === "provisioned" && !fld.verified_active && " · chưa xác minh đang hoạt động"}
                       </span>
                     )}
-                    {m.key === "D" && !fld.value && (fld.phone_source ?? "needs_setup") === "needs_setup" && file.fields && (
+                    {m.key === "D" && (fld.phone_source === "placeholder" || (!fld.value && (fld.phone_source ?? "needs_setup") === "needs_setup")) && file.fields && (
                       <PhoneSetup file={file} dispatch={dispatch} editable={editable} />
                     )}
                     {fld.region && fld.value && (

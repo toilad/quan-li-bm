@@ -1,6 +1,8 @@
 """Business phone numbers (owner's rules, 2026-10-19): kept as printed, otherwise provided from the owner's own provider
 account with an area code of the company's state — never made up. The provider (Twilio) is MOCKED here: no real number
 is looked up or bought by these tests."""
+import re
+
 import httpx
 import pytest
 import respx
@@ -42,20 +44,33 @@ def test_a_provided_number_must_match_the_state():
 def test_tag_and_validation():
     pdf = {"D": {"value": "206-291-0886", "source": "text"}, "H": {"value": "WA"}}
     tag(pdf)
-    assert pdf["D"]["phone_source"] == "source_pdf"
-    none = {"D": {"value": "", "source": "missing"}, "H": {"value": "WA"}}
+    assert pdf["D"]["phone_source"] == "source_pdf" and pdf["D"]["value"] == "206-291-0886"  # kept as printed
+    # no number on the PDF → a temporary number with the state's area code (owner, 2026-10-19), from the reserved
+    # fictional block 555-0100…0199 so it can never be a stranger's line
+    none = {"A": {"value": "Sample Ridge LLC"}, "D": {"value": "", "source": "missing"}, "H": {"value": "WA"}}
     tag(none)
-    assert none["D"]["phone_source"] == "needs_setup" and "bang WA" in none["D"]["note"] and none["D"]["value"] == ""
-    issues = validate({**{k: {"value": "x"} for k in "AEFGIJ"}, "H": {"value": "WA"}, "D": none["D"]}, "wa")
-    assert issues["D"]["kind"] == "missing" and "cần cấp số" in issues["D"]["message"]  # confirmable: D may stay empty
+    d = none["D"]
+    assert d["phone_source"] == "placeholder" and re.fullmatch(r"\(206\) 555-01\d\d", d["value"]) and "TẠM" in d["note"]
+    again = {"A": {"value": "Sample Ridge LLC"}, "D": {"value": ""}, "H": {"value": "WA"}}
+    tag(again)
+    assert again["D"]["value"] == d["value"]  # stable per company
+    issues = validate({**{k: {"value": "x"} for k in "AEFGIJ"}, "H": {"value": "WA"}, "D": d}, "wa")
+    assert issues["D"]["level"] == "warn" and "TẠM" in issues["D"]["message"]  # a reminder, does not block saving
+    ca = {"A": {"value": "X LLC"}, "D": {"value": ""}, "H": {"value": ""}}
+    tag(ca, {"form": "LLC-1", "state_of_form": "CA"})
+    assert ca["D"]["value"].startswith("(213) 555-01")
+    br = {"A": {"value": "X LTDA"}, "D": {"value": ""}, "H": {"value": "SP"}}
+    tag(br)
+    assert br["D"]["value"] == "" and br["D"]["phone_source"] == "needs_setup"  # no reserved block in Brazil
     fake = validate({**{k: {"value": "x"} for k in "AEFGIJ"}, "H": {"value": "CA"}, "D": {"value": "1 (619) 555-6382"}}, "ca")
-    assert fake["D"]["level"] == "error"
+    assert fake["D"]["level"] == "error"  # a 555 number that is not the app's temporary one
 
 
 def test_a_website_never_shows_a_failing_number():
     assert website_phone("1 (619) 555-6382", "CA") == ("", "Đầu số 555 là số dành cho phim ảnh / ví dụ — không phải số doanh nghiệp thật")
     assert website_phone("206-291-0886", "WA") == ("206-291-0886", "")
     assert website_phone("12092333214", "WA")[0] == "12092333214"  # a code from another state: a warning, still shown
+    assert website_phone("(206) 555-0142", "WA") == ("(206) 555-0142", "")  # the temporary number is shown (owner)
 
 
 # ───── the provider step ─────

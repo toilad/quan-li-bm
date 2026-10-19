@@ -26,7 +26,7 @@ export type Field = {
   role?: string;
   warning?: string;
   /** Column D only: source_pdf (printed on the PDF) | provisioned (from the owner's provider) | needs_setup | manual */
-  phone_source?: "source_pdf" | "provisioned" | "needs_setup" | "manual";
+  phone_source?: "source_pdf" | "provisioned" | "needs_setup" | "manual" | "placeholder";
   provider?: string;
   verified_active?: boolean;
 };

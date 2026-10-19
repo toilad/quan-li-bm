@@ -8,17 +8,11 @@ from sqlalchemy.orm import Session
 from ... import write_guard
 from ...integrations.errors import NotConfigured, Permanent
 from ...models import PdfDocument, PhoneAssignment
-from ...phones import US_AREA_CODES, check, country_of, e164, us_digits
+from ...phones import US_AREA_CODES, check, country_of, e164, state_of, us_digits
 
 
 def _state(doc: PdfDocument) -> str:
-    """The company's state for the area code: its address (H); without an address, a California LLC-1 (Articles of
-    Organization — the LLC is formed in California) gives CA. A foreign LLC (LLC-5) is never placed in its home state."""
-    h = ((doc.fields.get("H") or {}).get("value") or "").strip().upper()
-    if h:
-        return h
-    extra = doc.extra or {}
-    return "CA" if extra.get("state_of_form") == "CA" and extra.get("form") == "LLC-1" else ""
+    return state_of(doc.fields, doc.extra)
 
 
 def state_source(doc: PdfDocument) -> str:

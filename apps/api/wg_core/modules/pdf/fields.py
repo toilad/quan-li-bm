@@ -62,7 +62,8 @@ def validate(fields: dict, doc_type: str) -> dict[str, dict]:
         from ...phones import check as check_phone
 
         fd = fields.get("D") or {}
-        problems = check_phone(d, h, provisioned=fd.get("phone_source") == "provisioned")
+        problems = check_phone(d, h, provisioned=fd.get("phone_source") == "provisioned",
+                               placeholder_ok=fd.get("phone_source") == "placeholder")
         err = next((p for p in problems if p["level"] == "error"), None)
         if err:
             issues["D"] = {"level": "error", "kind": "format", "message": err["message"]}

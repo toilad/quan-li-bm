@@ -69,7 +69,7 @@ def extract_into(doc: PdfDocument, data: bytes, forced_type: str | None = None):
     if read:
         doc.fields, doc.extra = read
         locate(data, doc.fields)  # page + region of every value, shown next to the cell
-        tag_phone(doc.fields)  # where the number in D comes from: the PDF, or still to be provided
+        tag_phone(doc.fields, doc.extra)  # D: the PDF's number, or a temporary one of the state
         doc.status = "review"
     elif not doc.has_text and doc.doc_type in ("ca", "wy", "wa", "br", "unknown"):
         # Scan without a text layer: the AI job identifies the form (unless picked by hand) and reads it.
@@ -97,7 +97,7 @@ def _ocr_read(ctx: JobContext):
     manual = doc.detection_reason == "Chọn thủ công"
     if got and (not manual or doc.doc_type == "ca"):
         doc.fields, doc.extra = got
-        tag_phone(doc.fields)
+        tag_phone(doc.fields, doc.extra)
         doc.doc_type, doc.status, doc.error = "ca", "review", None
         if not manual:
             doc.detection_confidence = 0.9
