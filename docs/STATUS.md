@@ -275,3 +275,25 @@ Chưa có thao tác nào trên tài khoản thật (Google, iNET, cPanel, AI, �
   - Có bản đồ Google Maps tìm theo đúng địa chỉ, ở cả trang chủ và trang liên hệ.
   - Đã cập nhật lại **60/60 web** app dựng (dòng 705, 2803 và lô 58 dòng). Mỗi web chỉ thay 15 file của chính nó, `php.ini` giữ nguyên, khoá đã đóng lại.
   - Đọc lại file trên cPanel: có bản đồ, khối thông tin ở đầu trang, hết "LTDA..".
+
+## ✔ Đọc PDF: kiểm tra trên 200 phôi gốc của Sheet (19/10/2026)
+- Lấy mẫu rải đều 200 PDF gốc từ link cột K (716 dòng có link), cho app đọc bằng đúng code thật, so từng ô với giá trị anh đã nhập.
+- Trong 200 phôi:
+  - 141 giấy bang **Washington** và 20 **Ficha cadastral**: trước đây app không nhận ra 2 loại này, nay đã có bộ đọc riêng;
+  - 29 Comprovante CNPJ;
+  - 5 bản scan: cần khoá AI, hiện chưa có;
+  - 4 thư thông báo của WA, không phải giấy thành lập: anh nhập tay.
+- Kết quả trên 190 phôi có lớp chữ:
+  - A đúng 188, J đúng 187, G/H/I đúng 188, F đúng 179;
+  - D: PDF in số thì đọc đúng; 76 dòng PDF không in số (số trên Sheet là anh thêm).
+  - Chỉ còn 12 ô khác mà giá trị của anh có trong PDF: 1 phôi hiếm, tên DBA, bang ở Mexico, chỗ anh tự sửa chính tả.
+- Định dạng giống Sheet:
+  - F = địa chỉ đầy đủ (… THÀNH PHỐ, BANG/UF MÃ);
+  - CEP chỉ chữ số;
+  - D lấy số đầu tiên;
+  - J của WA = số UBI bỏ khoảng trắng.
+- Quy tắc địa chỉ WA (rút ra từ cách anh nhập):
+  - lấy trụ sở chính;
+  - nếu trụ sở trùng văn phòng của công ty dịch vụ registered agent thì lấy Mailing Address;
+  - nếu trụ sở chỉ là PO BOX, hoặc phôi không có trụ sở, thì lấy địa chỉ registered agent.
+- Báo cáo chi tiết (có tên doanh nghiệp, không vào Git): `apps/api/data/reports/pdf-accuracy-2026-10-19.json`.
