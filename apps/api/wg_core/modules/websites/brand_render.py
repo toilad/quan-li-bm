@@ -533,7 +533,7 @@ def footer(c: dict, d: dict, content: dict) -> str:
         f'    <div><h4 class="font-heading text-lg font-bold text-white mb-4">Contact</h4><ul class="space-y-3 text-sm">{lines}</ul>{find}</div>\n'
         f'    <div><h4 class="font-heading text-lg font-bold text-white mb-4">Quick Links</h4><ul class="space-y-2 text-sm">{links}</ul></div>\n'
         '  </div>\n'
-        f'  <div class="border-t border-white/10 py-6 text-center text-xs space-y-1"><div>&copy; {date.today().year} {escape(c["company"])}. All rights reserved.</div>{photo_credit(d)}</div>\n'
+        f'  <div class="border-t border-white/10 py-6 text-center text-xs space-y-1"><div>&copy; {date.today().year} {escape(c["company"].rstrip("."))}. All rights reserved.</div>{photo_credit(d)}</div>\n'
         '</footer>\n</body>\n</html>\n')
 
 

@@ -6,6 +6,7 @@ content_check.problems() like AI copy. The variant of each block is picked from 
 different companies do not read the same, while the same company always gets the same text.
 """
 import random
+import re
 
 from .templates import BY_ID
 
@@ -103,7 +104,20 @@ def _place(facts: dict) -> str:
     return f"{city}, {state}" if city and state else city or state or "your area"
 
 
+def _tidy(text: str) -> str:
+    """Company names often end with a period ("FORMA LTDA."): no "LTDA.." after a sentence. And "an" before a vowel
+    sound ("an organised", "an honest"), not "a"."""
+    text = re.sub(r"(?<!\.)\.\.(?!\.)", ".", text)
+    return re.sub(r"\b([Aa]) (?=(?:[aeio]|u(?!ni|s|r)|honest))", r"\1n ", text)
+
+
 def write_site_copy(facts: dict, template_id: str, domain: str) -> dict:
+    copy = _write_site_copy(facts, template_id, domain)
+    return {k: _tidy(v) if isinstance(v, str) else
+            [{kk: _tidy(vv) for kk, vv in item.items()} for item in v] for k, v in copy.items()}
+
+
+def _write_site_copy(facts: dict, template_id: str, domain: str) -> dict:
     """Same keys as integrations/ai.SITE_SCHEMA, so the templates render it unchanged."""
     group = BY_ID[template_id].group if template_id in BY_ID else DEFAULT_GROUP
     noun, services, approach = GROUPS.get(group, GROUPS[DEFAULT_GROUP])

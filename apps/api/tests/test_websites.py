@@ -249,3 +249,14 @@ def test_address_is_never_repeated_and_the_top_bar_shows_the_sheet_facts():
     assert html.count("08599390") >= 1 and "SP 8599390" not in html
     us = render_site({**c, "reg_id": "2024-001234567"}, write_site_copy(facts, "corporate-firm", c["domain"]), "corporate-firm")["index.html"].decode()
     assert "Control ID: <span" in us
+
+
+def test_offline_copy_has_no_double_period_and_uses_an_before_vowels():
+    import json
+
+    from wg_core.modules.websites.offline_copy import write_site_copy
+    from wg_core.modules.websites.templates import BY_ID
+
+    for tid in BY_ID:
+        text = json.dumps(write_site_copy({"Company": "FORMA LTDA.", "City": "Caxias do Sul", "State": "RS"}, tid, "x.example"))
+        assert "LTDA.." not in text and " a organised" not in text and " a honest" not in text and " a attentive" not in text
