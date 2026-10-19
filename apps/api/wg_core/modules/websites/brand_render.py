@@ -372,6 +372,60 @@ def info_strip(c: dict, content: dict) -> str:
         for i, lab, v in cells) + "</div>")
 
 
+def map_embed(address: str, cls: str) -> str:
+    """Google Maps embed of the printed address (a search, no key, no guessed pin)."""
+    src = f"https://maps.google.com/maps?q={quote_plus(address)}&z=15&output=embed"
+    return (f'<iframe src="{src}" class="{cls}" style="border:0" loading="lazy" referrerpolicy="no-referrer-when-downgrade" '
+            f'allowfullscreen title="{escape(address)} — Google Maps"></iframe>')
+
+
+def identity_cards(c: dict, content: dict) -> str:
+    """The company's facts in large type: phone, address (+ map link), registration number, services."""
+    cells = []
+    if c.get("phone"):
+        cells.append(("phone", "Phone", f'<a href="tel:{_tel(c["phone"])}" class="hover:text-brand">{escape(c["phone"])}</a>'))
+    if c.get("address"):
+        cells.append(("pin", "Address", f'<a href="{maps_link(c["address"])}" target="_blank" rel="noopener" class="hover:text-brand">'
+                                        f'{escape(c["address"])}</a>'))
+    if c.get("reg_id"):
+        cells.append(("shield", reg_label(c["reg_id"]), escape(c["reg_id"])))
+    if content.get("services"):
+        cells.append(("briefcase", "Services", escape(", ".join(s["title"] for s in content["services"][:3]))))
+    cols = {1: "", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-2 lg:grid-cols-4"}[len(cells)]
+    return (f'<div class="grid {cols} divide-y sm:divide-y-0 sm:divide-x divide-slate-200 bg-white rounded-2xl shadow-2xl">' + "".join(
+        f'<div class="p-7 text-center"><span class="inline-grid place-items-center w-14 h-14 rounded-full grad text-white mb-3">{icon(i, "w-7 h-7")}</span>'
+        f'<div class="text-xs font-bold uppercase tracking-[.15em] text-slate-500">{lab}</div>'
+        f'<div class="font-heading text-lg md:text-xl font-bold text-slate-900 mt-2 leading-snug break-words">{v}</div></div>'
+        for i, lab, v in cells) + "</div>")
+
+
+def sec_identity(c: dict, d: dict, content: dict) -> str:
+    """Top of the home page (owner, 2026-10-19): who the company is, in large type, before anything else —
+    name, phone, address, registration number, then the address on Google Maps."""
+    mapbox = ""
+    if c.get("address"):
+        mapbox = ('  <div class="relative max-w-5xl mx-auto px-6 mt-8">\n'
+                  '    <div class="rounded-2xl overflow-hidden shadow-xl bg-white">'
+                  f'{map_embed(c["address"], "w-full h-72 md:h-96 block")}'
+                  f'<a href="{maps_link(c["address"])}" target="_blank" rel="noopener" class="flex items-center justify-center gap-2 py-3 '
+                  f'text-sm font-semibold text-brand hover:bg-slate-50">{icon("pin", "w-4 h-4")}Open in Google Maps{icon("arrow", "w-4 h-4")}</a></div>\n'
+                  '  </div>\n')
+    return (
+        '<section class="relative pb-16">\n'
+        '  <div class="relative min-h-[30rem] overflow-hidden">\n'
+        f'    {media(d, 1920, 1000, "hero", "absolute inset-0 w-full h-full object-cover")}\n'
+        '    <div class="absolute inset-0 grad opacity-80"></div>\n'
+        '    <div class="relative max-w-5xl mx-auto px-6 pt-16 pb-40 text-center text-white">\n'
+        f'      <h1 class="font-heading text-4xl md:text-6xl font-extrabold leading-[1.05] mb-5 break-words">{escape(c["company"])}</h1>\n'
+        f'      <p class="text-xl md:text-2xl font-semibold text-white/95 mb-4">{escape(content["tagline"])}</p>\n'
+        f'      <p class="text-white/90 leading-relaxed max-w-3xl mx-auto mb-8">{escape(content["intro_paragraph"])}</p>\n'
+        f'      <div class="flex justify-center">{_buttons(c, content, light=True)}</div>\n'
+        '    </div>\n  </div>\n'
+        f'  <div class="relative max-w-5xl mx-auto px-6 -mt-28">{identity_cards(c, content)}</div>\n'
+        + mapbox +
+        '</section>\n')
+
+
 def sec_band(c: dict, d: dict, content: dict) -> str:
     return (
         '<section class="relative mt-10 mb-20">\n'
@@ -553,10 +607,11 @@ def page_hero(c: dict, d: dict, eyebrow: str, title: str, text: str = "") -> str
 
 def page_home(c: dict, d: dict, content: dict) -> str:
     sections = {"who": sec_who, "band": sec_band, "services": sec_services, "why": sec_why, "faq": sec_faq}
-    body = "".join(sections[k](c, d, content) for k in d["middle"])
+    # The facts block that used to sit in the middle ("band") now opens the page, in large type, with the map.
+    body = "".join(sections[k](c, d, content) for k in d["middle"] if k != "band")
     return (head(c, d, c["company"] + " — " + content["tagline"], content["meta_description_home"], "index.html")
             + '<body class="font-sans text-slate-800 antialiased bg-white">\n' + header(c, d, "index.html")
-            + "<main>\n" + hero(c, d, content) + body + contact_band(c, d, content) + "</main>\n" + footer(c, d, content))
+            + "<main>\n" + sec_identity(c, d, content) + body + contact_band(c, d, content) + "</main>\n" + footer(c, d, content))
 
 
 def page_about(c: dict, d: dict, content: dict) -> str:
@@ -603,6 +658,8 @@ def page_contact(c: dict, d: dict, content: dict) -> str:
             + '<body class="font-sans text-slate-800 antialiased bg-white">\n' + header(c, d, "contact.html") + "<main>\n"
             + page_hero(c, d, "Contact us", "Get in touch", content["contact_intro"])
             + f'<section class="py-16"><div class="max-w-6xl mx-auto px-6 grid lg:grid-cols-2 gap-10 items-start"><div class="space-y-5">{cards}</div>{right}</div></section>\n'
+            + (f'<section class="pb-16"><div class="max-w-6xl mx-auto px-6"><div class="rounded-2xl overflow-hidden shadow-xl">'
+               f'{map_embed(c["address"], "w-full h-80 md:h-[28rem] block")}</div></div></section>\n' if c.get("address") else "")
             + "</main>\n" + footer(c, d, content))
 
 
