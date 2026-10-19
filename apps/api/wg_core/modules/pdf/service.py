@@ -51,8 +51,8 @@ def ingest(s: Session, name: str, data: bytes) -> tuple[PdfDocument, bool]:
     s.add(doc)
     s.flush()
     extract_into(doc, data)
-    if doc.status == "needs_ai" and cfg("ANTHROPIC_API_KEY"):
-        request_ai_read(s, doc)  # scans are read (and classified) by AI as soon as it is configured
+    if doc.status == "needs_ai":
+        request_scan_read(s, doc)  # scans: free OCR on this machine first (AI only if OCR does not know the form)
     return doc, True
 
 
@@ -74,6 +74,38 @@ def extract_into(doc: PdfDocument, data: bytes, forced_type: str | None = None):
     else:
         doc.fields, doc.status = {k: field("", "missing") for k in FIELD_KEYS}, "review"
     doc.industry = industry_for(doc) if doc.fields else {}
+
+
+def request_scan_read(s: Session, doc: PdfDocument):
+    return enqueue(s, "pdf_ocr_read", f"pdf_ocr:{doc.md5}", {"doc_id": doc.id}, resource="ocr")
+
+
+@handler("pdf_ocr_read")
+def _ocr_read(ctx: JobContext):
+    """Scanned page → RapidOCR on this machine (free, nothing sent out) → the boxes of a known form. A form the reader
+    does not know goes to the AI when a key is set; otherwise the owner picks the type or types the cells."""
+    from .ocr import extract_ca_scan, ocr_pages
+
+    doc = ctx.session.get(PdfDocument, ctx.job.payload["doc_id"])
+    ctx.step("OCR bản scan (miễn phí, trên máy)")
+    pages = ocr_pages(storage_path(doc.md5).read_bytes())
+    got = extract_ca_scan(pages)
+    manual = doc.detection_reason == "Chọn thủ công"
+    if got and (not manual or doc.doc_type == "ca"):
+        doc.fields, doc.extra = got
+        doc.doc_type, doc.status, doc.error = "ca", "review", None
+        if not manual:
+            doc.detection_confidence = 0.9
+            doc.detection_reason = f"OCR: mẫu {doc.extra['form']} · State of California · Secretary of State"
+        doc.industry = industry_for(doc)
+        ctx.log(f"OCR đọc xong mẫu {doc.extra['form']} — mọi ô đọc bằng OCR cần anh đối chiếu với phôi trước khi lưu", "ok")
+        return
+    if cfg("ANTHROPIC_API_KEY"):
+        request_ai_read(ctx.session, doc)
+        ctx.log("OCR chưa biết mẫu phôi này — chuyển cho AI đọc", "info")
+        return
+    doc.error = "OCR chưa biết mẫu phôi này (đang đọc được: California LLC-1, LLC-5) — nhập tay các ô, hoặc báo em mẫu mới"
+    ctx.log(doc.error, "warn")
 
 
 def request_ai_read(s: Session, doc: PdfDocument):

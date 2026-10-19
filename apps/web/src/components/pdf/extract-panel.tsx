@@ -3,7 +3,7 @@
 import clsx from "clsx";
 import {
   Lock, FileText, Bot, Wand2, PenLine, AlertCircle, AlertTriangle, Save, SkipForward, RotateCcw, Copy, ExternalLink,
-  CheckCircle2, Circle, Loader2, HardDrive, Info, Fingerprint, Table2, ScanSearch, Star, Database, XCircle, Hash,
+  CheckCircle2, Circle, Loader2, HardDrive, Info, Fingerprint, Table2, ScanSearch, ScanText, Star, Database, XCircle, Hash,
 } from "lucide-react";
 import {
   DOC_TYPES, FIELD_LABEL, FIELD_META, INDUSTRIES, KNOWN_DOC_TYPES, SAVE_STEPS, fieldHint, hasLeadingZero, templateFor, validate,
@@ -17,6 +17,7 @@ import type { HighlightKey } from "./pdf-preview";
 const SOURCE: Record<FieldSource, { label: string; icon: typeof Bot; cls: string }> = {
   text: { label: "Lớp chữ PDF", icon: FileText, cls: "text-emerald-300/90" },
   ai: { label: "AI đọc", icon: Bot, cls: "text-sky-300" },
+  ocr: { label: "OCR đọc từ ảnh", icon: ScanText, cls: "text-cyan-300" },
   auto: { label: "Tự sinh từ A", icon: Wand2, cls: "text-violet-300" },
   manual: { label: "Đã sửa tay", icon: PenLine, cls: "text-amber-200" },
   missing: { label: "Thiếu", icon: AlertCircle, cls: "text-rose-300" },
@@ -93,12 +94,12 @@ export function ExtractPanel({
         )}
 
         {file.needsAi && (
-          <Notice tone="sky" icon={Info} title="Bản scan — cần AI đọc">
-            PDF không có lớp chữ. AI đọc từng ô của phôi; mọi ô do AI đọc phải được anh đối chiếu trước khi lưu.
+          <Notice tone="sky" icon={Info} title={file.aiRunning ? "Bản scan — đang đọc bằng OCR trên máy (miễn phí)…" : "Bản scan — chưa đọc được"}>
+            PDF không có lớp chữ. App đọc chữ trong ảnh bằng OCR chạy trên máy (California LLC-1, LLC-5); mọi ô đọc bằng OCR phải được anh đối chiếu với phôi trước khi lưu.
             {file.error && <span className="mt-1 block text-rose-200">{file.error}</span>}
             <div className="mt-2.5">
               <SmallBtn onClick={() => dispatch({ type: "aiRead", id: file.id })} icon={RotateCcw}>
-                {file.aiRunning ? "AI đang đọc…" : "AI đọc phôi"}
+                {file.aiRunning ? "Đang đọc…" : "AI đọc phôi"}
               </SmallBtn>
             </div>
           </Notice>
@@ -144,7 +145,7 @@ export function ExtractPanel({
                     <span className={clsx("inline-flex shrink-0 items-center gap-1 text-[10.5px]", src.cls)}>
                       <src.icon className="size-3" />
                       {src.label}
-                      {fld.source === "ai" && fld.confidence !== undefined && ` ${fld.confidence}%`}
+                      {(fld.source === "ai" || fld.source === "ocr") && fld.confidence !== undefined && ` ${fld.confidence}%`}
                     </span>
                   </div>
                   <input

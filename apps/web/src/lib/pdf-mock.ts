@@ -8,7 +8,7 @@
 import { detectTemplate, type SiteTemplate } from "./templates";
 
 export type FieldKey = "A" | "D" | "E" | "F" | "G" | "H" | "I" | "J";
-export type FieldSource = "text" | "ai" | "auto" | "manual" | "missing";
+export type FieldSource = "text" | "ai" | "ocr" | "auto" | "manual" | "missing";
 /** `note` explains a normalisation, e.g. "California" → "CA" or how a BR address was assembled. */
 export type Field = {
   value: string; source: FieldSource; confidence?: number; note?: string;
@@ -255,8 +255,8 @@ export function validate(fields: Fields, t: DocType): Partial<Record<FieldKey, I
         set("warn", "review", "Không thấy số in lại ở trang sau để đối chiếu — kiểm tra bằng mắt");
     }
 
-    if (!out[m.key] && fld.source === "ai" && (fld.confidence ?? 100) < (m.critical ? 95 : 85))
-      set("warn", "review", `AI đọc với độ tin cậy ${fld.confidence}% — cần đối chiếu`);
+    if (!out[m.key] && (fld.source === "ai" || fld.source === "ocr") && (fld.confidence ?? 100) < (m.critical ? 95 : 85))
+      set("warn", "review", `${fld.source === "ocr" ? "OCR" : "AI"} đọc với độ tin cậy ${fld.confidence}% — cần đối chiếu`);
   }
   return out;
 }

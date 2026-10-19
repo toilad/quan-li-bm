@@ -222,10 +222,13 @@ def test_k_is_xem_phoi_hyperlink_and_drive_file_is_reused_not_reuploaded():
 
 
 @pytest.mark.skipif(not CA, reason="California sample not present")
-def test_scan_is_classified_and_read_by_ai_then_needs_owner_check():
+def test_scan_is_classified_and_read_by_ai_then_needs_owner_check(monkeypatch):
     import json as _json
 
     from tests.mocks import anthropic_json
+    from wg_core.modules.pdf import ocr
+
+    monkeypatch.setattr(ocr, "ocr_pages", lambda data: [[]])  # a form the free OCR reader does not know → the AI
 
     ai_reply = {"doc_type": "ca", "evidence": "LLC-1, Secretary of State, State of California",
                 "A": {"value": "EXAMPLE SUPPLY CO., LLC", "found": True}, "D": {"value": "", "found": False},
@@ -256,16 +259,38 @@ def test_scan_is_classified_and_read_by_ai_then_needs_owner_check():
     assert sent["output_config"]["format"]["type"] == "json_schema" and sent["fallbacks"] == "default"
 
 
-def test_scan_without_ai_key_waits_for_configuration(monkeypatch):
-    from wg_core.config import settings
+def test_scan_of_an_unknown_form_without_ai_key_says_what_to_do(monkeypatch):
+    from wg_core.modules.pdf import ocr
 
     if not CA:
         pytest.skip("California sample not present")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(ocr, "ocr_pages", lambda data: [[]])
     with session_scope() as s:
         doc, _ = pdf.ingest(s, "scan.pdf", open(CA[0], "rb").read())
         assert doc.status == "needs_ai"
-    assert drain() == 0  # nothing queued without a key; the UI shows "Chưa cấu hình AI"
+        doc_id = doc.id
+    assert drain() == 1  # the free OCR read only; no AI call without a key
+    with session_scope() as s:
+        d = s.get(PdfDocument, doc_id)
+        assert d.status == "needs_ai" and "OCR chưa biết mẫu" in d.error
+
+
+@pytest.mark.skipif(not CA, reason="California sample not present")
+def test_california_2013_scan_is_read_by_the_free_ocr_on_this_machine(monkeypatch):
+    """The real RapidOCR run on the real scan (~15 s): no key, nothing sent out."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    with session_scope() as s:
+        doc, _ = pdf.ingest(s, "scan.pdf", open(CA[0], "rb").read())
+        doc_id = doc.id
+    drain()
+    with session_scope() as s:
+        d = s.get(PdfDocument, doc_id)
+        assert d.doc_type == "ca" and d.status == "review" and d.detection_reason.startswith("OCR: mẫu LLC-1")
+        f = {k: v["value"] for k, v in d.fields.items()}
+        assert f["J"] == "201335710358" and f["H"] == "CA" and f["I"] == "90058" and f["G"] == "Vernon"
+        assert f["F"] == "5051 Santa Fe Ave., Vernon, CA 90058" and d.fields["A"]["source"] == "ocr"
+        assert f["A"].endswith("Co., LLC") and f["D"] == ""
 
 
 def test_california_number_that_differs_on_page_2_blocks_saving_until_fixed_by_hand():

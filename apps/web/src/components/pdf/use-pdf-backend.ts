@@ -82,7 +82,7 @@ function toFile(d: Doc, job: Job | undefined, aiJob: Job | undefined, local: { c
     failedAt = d.drive_file_id ? "sheet" : "process";
   }
   if (d.status === "needs_ai") {
-    error = aiJob?.status === "blocked" ? `AI chưa đọc được: ${aiJob.error}` : aiJob?.status === "failed" ? aiJob.error ?? undefined : undefined;
+    error = aiJob?.status === "blocked" ? `Chưa đọc được: ${aiJob.error}` : aiJob?.status === "failed" ? aiJob.error ?? undefined : d.error ?? undefined;
   }
   const hasFields = Object.keys(d.fields || {}).length > 0;
   const x = d.extra || {};
@@ -122,7 +122,8 @@ export function usePdfBackend(onMessage: (msg: string) => void) {
     try {
       const [d, j1, j2] = await Promise.all([
         api.get<Doc[]>("/api/pdf"), api.get<Job[]>("/api/jobs?kind=pdf_save"), api.get<Job[]>("/api/jobs?kind=pdf_ai_read"),
-      ]);
+        api.get<Job[]>("/api/jobs?kind=pdf_ocr_read"),
+      ]).then(([a, b, c, o]) => [a, b, [...c, ...o]] as const);
       setDocs(d);
       setJobs([...j1, ...j2]);
       const q = await api.get<{ paused: string[] }>("/api/queue");
@@ -133,8 +134,10 @@ export function usePdfBackend(onMessage: (msg: string) => void) {
     }
   }, []);
 
+  // the scan reader: free OCR first, the AI only when a key is set and OCR does not know the form
+  const latestRead = (docId: number) => jobs.filter((j) => (j.kind === "pdf_ocr_read" || j.kind === "pdf_ai_read") && j.payload.doc_id === docId).sort((a, b) => b.id - a.id)[0];
   const latest = (kind: string, docId: number) => jobs.filter((j) => j.kind === kind && j.payload.doc_id === docId).sort((a, b) => b.id - a.id)[0];
-  const files = docs.filter((d) => !hidden.has(String(d.id))).map((d) => toFile(d, latest("pdf_save", d.id), latest("pdf_ai_read", d.id), flags[String(d.id)] ?? {}));
+  const files = docs.filter((d) => !hidden.has(String(d.id))).map((d) => toFile(d, latest("pdf_save", d.id), latestRead(d.id), flags[String(d.id)] ?? {}));
   const busy = files.some((f) => f.status === "processing" || f.status === "saving" || (f as PdfFile & { aiRunning?: boolean }).aiRunning);
 
   useEffect(() => {

@@ -128,7 +128,7 @@ def list_jobs(kind: str | None = None, s: Session = Depends(db)):
 
 
 class PauseBody(BaseModel):
-    kind: str = "*"  # pdf_save | pdf_ai_read | domain_create | web_build | selftest | "*"
+    kind: str = "*"  # pdf_save | pdf_ocr_read | pdf_ai_read | domain_create | web_build | selftest | "*"
     on: bool
 
 
@@ -240,6 +240,8 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
         if body.doc_type not in ("wa", "wy", "ca", "br"):
             raise HTTPException(422, "Loại phôi không hợp lệ")
         pdf.extract_into(d, pdf.storage_path(d.md5).read_bytes(), forced_type=body.doc_type)
+        if d.status == "needs_ai":
+            pdf.request_scan_read(s, d)
     if body.fields:
         f = dict(d.fields)
         for k, v in body.fields.items():
