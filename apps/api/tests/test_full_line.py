@@ -90,7 +90,7 @@ def test_pdf_to_domain_to_website_on_one_sheet():
         assert len(sheet.appends) == 1
         row = 4
         assert sheet.rows[row]["A"] == "Acme Plumbing LLC" and sheet.rows[row]["B"] == "" and sheet.rows[row]["C"] == ""
-        assert sheet.rows[row]["K"].startswith("=HYPERLINK(")
+        assert sheet.rows[row]["K"] == "Xem phôi" and sheet.links[f"K{row}"].startswith("https://drive.google.com/file/d/")
 
         # 2 · Domain Manager: ticked root → trial named + switch on → preview (read-only) → confirmed plan →
         #     A record (ACTION_ADD) + cPanel subdomain → DNS verified → B

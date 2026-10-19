@@ -144,3 +144,12 @@ def test_a_california_llc1_without_address_is_matched_under_ca():
         d.extra = {**d.extra, "form": "LLC-1", "state_of_form": "CA"}
     out, _ = run(doc_id, lambda s, d: sm.match(d))
     assert out["h"] == "CA" and out["status"] == "name_differs" and out["rows"][0]["row"] == 4
+
+
+def test_correcting_a_regenerates_the_short_name(client):
+    doc_id = _ocr_doc()
+    f = client.patch(f"/api/pdf/{doc_id}", json={"fields": {"A": "JDS Fixture Co., LLC"}}).json()["fields"]
+    assert f["E"]["value"] == "jdsfixturecollc" and f["E"]["source"] == "auto"
+    client.patch(f"/api/pdf/{doc_id}", json={"fields": {"E": "jdsfixture"}})
+    f = client.patch(f"/api/pdf/{doc_id}", json={"fields": {"A": "JDS Fixture Co, LLC"}}).json()["fields"]
+    assert f["E"]["value"] == "jdsfixture"  # typed by the owner: kept

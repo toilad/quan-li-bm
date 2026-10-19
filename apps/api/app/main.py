@@ -286,6 +286,11 @@ def edit_pdf(doc_id: int, body: PdfEdit, s: Session = Depends(db)):
                         **({"phone_source": "manual" if v.strip() else "needs_setup"} if k == "D" else {}),
                         **({"region": old["region"]} if old.get("region") else {}), **({"role": old["role"]} if old.get("role") else {})}
         d.fields = f
+    if body.fields and "A" in body.fields and (d.fields.get("E") or {}).get("source") in ("auto", "missing", None):
+        # E (short name) is derived from A: a corrected name gives a corrected E (unless the owner typed E himself)
+        from wg_core.modules.pdf.fields import field as make_field, short_name
+
+        d.fields = {**d.fields, "E": make_field(short_name(d.fields["A"]["value"]), "auto", "Tự sinh từ A")}
     if body.checked:
         f = dict(d.fields)
         for k, on in body.checked.items():

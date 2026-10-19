@@ -15,7 +15,7 @@ from ...runtime_config import get as cfg
 from ...integrations import ai
 from ...phones import tag as tag_phone
 from ...integrations.errors import Conflict, Permanent
-from ...integrations.google import Drive, Sheets, hyperlink_formula
+from ...integrations.google import Drive, Sheets
 from ...jobs import JobContext, enqueue, handler
 from ...models import PdfDocument, SheetWrite
 from ..websites.templates import detect as detect_template, template_for_cnae
@@ -239,9 +239,10 @@ def _save(ctx: JobContext):
     if not ctx.state.get("k_link"):
         ctx.step("Ghi K = “Xem phôi”")
         sheets = Sheets()
-        formula = hyperlink_formula(doc.drive_link)
-        sheets.write_cell(f"K{doc.sheet_row}", formula, user_entered=True)
-        s.add(SheetWrite(tab=sheets.tab, range=f"K{doc.sheet_row}", old_value=doc.drive_link, new_value=formula, job_id=ctx.job.id))
+        # "Xem phôi" linked to the PDF, like the owner's own rows (a HYPERLINK formula breaks in a vi_VN Sheet)
+        url = f"https://drive.google.com/file/d/{doc.drive_file_id}/view"
+        sheets.write_link(f"K{doc.sheet_row}", "Xem phôi", url)
+        s.add(SheetWrite(tab=sheets.tab, range=f"K{doc.sheet_row}", old_value=doc.drive_link, new_value=f"Xem phôi → {url}", job_id=ctx.job.id))
         ctx.checkpoint(k_link=True)
         ctx.log(f"K{doc.sheet_row} = “Xem phôi” → PDF gốc trên Drive", "ok")
     doc.status, doc.error = "saved", None

@@ -118,7 +118,9 @@ def test_save_flow_drive_then_sheet_and_resume_after_sheet_error():
     row = sheet.appends[0]
     assert row[1] == "" and row[2] == ""  # B, C empty
     assert row[10] == "https://drive.google.com/file/d/DRIVE123/view"  # K first written as the plain link…
-    assert sheet.writes[-1] == ("K4", '=HYPERLINK("https://drive.google.com/file/d/DRIVE123/view","Xem phôi")')  # …then “Xem phôi”
+    # …then "Xem phôi" linked to the PDF (not a HYPERLINK formula: it breaks in a vi_VN Sheet)
+    assert sheet.writes[-1] == ("K4", "Xem phôi → https://drive.google.com/file/d/DRIVE123/view")
+    assert sheet.rows[4]["K"] == "Xem phôi" and sheet.links["K4"] == "https://drive.google.com/file/d/DRIVE123/view"
     assert len(row) == 11  # A..K, L untouched
     assert row[9] == doc.fields["J"]["value"]
 
@@ -225,7 +227,7 @@ def test_k_is_xem_phoi_hyperlink_and_drive_file_is_reused_not_reuploaded():
         assert d.status == "saved" and d.drive_file_id == "OLD1"
     assert calls == []  # found by md5 → no second upload
     row = d.sheet_row
-    assert sheet.writes == [(f"K{row}", '=HYPERLINK("https://drive.google.com/file/d/OLD1/view","Xem phôi")')]
+    assert sheet.writes == [(f"K{row}", "Xem phôi → https://drive.google.com/file/d/OLD1/view")]
 
 
 @pytest.mark.skipif(not CA, reason="California sample not present")

@@ -231,6 +231,28 @@ class Sheets:
                                 params={"valueInputOption": "USER_ENTERED" if user_entered else "RAW"},
                                 json={"values": [[value]]}), "Sheets ghi ô")
 
+    def _sheet_id(self, c) -> int:
+        meta = _check(c.get(f"{SHEETS}/{self.id}", headers=_auth(c), params={"fields": "sheets.properties(sheetId,title)"}), "Sheets đọc tab")
+        for sh in meta.get("sheets", []):
+            if sh["properties"]["title"] == self.tab:
+                return sh["properties"]["sheetId"]
+        raise Permanent(f"Không thấy tab “{self.tab}” trong Google Sheet")
+
+    def write_link(self, cell: str, label: str, url: str) -> dict:
+        """A cell showing `label` that links to `url` — the way the owner's own rows carry K ("Xem phôi"). Not a formula:
+        HYPERLINK's argument separator depends on the spreadsheet locale (vi_VN wants ";", "," gives #ERROR!)."""
+        m = re.fullmatch(r"([A-Z]+)(\d+)", cell)
+        col = sum((ord(ch) - 64) * 26 ** i for i, ch in enumerate(reversed(m.group(1)))) - 1
+        row = int(m.group(2)) - 1
+        with _client() as c:
+            sid = self._sheet_id(c)
+            body = {"requests": [{"updateCells": {
+                "range": {"sheetId": sid, "startRowIndex": row, "endRowIndex": row + 1, "startColumnIndex": col, "endColumnIndex": col + 1},
+                "rows": [{"values": [{"userEnteredValue": {"stringValue": label},
+                                      "textFormatRuns": [{"startIndex": 0, "format": {"link": {"uri": url}}}]}]}],
+                "fields": "userEnteredValue,textFormatRuns"}}]}
+            return _check(c.post(f"{SHEETS}/{self.id}:batchUpdate", headers=_auth(c), json=body), "Sheets ghi link")
+
     def append_row(self, values: list[str]) -> int:
         """Append A..K (L untouched). Returns the sheet row number written."""
         with _client() as c:

@@ -12,6 +12,7 @@ class FakeSheet:
     def __init__(self, rows: dict[int, dict] | None = None):
         self.rows = rows or {}
         self.appends, self.writes = [], []
+        self.links: dict[str, str] = {}
 
     def values(self):
         if not self.rows:
@@ -52,7 +53,21 @@ class FakeSheet:
                 return httpx.Response(503, json={"error": {"message": "backend error"}})
             return httpx.Response(200, json={"updates": {"updatedRange": f"'Phoi US'!A{row}:K{row}"}})
 
+        def batch(request):  # updateCells with a link (K = "Xem phôi")
+            for req in json.loads(request.content)["requests"]:
+                u = req["updateCells"]
+                r, c = u["range"]["startRowIndex"] + 1, "ABCDEFGHIJKL"[u["range"]["startColumnIndex"]]
+                v = u["rows"][0]["values"][0]
+                text, link = v["userEnteredValue"]["stringValue"], v["textFormatRuns"][0]["format"]["link"]["uri"]
+                self.rows.setdefault(r, {})[c] = text
+                self.links[f"{c}{r}"] = link
+                self.writes.append((f"{c}{r}", f"{text} → {link}"))
+            return httpx.Response(200, json={"replies": [{}]})
+
         mock.post("https://oauth2.googleapis.com/token").respond(200, json={"access_token": "tok", "expires_in": 3600})
+        mock.get("https://sheets.googleapis.com/v4/spreadsheets/TESTSHEET").respond(
+            200, json={"sheets": [{"properties": {"sheetId": 7, "title": "Phoi US"}}]})
+        mock.post("https://sheets.googleapis.com/v4/spreadsheets/TESTSHEET:batchUpdate").mock(side_effect=batch)
         mock.get(url__startswith=base).mock(side_effect=get)
         mock.put(url__startswith=base).mock(side_effect=put)
         mock.post(url__regex=r".*/values/.*:append.*").mock(side_effect=append)
