@@ -55,7 +55,7 @@ def clean_db(_env):
     from wg_core.integrations import net
 
     net.system_resolve = lambda name: []  # never a real DNS lookup in tests
-    net.cert_valid = lambda domain: (False, "chưa có chứng chỉ hợp lệ (test)")  # never a real TLS connection in tests
+    net.cert_valid = lambda domain: (True, "chứng chỉ hợp lệ (test)")  # never a real TLS connection in tests
     from wg_core import runtime_config
 
     runtime_config._cache.clear()

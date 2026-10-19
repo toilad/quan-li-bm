@@ -9,8 +9,9 @@ from ...integrations import ai, net
 from ...integrations.cpanel import CPanel
 from ...integrations.errors import Conflict, NotConfigured, Permanent, Transient, wait_or_fail
 
-SSL_WAIT_HOURS = 24  # AutoSSL on a busy server can take hours; past a day something is wrong
-AUTOSSL_RETRIGGER_HOURS = 2
+SSL_WAIT_HOURS = 48  # the hosting's own scheduled AutoSSL issues the certificate; past two days something is wrong
+# The app never starts AutoSSL itself: SSL::start_autossl_check has no domain parameter and runs for every domain of the
+# hosting account (owner's rule, 2026-10-19). A site is built only once its name already has a valid certificate.
 from ...integrations.google import Sheets
 from ...jobs import JobContext, enqueue, handler
 from ...models import Nick, RootDomain, SheetWrite
@@ -165,6 +166,21 @@ def _build(ctx: JobContext):
         ctx.log("Nội dung đạt kiểm tra: không giải thưởng / khách hàng / số liệu bịa", "ok")
 
     out = settings().data_dir / "sites" / domain
+    if not st.get("cert_ok"):
+        ctx.step("Kiểm tra SSL trước khi dựng web")
+        cert_ok, cert_info = net.cert_valid(domain)
+        if not cert_ok:
+            try:
+                status = cp._call("SSL", "get_autossl_renewal_status", {"domain": domain})  # read-only, this domain only
+            except Exception:  # noqa: BLE001 — informative only
+                status = None
+            probs = cp.autossl_problems(domain)
+            detail = f" · AutoSSL: {probs[0][:160]}" if probs else (f" · trạng thái: {status}" if status else "")
+            wait_or_fail(st, "ssl_wait_since", SSL_WAIT_HOURS,
+                         f"Chưa có SSL cho {domain} ({cert_info}) — chờ AutoSSL định kỳ của hosting, chưa tải web lên{detail}", 1800)
+        ctx.checkpoint(cert_ok=True)
+        ctx.log(f"{domain}: {cert_info} — có SSL, bắt đầu dựng web", "ok")
+
     if "photos" not in st:
         ctx.step("Lấy ảnh (Pexels / Pixabay)")
         out.mkdir(parents=True, exist_ok=True)
@@ -213,20 +229,8 @@ def _build(ctx: JobContext):
         ctx.log(f"Fileman::upload_files → {st['doc_root']} · {pages} trang + {len(chosen)} ảnh · mẫu {template.name}", "ok")
 
     if not st.get("https_ok"):
-        ctx.step("Bật SSL (AutoSSL) + kiểm tra HTTPS")
-        from datetime import datetime, timezone
-
+        ctx.step("Kiểm tra HTTPS sau khi tải web")
         cert_ok, cert_info = net.cert_valid(domain)
-        if cert_ok:  # AutoSSL already covers this name: no need to wait for an account-wide AutoSSL run
-            ctx.log(f"{domain}: {cert_info} — không cần chạy AutoSSL", "ok")
-        else:
-            last = st.get("autossl_started_at")
-            if not last or (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() > AUTOSSL_RETRIGGER_HOURS * 3600:
-                cp.start_autossl(domain)  # again every few hours while waiting: an earlier run may have happened before DNS was ready
-                ctx.checkpoint(autossl_started=True, autossl_started_at=datetime.now(timezone.utc).isoformat())
-                ctx.log("SSL::start_autossl_check đã gửi", "info")
-            if cp.autossl_in_progress():
-                wait_or_fail(st, "ssl_wait_since", SSL_WAIT_HOURS, "AutoSSL đang chạy", 120)
         ok, why = net.https_ok(domain, row.cells["A"])
         if not ok and net.BLOCKED in why and cert_ok:
             # The hosting refuses this network (every site, old ones too) — the page cannot be read from here.
@@ -240,7 +244,7 @@ def _build(ctx: JobContext):
                 why += f"; thiếu file trên hosting: {', '.join(missing[:5])}"
         if not ok:
             probs = cp.autossl_problems(domain)
-            wait_or_fail(st, "ssl_wait_since", SSL_WAIT_HOURS, f"HTTPS chưa chạy: {why}" + (f" · AutoSSL: {probs[0]}" if probs else ""), 900)
+            wait_or_fail(st, "https_wait_since", SSL_WAIT_HOURS, f"HTTPS chưa chạy: {why}" + (f" · AutoSSL: {probs[0]}" if probs else ""), 900)
         ctx.checkpoint(https_ok=True)
         ctx.log(f"https://{domain}: {why}", "ok")
 

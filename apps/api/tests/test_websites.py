@@ -208,3 +208,23 @@ def test_a_region_block_without_the_uploaded_files_is_not_taken_as_live(monkeypa
         j = s.get(Job, job_id)
         assert j.status == "queued" and "thiếu file" in j.last_error, j.last_error  # keeps waiting, C not written
     assert sheet.writes == []
+
+
+
+def test_no_certificate_yet_means_nothing_is_uploaded_and_autossl_is_never_started(monkeypatch):
+    """Owner's rule: SSL first, then the website — and never an AutoSSL run for the whole hosting account."""
+    from wg_core.integrations import net
+
+    monkeypatch.setattr(net, "cert_valid", lambda d: (False, "chưa có chứng chỉ hợp lệ (SSLCertVerificationError)"))
+    sheet = _sheet()
+    with respx.mock(assert_all_called=False) as m:
+        upload, ai = _routes(m, sheet)
+        status = m.get(f"{CP}/SSL/get_autossl_renewal_status").mock(return_value=cp_ok({"status": "queued"}))
+        autossl = m.get(url__regex=r".*/SSL/start_autossl_check.*").mock(return_value=cp_ok(None))
+        job_id = _run("lawyer-legal")
+        drain()
+    with session_scope() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "queued" and "Chưa có SSL" in j.last_error and "chưa tải web lên" in j.last_error
+        assert not j.state.get("uploaded")
+    assert not upload.called and not autossl.called and status.called and sheet.writes == []
