@@ -85,20 +85,40 @@ def test_identify_form_and_version():
 
 # ───── addresses: only the company's own address fills F–I ─────
 
-def test_llc1_agent_address_is_a_suggestion_never_the_company_address():
+def test_llc1_old_form_takes_item_4_agent_address_for_f_to_i():
+    """Owner, 2026-10-21: LLC-1 REV 03/2005 / 04/2007 have no principal-office box → F–I = item 4 (initial agent's
+    address), address_source LLC1_ITEM4."""
     f, extra = extract_ca_scan(llc1())
     v = vals(f)
     assert v["A"] == "Sample Ridge Holdings, LLC" and v["J"] == "201099910123" and v["D"] == ""
-    assert v["F"] == v["G"] == v["H"] == v["I"] == "" and "không có địa chỉ doanh nghiệp" in f["F"]["note"]
-    [c] = extra["address_candidates"]
-    assert (c["role"], c["street"], c["city"], c["state"], c["zip"]) == ("agent", "100 W 1st Street", "Torrance", "CA", "90501")
-    assert c["region"]["page"] == 1 and len(c["region"]["box"]) == 4
+    assert (v["F"], v["G"], v["H"], v["I"]) == ("100 W 1st Street, Torrance, CA 90501", "Torrance", "CA", "90501")
+    assert f["F"]["role"] == "agent" and extra["address_source"] == "LLC1_ITEM4" and extra["address_candidates"] == []
+    assert extra["address_selected"]["source"] == "LLC1_ITEM4" and extra["status"] == "OK"
+    assert f["F"]["region"]["page"] == 1 and len(f["F"]["region"]["box"]) == 4
     assert f["A"]["region"]["page"] == 1 and f["A"]["source"] == "ocr" and f["A"]["checked"] is False
+
+
+def test_llc1_item_4_read_when_the_zip_header_is_missed_and_bivd_is_flagged():
+    """30277596: OCR missed the ZIP CODE header — item 4 is still found from its STATE / CITY header, the ZIP taken
+    from the "CA 94602" cell. "Bivd." (Blvd.) is flagged for the owner, never corrected."""
+    pages = llc1()
+    pages[0].boxes = [x for x in pages[0].boxes if x.text not in ("ZIP CODE", "CA", "90501")] + [b(1797, 1827, "CA 90501")]
+    f, extra = extract_ca_scan(pages)
+    assert (vals(f)["F"], vals(f)["I"], extra["address_source"]) == ("100 W 1st Street, Torrance, CA 90501", "90501", "LLC1_ITEM4")
+    pages = llc1()
+    for x in pages[0].boxes:
+        if x.text.startswith("100 W"):
+            x.text = "120 No. Robertson Bivd., 3rd Floor, Torrance"
+    f, extra = extract_ca_scan(pages)
+    assert "Blvd" in f["F"]["suspects"][0]["suggestion"] and extra["status"] == "REVIEW_REQUIRED"
+    assert "Blvd" not in vals(f)["F"]  # the reading itself is left as read
+    f, extra = extract_ca_scan(llc1(item4=False))
+    assert "ô địa chỉ agent để trống" in extra["extraction_reason"]
 
 
 def test_llc1_corporate_agent_offers_return_to_and_says_the_firm_is_the_company():
     f, extra = extract_ca_scan(llc1(name_text="SAMPLE HORSE HOLDINGS LLC", item4=False, return_to=True))
-    assert vals(f)["F"] == ""
+    assert vals(f)["F"] == "" and extra["status"] == "NO_BUSINESS_ADDRESS_ON_FORM"  # item 4 blank; Return To never used
     [c] = extra["address_candidates"]
     assert (c["role"], c["street"], c["city"], c["zip"]) == ("return_to", "2725 SAMPLE LEAF AVE", "ROSEMEAD", "91770")
     assert "FIRM là chính công ty này" in extra["note"]
@@ -208,12 +228,14 @@ def test_lp1_principal_executive_office_never_general_partner_agent_or_return_to
 def test_status_follows_the_form_not_a_fixed_list():
     from wg_core.modules.pdf.doc_rules import problems
 
-    f, extra = extract_ca_scan(llc1())  # old LLC-1: no business-address box → empty F–I is the right answer
-    assert extra["status"] == "NO_BUSINESS_ADDRESS_ON_FORM"
+    f, extra = extract_ca_scan(llc1())  # old LLC-1: no business-address box → item 4 (owner, 2026-10-21)
+    assert extra["status"] == "OK"
+    # item 4 blank (a corporate agent): empty F–I is the right answer
+    assert extract_ca_scan(llc1(item4=False))[1]["status"] == "NO_BUSINESS_ADDRESS_ON_FORM"
     pages = llc1()
     pages[0].boxes = [x for x in pages[0].boxes if x.text != "201099910123"]
     f, extra = extract_ca_scan(pages)  # J missing: still usable on a California form
-    assert f["J"]["value"] == "" and extra["status"] == "NO_BUSINESS_ADDRESS_ON_FORM"
+    assert f["J"]["value"] == "" and extra["status"] == "OK"
     assert extract_ca_scan(llc1(name_text="LLC", name_conf=0.91))[1]["status"] == "REVIEW_REQUIRED"
     assert extract_ca_scan(llc1(name_text="Y LLC"))[1]["failure_category"] == "đọc được label nhưng không đọc được value"
     assert problems("br", {"A": {"value": "X LTDA"}, "F": {"value": "RUA A, 1, SAO PAULO, SP 01001000"}, "G": {"value": "SAO PAULO"}, "H": {"value": "SP"},
@@ -258,7 +280,7 @@ def test_read_scan_report_and_the_whole_page_read_once_on_the_original_image(mon
 
 # ───── the review screen's API: crops, "đã kiểm tra", suggested addresses, no save before checking ─────
 
-def _ocr_doc():
+def _ocr_doc(**form):
     """A scanned document as the OCR job leaves it (made-up values) + a one-page PDF on disk for the crops."""
     import hashlib
     import io
@@ -277,7 +299,7 @@ def _ocr_doc():
     data = buf.getvalue() + f"%test-ocr-{_ocr_doc.n}".encode()
     md5 = hashlib.md5(data).hexdigest()
     storage_path(md5).write_bytes(data)
-    fields, extra = extract_ca_scan(llc1())
+    fields, extra = extract_ca_scan(llc1(**form))
     with session_scope() as s:
         d = PdfDocument(md5=md5, original_name="scan.pdf", size=len(data), pages=1, has_text=False, doc_type="ca",
                         detection_confidence=0.9, detection_reason="OCR", fields=fields, extra=extra, industry={}, status="review")
@@ -291,9 +313,9 @@ def test_cells_read_from_a_scan_cannot_be_saved_before_the_owner_checks_them(cli
     from wg_core.models import Job, PdfDocument
     from wg_core.modules.pdf import service as pdf
 
-    doc_id = _ocr_doc()
+    doc_id = _ocr_doc(item4=False, return_to=True)
     r = client.post(f"/api/pdf/{doc_id}/save", json={"confirm_missing": False, "critical_checked": True})
-    # no business address on an old LLC-1: F–I missing is named (agent address never used by itself)
+    # old LLC-1 with item 4 blank: F–I missing is named (the "Return to" address is never used by itself)
     assert r.status_code == 422 and any(x.startswith("F:") for x in r.json()["detail"]["reasons"])
     with session_scope() as s:
         assert not s.query(Job).filter(Job.kind == "pdf_save").count()  # nothing queued for Drive / the Sheet
@@ -304,11 +326,11 @@ def test_cells_read_from_a_scan_cannot_be_saved_before_the_owner_checks_them(cli
     img = client.get(f"/api/pdf/{doc_id}/crop", params={"page": 1, "box": box})
     assert img.status_code == 200 and img.headers["content-type"] == "image/png" and img.content[:4] == b"\x89PNG"
 
-    # the owner picks the suggested agent address for F–I, then ticks the cells
+    # the owner picks the suggested address for F–I, then ticks the cells
     r = client.patch(f"/api/pdf/{doc_id}", json={"use_candidate": 0})
     f = r.json()["fields"]
-    assert f["F"]["value"] == "100 W 1st Street, Torrance, CA 90501" and f["F"]["source"] == "manual" and f["F"]["role"] == "agent"
-    assert f["G"]["value"] == "Torrance" and f["I"]["value"] == "90501" and f["F"]["checked"] is True
+    assert f["F"]["value"].startswith("2725 SAMPLE LEAF AVE, ROSEMEAD") and f["F"]["source"] == "manual" and f["F"]["role"] == "return_to"
+    assert f["G"]["value"] == "ROSEMEAD" and f["I"]["value"] == "91770" and f["F"]["checked"] is True
     r = client.patch(f"/api/pdf/{doc_id}", json={"checked": {"A": True, "J": True}})
     assert r.json()["fields"]["A"]["checked"] is True
     with session_scope() as s:
@@ -454,12 +476,22 @@ def lp1_2010():
     return [page(boxes)]
 
 
-def test_lp1_2010_designated_office_is_a_suggestion_not_the_business_address():
+def test_lp1_2010_item_2_designated_office_goes_to_f_to_i_before_item_4():
+    """Owner, 2026-10-21: LP-1 REV 01/2008 / 01/2010 → F–I = item 2 (initial designated office), item 4 (agent) only
+    when item 2 is blank; a general partner never."""
     f, extra = extract_ca_scan(lp1_2010())
     assert extra["version"] == "LP-1 REV 01/2010" and extra["layout"] == "2008"
-    assert vals(f)["A"] == "Samplebrook House Limited Partnership" and vals(f)["F"] == ""
-    roles = [c["role"] for c in extra["address_candidates"]]
-    assert roles == ["designated_office", "agent", "general_partner"] and extra["status"] == "NO_BUSINESS_ADDRESS_ON_FORM"
+    assert vals(f)["A"] == "Samplebrook House Limited Partnership"
+    assert vals(f)["F"] == "120 Sample Blvd., 3rd Floor, Los Angeles, CA 90048" and f["F"]["role"] == "designated_office"
+    assert extra["address_source"] == "LP1_INITIAL_DESIGNATED_OFFICE" and extra["status"] == "OK"
+    assert [c["role"] for c in extra["address_candidates"]] == ["agent", "general_partner"]
+    pages = lp1_2010()  # item 2 left blank → item 4; the general partner's address is still never used
+    pages[0].boxes = [x for x in pages[0].boxes if not 1200 < x.y < 1230]
+    for x in pages[0].boxes:
+        if 1720 < x.y < 1740:
+            x.text = {"120 Sample Blvd., 3rd Floor": "9 Agent Way", "Los Angeles": "Pasadena", "90048": "91101"}.get(x.text, x.text)
+    f, extra = extract_ca_scan(pages)
+    assert vals(f)["F"] == "9 Agent Way, Pasadena, CA 91101" and extra["address_source"] == "LP1_ITEM4"
 
 
 def test_lp5_foreign_lp_principal_office():

@@ -13,17 +13,21 @@ US_ADDR = {"G": r"[A-Za-z][A-Za-z .'\-]*", "H": "|".join(US_STATES), "I": r"\d{5
 
 # required: cells without which the reading is not usable; format: checked only when the cell has a value;
 # has_address: the form has a business-address box (False → empty F–I is the right answer, not a failure)
+# fallback (owner, 2026-10-21): on a form without a business-address box, F–I take these boxes in this order —
+# (role read on the form, address_source code). Return To, organizer and general partners are never used.
 RULES = {
     "br": {"required": ("A", "J", "F"), "format": {"J": CNPJ, "I": r"\d{8}|\d{2}\.\d{3}-\d{3}"}, "has_address": True},
     "wa": {"required": ("A",), "format": {"J": r"\d{9}"}, "has_address": True},
     "wy": {"required": ("A",), "format": US_ADDR, "has_address": True},
     # California scans, by form (and layout: the 2005–2007 LLC-1 has no business-address box, only the agent's)
-    "LLC-1 2007": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": False},
+    "LLC-1 2007": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": False,
+                   "fallback": (("agent", "LLC1_ITEM4"),)},
     "LLC-1 2013+": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": True},
     "LLC-5 2007": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": True},
     "LP-1 2005": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": True},
-    # LP-1 REV 01/2008+: only the "initial designated office in California" (a suggestion, not F–I)
-    "LP-1 2008": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": False},
+    # LP-1 REV 01/2008+: item 2 "initial designated office in California" first, then item 4 (the agent)
+    "LP-1 2008": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": False,
+                  "fallback": (("designated_office", "LP1_INITIAL_DESIGNATED_OFFICE"), ("agent", "LP1_ITEM4"))},
     "LP-5 2010": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": True},
 }
 
@@ -43,7 +47,7 @@ def problems(key: str, fields: dict) -> list[str]:
         return [f"Chưa có quy tắc cho loại phôi {key}"]
     out = [f"Thiếu {k}: {(fields.get(k) or {}).get('note') or 'không đọc được'}" for k in rule["required"] if not _v(fields, k)]
     out += [f"{k} sai định dạng ({_v(fields, k)})" for k, rx in rule["format"].items() if _v(fields, k) and not re.fullmatch(rx, _v(fields, k))]
-    if rule["has_address"] and _v(fields, "F") and not all(_v(fields, k) for k in "GHI"):
+    if (rule["has_address"] or rule.get("fallback")) and _v(fields, "F") and not all(_v(fields, k) for k in "GHI"):
         out.append("Địa chỉ đọc được không đủ thành phố / bang / mã bưu chính")
     elif _v(fields, "F") and not address_consistent(*(_v(fields, k) for k in "FGHI")):
         # F = the FULL address; G/H/I are parsed back from it — F missing any of them is a bug, never written

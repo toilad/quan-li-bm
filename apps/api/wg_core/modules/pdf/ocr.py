@@ -403,10 +403,10 @@ def reread(data: bytes, region: dict, dpi: int = ZOOM_DPI, variant: str = "origi
 # "B0x" for Box, "Group. LLC" for "Group, LLC"). A suspicion is shown to the owner with a suggestion; nothing is changed.
 
 CONFUSIONS = [("m", "rn"), ("rn", "m"), ("nu", "tu"), ("tu", "nu"), ("cl", "d"), ("d", "cl"), ("li", "h"), ("vv", "w"),
-              ("rn", "rm"), ("ii", "u"), ("c", "e"), ("e", "c")]  # "Hotcl" for Hotel
+              ("rn", "rm"), ("ii", "u"), ("c", "e"), ("e", "c"), ("i", "l")]  # "Hotcl" for Hotel, "Bivd." for Blvd.
 # Common words / word endings of US street and company names: a variant that produces one of them, while the reading
 # itself does not, is suspicious.
-LEXICON = set("""street avenue boulevard road drive lane way court place circle parkway highway suite floor unit building
+LEXICON = set("""street avenue boulevard blvd road drive lane way court place circle parkway highway suite floor unit building
 terrace trail square plaza center centre north south east west holdings holding group house hotel hotels fixture fixtures
 films film studio studios media services service consulting partners capital properties property management investments
 development construction design international global america american pacific western eastern northern southern
@@ -443,11 +443,12 @@ def suspects(text: str) -> list[dict]:
         if re.search(r"\d[oO]\d|\d[oO]$|^[oO]\d", tok) and re.search(r"\d", tok):
             out.append({"message": f"“{tok}”: chữ O giữa chữ số — có thể là số 0", "suggestion": whole(re.sub(r"[oO]", "0", tok))})
             continue
-        if not tok.isalpha() or len(low) < 4 or low in LEXICON:
+        core = tok.strip(".")  # "Bivd." — the abbreviation dot is not part of the word
+        if not core.isalpha() or len(low) < 4 or low in LEXICON:
             continue
-        hit = _confusion(tok, low)
+        hit = _confusion(core, low)
         if hit:
-            out.append({**hit, "suggestion": whole(hit["suggestion"])})
+            out.append({**hit, "suggestion": text.replace(core, hit["suggestion"], 1)})
     for m in re.finditer(r"\b([NSEW])\.(\d)", text):
         out.append({"message": f"“{m.group(0)}”: có thể thiếu khoảng trắng sau “{m.group(1)}.”",
                     "suggestion": text[:m.start()] + f"{m.group(1)}. {m.group(2)}" + text[m.end():]})
@@ -643,6 +644,9 @@ def _address_row(p: Page, head: Box, role: str, label: str, depth: float = 75) -
     if not city and "," in street:  # "2340 W 230th Street , Torrance": the city typed in the street box
         street, city = (x.strip() for x in street.rsplit(",", 1))
         parts["city"] = parts["street"]
+    if not zipc and (m := re.fullmatch(r"([A-Za-z]{2})[.,]?\s*(\d{5}(?:-\d{4})?)", state.strip())):
+        state, zipc = m.group(1), m.group(2)  # no ZIP CODE header read: "CA 94602" fell in the state column
+        parts["zip"] = parts["state"]
     if not street.strip(" ,"):
         return None  # left blank on the form (e.g. the agent is a corporation)
     confs = [b.conf for v in parts.values() for b in v]
@@ -856,6 +860,8 @@ def _read_ca(pages: list[Page], form: dict) -> tuple[Box | None, Box | None, lis
             if a and not re.match(r"see above", a.street, re.I):
                 addrs.append(a)
     else:
+        if not heads:  # the ZIP CODE header not read (seen: 30277596): the STATE / CITY header of item 4's line
+            heads = [b for b in p1.boxes if b.key in ("STATE", "CITY") and b.x > p1.w * 0.5][:1]
         if heads:
             a = _address_row(p1, heads[0], "agent", "Mục 4 — địa chỉ registered agent")
             if a:
@@ -1169,6 +1175,14 @@ def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict,
         name_problem = f"OCR chỉ đọc được “{name.text}” — tên trên phôi có thể viết tay hoặc quá mờ; anh nhập tay"
         name = None
     business = next((a for a in addrs if a.role == "principal"), None) or next((a for a in addrs if a.role == "mailing"), None)
+    source = business.label if business else ""
+    if not business:
+        # owner, 2026-10-21: a form with no business-address box takes its own fallback boxes, in order (doc_rules)
+        for role, code in RULES.get(rule_key("ca", form), {}).get("fallback", ()):
+            business = next((a for a in addrs if a.role == role), None)
+            if business:
+                source = code
+                break
     candidates = [a for a in addrs if a is not business]
 
     fields = {
@@ -1233,7 +1247,7 @@ def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict,
         "labels_found": {k: any(w in p1.words for w in keys) for k, keys in LABEL_KEYS.items()},
         "version_verified": form["verified"], "reader": "OCR trên máy (RapidOCR, không gửi ra ngoài)",
         "pages_read": len(pages), "rotations": [p.rotation for p in pages],
-        "address_source": business.label if business else "",
+        "address_source": source,
         "address_candidates": [{"role": a.role, "label": a.label, "street": a.street, "city": a.city, "state": a.state,
                                 "zip": a.zip, "confidence": round(a.conf * 100),
                                 "region": p1.region([x for v in a.boxes.values() for x in v]),
@@ -1257,7 +1271,9 @@ def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict,
     # what was chosen for F–I and why; what was turned down and why (shown to the owner, never written to F–I)
     if business:
         extra["address_selected"] = {"text": fields["F"]["value"], "label": business.label, "role": business.role,
-                                     "reason": f"Nằm trong ô “{business.label}”", "confidence": round(business.conf * 100)}
+                                     "reason": f"Nằm trong ô “{business.label}”" + (
+                                         f" — mẫu không có ô trụ sở, dùng theo quy tắc {source}" if source != business.label else ""),
+                                     "confidence": round(business.conf * 100), "source": source}
     for c in extra["address_candidates"]:
         c["reason"] = f"Nằm trong ô “{c['label']}” — {REJECTED.get(c['role'], 'không phải địa chỉ doanh nghiệp')}"
     extra.update(scan_status(fields, extra))
@@ -1328,6 +1344,10 @@ def scan_status(fields: dict, extra: dict) -> dict:
             found = labels.get("F", True)
             return review(f"{extra.get('version')} có ô địa chỉ doanh nghiệp nhưng không đọc được (trên phôi đọc được: {seen})",
                           "đọc được label nhưng không đọc được value" if found else "không tìm được label")
+        if RULES.get(key, {}).get("fallback"):  # the fallback box (item 4 / item 2) is blank on this form
+            agent = f" — agent là công ty: {extra['agent_name']}" if extra.get("agent_name") else ""
+            return {"status": "NO_BUSINESS_ADDRESS_ON_FORM",
+                    "extraction_reason": f"{extra.get('version', 'Phôi')} không có ô trụ sở và ô địa chỉ agent để trống{agent} (khác: {seen})"}
         return {"status": "NO_BUSINESS_ADDRESS_ON_FORM",
                 "extraction_reason": f"{extra.get('version', 'Phôi')} không có ô trụ sở / địa chỉ doanh nghiệp (trên phôi chỉ có: {seen})"}
     return {"status": "OK", "extraction_reason": f"Địa chỉ lấy từ ô “{sel.get('label', '?')}”"}
