@@ -260,3 +260,21 @@ def test_offline_copy_has_no_double_period_and_uses_an_before_vowels():
     for tid in BY_ID:
         text = json.dumps(write_site_copy({"Company": "FORMA LTDA.", "City": "Caxias do Sul", "State": "RS"}, tid, "x.example"))
         assert "LTDA.." not in text and " a organised" not in text and " a honest" not in text and " a attentive" not in text
+
+
+def test_b2_works_on_the_same_rows_as_b1(monkeypatch):
+    """Owner, 2026-10-20: 5 new rows, not 17 — B2 skips rows above DOMAIN_START_ROW and inside DOMAIN_SKIP_ROWS
+    (an old block whose B no longer matches A), on the scan and on the server side (made-up rows)."""
+    from wg_core.modules.websites import service as web
+
+    monkeypatch.setenv("DOMAIN_START_ROW", "10")
+    monkeypatch.setenv("DOMAIN_SKIP_ROWS", "20-21")
+    sheet = FakeSheet({5: {"A": "Old Co LLC", "B": "oldco.huxma.life"}, 11: {"A": "New Co LLC", "B": "newco.huxma.life"},
+                       20: {"A": "Shifted Co LLC", "B": "someoneelse.huxma.life"}, 22: {"A": "Newer Co LLC", "B": "newerco.huxma.life"}})
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        with session_scope() as s:
+            out = web.scan(s)
+            assert [r["row"] for r in out["rows"]] == [11, 22] and out["old_rows_left"] == 2
+            res = web.enqueue_rows(s, [{"row": 20, "domain": "someoneelse.huxma.life", "company": "Shifted Co LLC"}])
+    assert not res["queued"] and "khối cũ" in res["refused"][20]

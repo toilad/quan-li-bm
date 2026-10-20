@@ -115,11 +115,17 @@ def email_of(s: Session, cells: dict) -> str:
 
 
 def scan(s: Session) -> dict:
+    from ..domains.service import old_row  # owner, 2026-10-20: B2 works on the same rows as B1 (from 720, old block out)
+
     rows = Sheets().read_rows()
     out = []
+    left = 0
     for r in rows:
         c = r.cells
         if not c["B"].strip() or c["C"].strip():
+            continue
+        if old_row(r.row):
+            left += 1
             continue
         domain = c["B"].strip().lower()
         root, nick = host_for(s, domain)
@@ -130,7 +136,7 @@ def scan(s: Session) -> dict:
                     "source": choice.source if choice else "auto",
                     "issue": None if nick else "Miền ở B không thuộc miền gốc nào của các nick — không biết hosting"})
     return {"total": len(rows), "no_b": sum(1 for r in rows if not r.cells["B"].strip()),
-            "has_c": sum(1 for r in rows if r.cells["C"].strip()), "rows": out}
+            "has_c": sum(1 for r in rows if r.cells["C"].strip()), "rows": out, "old_rows_left": left}
 
 
 def choose(s: Session, domain: str, template_id: str, detected: str):
@@ -142,8 +148,13 @@ def choose(s: Session, domain: str, template_id: str, detected: str):
 
 
 def enqueue_rows(s: Session, items: list[dict]) -> dict:
+    from ..domains.service import old_row
+
     queued, refused = [], {}
     for it in items:
+        if why := old_row(int(it.get("row") or 0)):  # the browser is never trusted
+            refused[it["row"]] = why
+            continue
         domain = it["domain"].lower()
         root, nick = host_for(s, domain)
         if not nick:
