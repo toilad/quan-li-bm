@@ -6,7 +6,10 @@ import re
 from .extract import address_consistent
 
 CNPJ = r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}"
-US_ADDR = {"G": r"[A-Za-z][A-Za-z .'\-]*", "H": r"[A-Z]{2}", "I": r"\d{5}(-\d{4})?"}  # a city has no digits / "#"
+US_STATES = ("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH "
+             "OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR GU VI AS MP").split()
+# a city has no digits / "#"; a state is a real US code ("DO" read for DC is not one — never corrected, only flagged)
+US_ADDR = {"G": r"[A-Za-z][A-Za-z .'\-]*", "H": "|".join(US_STATES), "I": r"\d{5}(-\d{4})?"}
 
 # required: cells without which the reading is not usable; format: checked only when the cell has a value;
 # has_address: the form has a business-address box (False → empty F–I is the right answer, not a failure)

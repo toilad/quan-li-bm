@@ -191,7 +191,7 @@ def ocr_status(s: Session = Depends(db)):
     """Scan readings of the last 24 h: how many are done, the CPU mode, and pages taken from the OCR cache."""
     from datetime import datetime, timedelta, timezone
 
-    from wg_core.modules.pdf.ocr import ocr_threads, ocr_workers, perf_mode
+    from wg_core.modules.pdf.ocr import cache_info, ocr_threads, ocr_workers, perf_mode
 
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     rows = list(s.scalars(select(Job).where(Job.kind == "pdf_ocr_read", Job.created_at >= since)))
@@ -200,7 +200,16 @@ def ocr_status(s: Session = Depends(db)):
     return {"total": len(rows), "done": sum(j.status not in ("queued", "running") for j in rows),
             "running": sum(j.status == "running" for j in rows), "queued": sum(j.status == "queued" for j in rows),
             "mode": perf_mode(), "workers": ocr_workers(), "threads": ocr_threads(),
-            "cache_hit": sum(c.get("hit", 0) for c in cache), "cache_miss": sum(c.get("miss", 0) for c in cache)}
+            "cache_hit": sum(c.get("hit", 0) for c in cache), "cache_miss": sum(c.get("miss", 0) for c in cache),
+            "cache": cache_info()}
+
+
+@app.post("/api/pdf/ocr-cache/clear")
+def ocr_cache_clear():
+    """CLEAR OCR CACHE (the owner's button): only the small OCR text files — PDFs, readings and the Sheet are untouched."""
+    from wg_core.modules.pdf.ocr import cache_info, clear_cache
+
+    return {"removed": clear_cache(), "cache": cache_info()}
 
 
 @app.post("/api/pdf/upload")

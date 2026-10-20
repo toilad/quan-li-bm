@@ -45,6 +45,7 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "TWILIO_ACCOUNT_SID": ("phone", "Twilio Account SID (AC…)", True),
     "TWILIO_AUTH_TOKEN": ("phone", "Twilio Auth Token", True),
     "OCR_PERFORMANCE_MODE": ("server", "Chế độ OCR: NORMAL (mặc định — 1 việc OCR, máy vẫn dùng bình thường) hoặc FAST (2 việc cùng lúc, máy ≥ 8 luồng CPU; khởi động lại worker)", False),
+    "OCR_CACHE_LIMIT_MB": ("server", "Giới hạn cache OCR (MB, mặc định 500) — chỉ lưu chữ + vị trí chữ đọc được, không lưu ảnh", False),
     "PUBLIC_API_URL": ("server", "Địa chỉ API công khai (cho OAuth redirect)", False),
     "PUBLIC_WEB_URL": ("server", "Địa chỉ giao diện", False),
     **{f"INET_API_KEY_{n}": (f"nick:{n.lower()}", "Khoá API iNET", True) for n in NICKS},

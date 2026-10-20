@@ -46,7 +46,8 @@ def test_real_scan(name):
     f, extra = got
     # A: exact, or flagged; a handwritten name (reference None) must be left empty with a note
     if want["A"] is None:
-        assert f["A"]["value"] == "" and f["A"].get("note")
+        # handwritten: empty with a note, or (owner, 2026-10-20) the candidate kept with its doubt — never unflagged
+        assert (f["A"]["value"] == "" and f["A"].get("note")) or f["A"].get("suspects"), f["A"]
     elif norm(f["A"]["value"]) != norm(want["A"]):
         assert flagged(f["A"], want.get("flag_A", "")), (name, f["A"])
     # J: exact (kept as text, 12 digits)

@@ -365,10 +365,15 @@ def _reads(monkeypatch, at450, at600=None):
     """The 450 dpi second reading, then (only if asked for) the four 600 dpi readings of the name crop."""
     from wg_core.modules.pdf import ocr
 
-    calls = []
+    calls, rest = [], list(at600 or [])
+
+    def many(data, region, dpi=450, variants=("original",)):
+        calls.append((dpi, variants))
+        got, rest[:] = rest[:len(variants)], rest[len(variants):]
+        return got
+
     monkeypatch.setattr(ocr, "reread", lambda *a, **kw: at450)
-    monkeypatch.setattr(ocr, "reread_many", lambda data, region, dpi=450, variants=("original",):
-                        calls.append((dpi, variants)) or list(at600))
+    monkeypatch.setattr(ocr, "reread_many", many)
     return calls
 
 
@@ -380,7 +385,8 @@ def test_zoomed_readings_disagreeing_send_the_name_to_review(monkeypatch):
                    [("Sample Holdings Ill, LLC", 0.97)] + [("Sample Holdings III, LLC", 0.98)] * 3)
     check_entity(cell, b"%PDF")
     assert cell["value"] == "Sample Holdings III, LLC" and "khác nhau" in cell["suspects"][0]["message"]
-    assert calls == [(600, ("original", "gray_contrast", "sharpen", "threshold"))]  # one 600 dpi crop, four variants
+    # 600 dpi: original + gray first; they disagree with the page → sharpen + threshold too (one crop per stage)
+    assert calls == [(600, ("original", "gray_contrast")), (600, ("sharpen", "threshold"))]
     assert len(cell["reads"]) == 6 and [r["dpi"] for r in cell["reads"]] == [300, 450, 600, 600, 600, 600]
 
 
@@ -403,7 +409,7 @@ def test_lost_spaces_come_back_from_a_zoomed_reading(monkeypatch):
     assert calls == []  # the 450 dpi reading settled it: no 600 dpi crop at all
 
 
-def test_unstable_readings_leave_the_name_empty(monkeypatch):
+def test_unstable_readings_keep_the_most_read_candidate_for_review(monkeypatch):
     from wg_core.modules.pdf.ocr import check_entity
 
     cell = {"value": "iSampleHoll lytvoodHoldings LLC", "source": "ocr", "confidence": 81, "region": {"page": 1, "box": [0.1, 0.3, 0.5, 0.32]}}
@@ -411,7 +417,10 @@ def test_unstable_readings_leave_the_name_empty(monkeypatch):
            [("Samplcy Hollyuvoocd Holdings, LLC", 0.85), ("SampleHollyuvood Holdings, LLC", 0.91),
             ("SampleHollyuvood Holdings, LLC", 0.9), ("SamforicHollyuvood Holdings, LLC", 0.9)])
     check_entity(cell, b"%PDF")
-    assert cell["value"] == "" and "viết tay" in cell["note"] and len(cell["unreadable"]) >= 3
+    # owner, 2026-10-20: never wipe a candidate — it stays (REVIEW_REQUIRED) so he fixes one letter
+    assert cell["value"] in ("Samplcy Hollyuvoocd Holdings, LLC", "SampleHollyuvood Holdings, LLC")  # read twice each
+    assert len(cell["unreadable"]) >= 3
+    assert "viết tay" in cell["suspects"][0]["message"]
 
 
 def test_odd_casing_alone_lowers_confidence_never_ok():
@@ -484,3 +493,27 @@ def test_city_starting_left_of_its_header_is_not_glued_to_the_street():
     p.boxes.sort(key=lambda x: (x.y, x.x))
     v = vals(extract_ca_scan(pages)[0])
     assert (v["G"], v["H"], v["I"]) == ("Sample Valley", "CA", "91024") and v["F"].startswith("175 E Sample Ave, #B, Sample Valley")
+
+
+def test_two_600dpi_readings_agreeing_with_the_page_stop_there(monkeypatch):
+    from wg_core.modules.pdf.ocr import check_entity
+
+    cell = {"value": "Sample Holdings LLC", "source": "ocr", "confidence": 80, "region": {"page": 1, "box": [0.1, 0.3, 0.5, 0.32]}}
+    calls = _reads(monkeypatch, ("Sample Holdings LLC", 0.97), [("Sample Holdings LLC", 0.97)] * 2)
+    check_entity(cell, b"%PDF")
+    assert calls == [(600, ("original", "gray_contrast"))]  # low confidence → 600 dpi, but no sharpen / threshold needed
+
+
+def test_name_field_read_alone_when_the_page_ocr_saw_nothing_in_it(monkeypatch):
+    """Label misread as "NAME OFLIMIIEO…" and no typed line in the page OCR: the field under the label is OCR'd alone."""
+    from wg_core.modules.pdf import ocr
+
+    pages = llc1()
+    p = pages[0]
+    p.boxes = [x if x.text != "1.NAMEOFLIMITEDLIABILITYCOMPANY" else b(1070, 220, "NAME OFLIMIIEOLIABILITY COMPANY")
+               for x in p.boxes if not x.text.startswith("Sample Ridge")]
+    monkeypatch.setattr(ocr, "reread", lambda data, region, *a, **kw: ("Sample Ridge Holdings, LLC", 0.97))
+    monkeypatch.setattr(ocr, "reread_many", lambda data, region, dpi=450, variants=("original",): [("Sample Ridge Holdings, LLC", 0.97)] * len(variants))
+    monkeypatch.setattr(ocr, "read_band", lambda *a, **kw: ("", 0.0))
+    f, extra = extract_ca_scan(pages, b"%PDF")
+    assert f["A"]["value"] == "Sample Ridge Holdings, LLC" and "vùng ô mục 1" in extra["note"]
