@@ -62,10 +62,10 @@ def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None =
         if bad := [n for n in also if n.strip().lower() not in made]:
             raise ValueError(f"Chỉ thêm được tên do app đã tạo: {', '.join(bad)}")
         sw["also"] = sorted({n.strip().lower() for n in also})
-    if always is not None:  # only B1's own writes can stay open for good
-        if bad := sorted(set(always) - {"dns", "host"}):
-            raise ValueError(f"Chỉ để mở thường trực được thao tác B1 (dns, host), không phải: {', '.join(bad)}")
-        sw["always"] = [o for o in ("dns", "host") if o in always]
+    if always is not None:  # B1 (dns, host) and B2 (upload, ssl = one-domain Issue) — never a paid purchase
+        if bad := sorted(set(always) - {"dns", "host", "upload", "ssl"}):
+            raise ValueError(f"Chỉ để mở thường trực được B1 (dns, host) và B2 (upload, ssl), không phải: {', '.join(bad)}")
+        sw["always"] = [o for o in ("dns", "host", "upload", "ssl") if o in always]
     if ops is not None:
         bad = sorted(set(ops) - set(OPS))
         if bad:

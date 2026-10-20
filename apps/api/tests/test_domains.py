@@ -258,9 +258,28 @@ def test_b1_kept_open_for_good_survives_relocks_but_b2_stays_locked(client):
         sw = dns_plan.set_switch(s, always=["dns", "host"])
         assert dns_plan.gate(sw, ["a.huxma.life", "b.yhawt.press"]) is None and dns_plan.mode(sw) == "batch"
         with pytest.raises(ValueError):
-            dns_plan.set_switch(s, always=["upload"])
+            dns_plan.set_switch(s, always=["phone"])  # a paid purchase can never stay open
     with session_scope() as s:
         write_guard.relock(s, "test")  # what a failure / a restart does
     sw = write_guard.load()
     assert write_guard.why_not(sw, "dns", "x.huxma.life") is None and write_guard.why_not(sw, "host", "x.huxma.life") is None
     assert write_guard.why_not(sw, "upload", "x.huxma.life") and write_guard.why_not(sw, "ssl", "x.huxma.life")
+
+
+def test_b2_kept_open_too_but_whole_account_autossl_stays_refused(client):
+    """Owner, 2026-10-20: B2 "ấn là chạy" like B1 — upload + the one-domain SSL Issue; AutoSSL for the whole account
+    (SSL::start_autossl_check) is refused whatever the switch says."""
+    import pytest
+
+    from wg_core import write_guard
+    from wg_core.integrations.cpanel import CPanel
+    from wg_core.integrations.errors import NotAvailable
+    from wg_core.modules.domains import dns_plan
+
+    with session_scope() as s:
+        dns_plan.set_switch(s, always=["dns", "host", "upload", "ssl"])
+    sw = write_guard.load()
+    assert all(write_guard.why_not(sw, op, "x.huxma.life") is None for op in ("dns", "host", "upload", "ssl"))
+    assert write_guard.why_not(sw, "phone", "+12135550100")  # still locked
+    with pytest.raises(NotAvailable, match="AutoSSL"):
+        CPanel("n1", "host.example").start_autossl("x.huxma.life")

@@ -26,7 +26,7 @@ from . import http
 
 from .. import write_guard
 from ..config import env_secret
-from .errors import NotConfigured, Permanent, Transient
+from .errors import NotAvailable, NotConfigured, Permanent, Transient
 
 
 class CPanel:
@@ -227,8 +227,10 @@ class CPanel:
 
     # ── SSL ──
     def start_autossl(self, fqdn: str) -> None:
-        write_guard.check("ssl", fqdn)
-        self._call("SSL", "start_autossl_check")
+        """SSL::start_autossl_check has no domain parameter: it runs AutoSSL for EVERY domain of the account. The owner
+        forbids that outright ("tuyệt đối không chạy AutoSSL hàng loạt"), so it is refused whatever the write switch says
+        — even with B2 kept open. SSL is issued one domain at a time (FleetSSL Issue, integrations/fleetssl.py)."""
+        raise NotAvailable("Ghi thật", f"AutoSSL cho cả tài khoản luôn KHOÁ — không chạy cho {fqdn}; SSL chỉ cấp từng domain (Issue)")
 
     def autossl_in_progress(self) -> bool:
         return bool(self._call("SSL", "is_autossl_check_in_progress"))
