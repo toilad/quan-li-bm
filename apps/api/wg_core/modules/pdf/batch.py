@@ -1,13 +1,12 @@
 """Read a folder of PDFs straight into one results file — no database, nothing written to Google (owner, 2026-10-20).
 
-    python -m wg_core.modules.pdf.batch "C:/…/Ảnh Phôi" [more PDFs or folders…] [--out file.csv] [--open]
-    (or double-click scripts/doc-phoi.bat: pick the PDFs, the result opens in Excel when done)
+    python -m wg_core.modules.pdf.batch "C:/…/Ảnh Phôi" [more PDFs or folders…] [--out file.xlsx] [--open]
+    (or the Desktop shortcut "Đọc phôi PDF": pick the PDFs, the result opens in Excel when done)
 
-One PDF at a time: read → extract → append its row → free it. A file needing review still gets its candidates in the
-row (the owner fixes one letter in Excel instead of reading the scan again); status and reason say what to check.
-CSV in UTF-8 with BOM, so Excel opens it with the accents intact."""
+One PDF at a time: read → extract → its row added → the .xlsx saved → the PDF freed. A file needing review still gets
+its candidates in the row (the owner fixes one letter in Excel instead of reading the scan again); status and reason
+say what to check. Sheets: KET_QUA (A–J layout, F = full address) and CAN_DUYET (review rows only) — xlsx_out.py."""
 import argparse
-import csv
 import gc
 import hashlib
 import sys
@@ -81,44 +80,42 @@ def pdf_files(paths: list[Path]) -> list[Path]:
 
 
 def run(paths: list[Path] | Path, out: Path, force: bool = False) -> dict:
+    from . import xlsx_out
+
     out.parent.mkdir(parents=True, exist_ok=True)
-    new = not out.exists() or out.stat().st_size == 0
     files = pdf_files(paths if isinstance(paths, list) else [paths])
     seen, stats = set(), {"files": 0, "duplicates": 0, "seconds": 0.0, "status": {}, "total": len(files)}
-    with out.open("a", newline="", encoding="utf-8-sig" if new else "utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=COLUMNS)
-        if new:
-            w.writeheader()
-        for pdf in files:
-            data = pdf.read_bytes()
-            sha = hashlib.sha256(data).hexdigest()
-            if sha in seen:  # the same file under another name ("… - Copy.pdf")
-                stats["duplicates"] += 1
-                continue
-            seen.add(sha)
-            t0 = time.time()
-            try:
-                row = _text_layer_row(data) or _scan_row(data, force)
-            except Exception as e:  # noqa: BLE001 — one bad file never stops the batch
-                row = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"}
-            if row.get("status") in ("UNKNOWN_DOCUMENT", "OCR_FAILED", "ERROR"):  # nothing guessed for these
-                row = {"status": row["status"], "reason": row.get("reason", ""), "document_type": row.get("document_type", "")}
-            w.writerow({**{c: "" for c in COLUMNS}, **row, "source_file": pdf.name, "check": CHECK.get(row.get("status"), "CẦN DUYỆT")})
-            fh.flush()  # the row is on disk before the next PDF is opened
-            stats["files"] += 1
-            stats["seconds"] += time.time() - t0
-            stats["status"][row.get("status")] = stats["status"].get(row.get("status"), 0) + 1
-            print(f"{stats['files'] + stats['duplicates']:>3}/{len(files)} {pdf.name:<30} {row.get('status', ''):<28} "
-                  f"{row.get('entity_name', '')[:50]}", flush=True)
-            del data, row
-            gc.collect()
+    rows: list[dict] = []  # small text rows only (the PDFs and pages are freed after each file)
+    for pdf in files:
+        data = pdf.read_bytes()
+        sha = hashlib.sha256(data).hexdigest()
+        if sha in seen:  # the same file under another name ("… - Copy.pdf")
+            stats["duplicates"] += 1
+            continue
+        seen.add(sha)
+        t0 = time.time()
+        try:
+            row = _text_layer_row(data) or _scan_row(data, force)
+        except Exception as e:  # noqa: BLE001 — one bad file never stops the batch
+            row = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"}
+        if row.get("status") in ("UNKNOWN_DOCUMENT", "OCR_FAILED", "ERROR"):  # nothing guessed for these
+            row = {"status": row["status"], "reason": row.get("reason", ""), "document_type": row.get("document_type", "")}
+        rows.append({**{c: "" for c in COLUMNS}, **row, "source_file": pdf.name, "check": CHECK.get(row.get("status"), "CẦN DUYỆT")})
+        xlsx_out.write(rows, out)  # the row is on disk before the next PDF is opened
+        stats["files"] += 1
+        stats["seconds"] += time.time() - t0
+        stats["status"][row.get("status")] = stats["status"].get(row.get("status"), 0) + 1
+        print(f"{stats['files'] + stats['duplicates']:>3}/{len(files)} {pdf.name:<30} {row.get('status', ''):<28} "
+              f"{row.get('entity_name', '')[:50]}", flush=True)
+        del data, row
+        gc.collect()
     return stats
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("paths", type=Path, nargs="+", help="file PDF và/hoặc thư mục chứa PDF")
-    ap.add_argument("--out", type=Path, default=None, help="mặc định: data/reports/ket-qua-<ngày-giờ>.csv")
+    ap.add_argument("--out", type=Path, default=None, help="mặc định: data/reports/ket-qua-<ngày-giờ>.xlsx")
     ap.add_argument("--force", action="store_true", help="đọc lại OCR, bỏ qua cache")
     ap.add_argument("--open", action="store_true", help="mở file kết quả khi xong")
     a = ap.parse_args(argv)
@@ -127,7 +124,7 @@ def main(argv=None):
     from ... import runtime_config
 
     runtime_config.OFFLINE = True  # no database, no Google: PDFs in, one results file out
-    out = a.out or Path("data/reports") / f"ket-qua-{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    out = a.out or Path("data/reports") / f"ket-qua-{time.strftime('%Y%m%d-%H%M%S')}.xlsx"
     s = run(a.paths, out, a.force)
     print(f"Xong {s['files']} file ({s['duplicates']} file trùng nội dung bỏ qua) — {round(s['seconds'])} giây")
     for st, n in sorted(s["status"].items(), key=lambda kv: -kv[1]):
@@ -136,7 +133,7 @@ def main(argv=None):
     if a.open and s["files"]:
         import os
 
-        os.startfile(out.resolve())  # noqa: S606 — Windows: opens the CSV in Excel
+        os.startfile(out.resolve())  # noqa: S606 — Windows: opens the .xlsx in Excel
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
-"""Folder → one results file, one row appended per PDF (made-up values, no real PDF, no OCR run)."""
-import csv
+"""Folder → one results .xlsx, one row added per PDF (made-up values, no real PDF, no OCR run)."""
+from openpyxl import load_workbook
 
 from wg_core.modules.pdf import batch, ocr
 
@@ -17,16 +17,25 @@ def test_one_row_per_pdf_appended_duplicates_skipped_review_keeps_candidates(tmp
             b"%PDF b": {"entity_name": "Sample Holdings Ill, LLC", "status": "REVIEW_REQUIRED", "reason": "III/Ill"}}
     monkeypatch.setattr(batch, "_text_layer_row", lambda data: None)
     monkeypatch.setattr(batch, "_scan_row", lambda data, force=False: rows[data])
-    out = tmp_path / "extracted_results.csv"
+    out = tmp_path / "ket-qua.xlsx"
     s = batch.run(folder, out)
     assert s["files"] == 2 and s["duplicates"] == 1
-    got = list(csv.DictReader(out.open(encoding="utf-8-sig")))
-    assert [r["source_file"] for r in got] == ["a - Copy.pdf", "b.pdf"]
-    assert got[0]["business_full_address"] == "1 Sample St, Los Angeles, CA 90001" and got[0]["business_city"] == "Los Angeles"
-    assert got[1]["entity_name"] == "Sample Holdings Ill, LLC" and got[1]["status"] == "REVIEW_REQUIRED"  # candidate kept
-    assert got[0]["check"] == "OK" and got[1]["check"].startswith("CẦN DUYỆT")
-    batch.run(folder, out)  # a second run appends below, the header is not repeated
-    assert len(list(csv.DictReader(out.open(encoding="utf-8-sig")))) == 4
+    wb = load_workbook(out)
+    assert wb.sheetnames == ["KET_QUA", "CAN_DUYET"]
+    ws = wb["KET_QUA"]
+    head = [c.value for c in ws[1]]
+    assert head[:10] == ["A · Tên doanh nghiệp", "B", "C", "D · Điện thoại", "E · Tên rút gọn", "F · FULL ADDRESS", "G · CITY",
+                         "H · STATE", "I · ZIP", "J · Mã số"]  # the owner's layout: F full, G city, H state, I zip, J number
+    a = [c.value for c in ws[2]]
+    assert a[0] == "Sample Holdings, LLC" and a[4] == "sampleholdingsllc" and a[1] == a[2] is None
+    assert (a[5], a[6], a[7], a[8]) == ("1 Sample St, Los Angeles, CA 90001", "Los Angeles", "CA", "90001")
+    assert a[9] == "201099900001" and isinstance(a[9], str) and ws["J2"].number_format == "@" and ws["I2"].number_format == "@"
+    assert a[10] == "a - Copy.pdf" and a[11] == "OK"
+    assert ws.freeze_panes == "A2" and ws.auto_filter.ref and ws["F2"].alignment.wrap_text
+    b = [c.value for c in ws[3]]
+    assert b[0] == "Sample Holdings Ill, LLC" and b[12] == "REVIEW_REQUIRED" and b[11].startswith("CẦN DUYỆT")  # candidate kept
+    review = [[c.value for c in r] for r in wb["CAN_DUYET"].iter_rows(min_row=2)]
+    assert [(r[0], r[1], r[7]) for r in review] == [("b.pdf", "Sample Holdings Ill, LLC", "III/Ill")]  # review rows only
 
 
 def test_ocr_cache_is_small_json_capped_and_clearable(tmp_path, monkeypatch):
@@ -57,9 +66,10 @@ def test_files_and_folders_picked_together_unknown_gets_no_guess(tmp_path, monke
             b"%PDF y": {"status": "NO_BUSINESS_ADDRESS_ON_FORM", "entity_name": "Sample LLC", "state_file_number": "201099900001"}}
     monkeypatch.setattr(batch, "_text_layer_row", lambda data: None)
     monkeypatch.setattr(batch, "_scan_row", lambda data, force=False: rows[data])
-    out = tmp_path / "r.csv"
+    out = tmp_path / "r.xlsx"
     s = batch.run([folder, single], out)
-    got = {r["source_file"]: r for r in csv.DictReader(out.open(encoding="utf-8-sig"))}
+    ws = load_workbook(out)["KET_QUA"]
+    got = {r[10].value: [c.value for c in r] for r in ws.iter_rows(min_row=2)}
     assert s["files"] == 2 and set(got) == {"x.pdf", "y.PDF"}
-    assert got["x.pdf"]["entity_name"] == "" and got["x.pdf"]["check"].startswith("KHÔNG ĐỌC")  # nothing guessed
-    assert got["y.PDF"]["business_full_address"] == "" and got["y.PDF"]["check"].startswith("OK")
+    assert got["x.pdf"][0] in (None, "") and got["x.pdf"][11].startswith("KHÔNG ĐỌC")  # nothing guessed
+    assert got["y.PDF"][5] in (None, "") and got["y.PDF"][11].startswith("OK") and got["y.PDF"][9] == "201099900001"

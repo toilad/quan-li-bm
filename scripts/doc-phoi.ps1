@@ -1,7 +1,7 @@
-﻿﻿# Đọc phôi PDF → một file kết quả (CSV mở bằng Excel). Không ghi Google Sheet, không tải lên Drive, không cần web app
+﻿﻿# Đọc phôi PDF → một file kết quả .xlsx (sheet KET_QUA + CAN_DUYET, mở bằng Excel). Không ghi Google Sheet, không tải lên Drive, không cần web app
 # hay Postgres.
 #   Bấm đúp lối tắt "Đọc phôi PDF" (hoặc scripts\doc-phoi.vbs) → chọn nhiều PDF (Ctrl+A để chọn hết thư mục)
-#   → cửa sổ nhỏ báo tiến độ, đọc lần lượt từng file → file ket-qua-<ngày-giờ>.csv tự mở.
+#   → cửa sổ nhỏ báo tiến độ, đọc lần lượt từng file → file ket-qua-<ngày-giờ>.xlsx tự mở.
 #   Kéo thả PDF / thư mục vào lối tắt cũng được.
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Paths)
 
