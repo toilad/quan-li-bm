@@ -186,6 +186,23 @@ def list_pdf(s: Session = Depends(db)):
     return [doc_out(d) for d in s.scalars(select(PdfDocument).order_by(PdfDocument.id.desc()))]
 
 
+@app.get("/api/pdf/ocr-status")
+def ocr_status(s: Session = Depends(db)):
+    """Scan readings of the last 24 h: how many are done, the CPU mode, and pages taken from the OCR cache."""
+    from datetime import datetime, timedelta, timezone
+
+    from wg_core.modules.pdf.ocr import ocr_threads, ocr_workers, perf_mode
+
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    rows = list(s.scalars(select(Job).where(Job.kind == "pdf_ocr_read", Job.created_at >= since)))
+    docs = [s.get(PdfDocument, j.payload.get("doc_id")) for j in rows]
+    cache = [((d.extra or {}).get("ocr_cache") or {}) for d in docs if d]
+    return {"total": len(rows), "done": sum(j.status not in ("queued", "running") for j in rows),
+            "running": sum(j.status == "running" for j in rows), "queued": sum(j.status == "queued" for j in rows),
+            "mode": perf_mode(), "workers": ocr_workers(), "threads": ocr_threads(),
+            "cache_hit": sum(c.get("hit", 0) for c in cache), "cache_miss": sum(c.get("miss", 0) for c in cache)}
+
+
 @app.post("/api/pdf/upload")
 async def upload_pdf(files: list[UploadFile] = File(...), s: Session = Depends(db)):
     out = []

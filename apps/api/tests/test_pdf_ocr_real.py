@@ -56,6 +56,8 @@ def test_real_scan(name):
     if role in ("principal", "mailing"):
         have_street = f["F"]["value"].rsplit(", " + f["G"]["value"], 1)[0]
         assert (f["G"]["value"], f["H"]["value"], f["I"]["value"]) == (city, state, zipc), (name, f["F"])
+        # F = the FULL address: the street read, then exactly G, H I (owner, 2026-10-20)
+        assert f["F"]["value"] == f'{f["F"]["street"]}, {city}, {state} {zipc}', (name, f["F"]["value"])
         assert norm(have_street) == norm(street) or flagged(f["F"], want.get("flag_F", "")), (name, have_street)
     else:
         assert f["F"]["value"] == f["G"]["value"] == f["I"]["value"] == "", (name, "agent/return-to address put in F–I")

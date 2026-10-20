@@ -57,6 +57,14 @@ def validate(fields: dict, doc_type: str) -> dict[str, dict]:
         elif f.get("warning"):
             issues[k] = {"level": "warn", "kind": "review", "message": f["warning"]}
     j, h, i, d = val("J"), val("H"), val("I"), val("D")
+    # F = the FULL address (street … city, state ZIP); G/H/I are parsed back from it — they must say the same address
+    from .extract import address_consistent
+
+    if val("F") and not address_consistent(val("F"), val("G"), h, i) and (issues.get("F") or {}).get("level") != "error":
+        issues["F"] = {"level": "error", "kind": "format",
+                       "message": "F phải là địa chỉ đầy đủ và chứa đúng thành phố (G), bang (H), mã bưu chính (I)"}
+    elif not val("F") and (val("G") or h or i) and (issues.get("F") or {}).get("level") != "error":
+        issues["F"] = {"level": "error", "kind": "format", "message": "Có G / H / I nhưng F (địa chỉ đầy đủ) trống"}
     if d:
         # format, area code ↔ the company's state (H), no "555" movie numbers (wg_core/phones.py)
         from ...phones import check as check_phone

@@ -3,8 +3,10 @@ says which cells it must have, which cells must match a format when present, and
 company's own address at all. Text layer and OCR are never merged silently: when both read a cell, they must agree."""
 import re
 
+from .extract import address_consistent
+
 CNPJ = r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}"
-US_ADDR = {"H": r"[A-Z]{2}", "I": r"\d{5}(-\d{4})?"}
+US_ADDR = {"G": r"[A-Za-z][A-Za-z .'\-]*", "H": r"[A-Z]{2}", "I": r"\d{5}(-\d{4})?"}  # a city has no digits / "#"
 
 # required: cells without which the reading is not usable; format: checked only when the cell has a value;
 # has_address: the form has a business-address box (False → empty F–I is the right answer, not a failure)
@@ -17,6 +19,9 @@ RULES = {
     "LLC-1 2013+": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": True},
     "LLC-5 2007": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": True},
     "LP-1 2005": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": True},
+    # LP-1 REV 01/2008+: only the "initial designated office in California" (a suggestion, not F–I)
+    "LP-1 2008": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": False},
+    "LP-5 2010": {"required": ("A",), "format": {"J": r"\d{12}", **US_ADDR}, "has_address": True},
 }
 
 
@@ -37,6 +42,11 @@ def problems(key: str, fields: dict) -> list[str]:
     out += [f"{k} sai định dạng ({_v(fields, k)})" for k, rx in rule["format"].items() if _v(fields, k) and not re.fullmatch(rx, _v(fields, k))]
     if rule["has_address"] and _v(fields, "F") and not all(_v(fields, k) for k in "GHI"):
         out.append("Địa chỉ đọc được không đủ thành phố / bang / mã bưu chính")
+    elif _v(fields, "F") and not address_consistent(*(_v(fields, k) for k in "FGHI")):
+        # F = the FULL address; G/H/I are parsed back from it — F missing any of them is a bug, never written
+        out.append("Địa chỉ F không chứa đủ thành phố / bang / mã bưu chính của G, H, I (F phải là địa chỉ đầy đủ)")
+    elif not _v(fields, "F") and any(_v(fields, k) for k in "GHI"):
+        out.append("Có G / H / I nhưng F (địa chỉ đầy đủ) trống")
     for k in ("J", "A"):  # contradictions inside the document (the copy printed on a later page)
         chk = (fields.get(k) or {}).get("check") or {}
         if chk.get("match") is False:

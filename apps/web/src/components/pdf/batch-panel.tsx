@@ -1,11 +1,36 @@
 "use client";
 
 import clsx from "clsx";
+import { useEffect, useState } from "react";
 import { Play, Pause, RotateCcw, Save, FolderOpen, FileSpreadsheet as SheetIcon, Zap } from "lucide-react";
 import { DOC_TYPES, SHEET_TABS, type DocType, type PdfStatus } from "@/lib/pdf-mock";
 import { PDF_STATUS } from "./status";
 import { isCleanForBulk } from "./use-pdf-queue";
 import type { QueueDispatch, QueueState } from "./use-pdf-backend";
+import { api } from "@/lib/api";
+
+type OcrStatus = { total: number; done: number; running: number; queued: number; mode: string; workers: number;
+  threads: number; cache_hit: number; cache_miss: number };
+
+/** Scan readings of the last 24 h on this machine: OCR file x/N, the CPU mode, pages from the cache / read anew. */
+function OcrLine() {
+  const [st, setSt] = useState<OcrStatus | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.get<OcrStatus>("/api/pdf/ocr-status").then((r) => alive && setSt(r)).catch(() => {});
+    load();
+    const id = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  if (!st || !st.total) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-x-3 font-mono text-[11.5px] text-fg-muted">
+      <span>OCR: file {st.done}/{st.total}{st.running ? ` · đang đọc ${st.running}` : ""}</span>
+      <span>CPU mode: {st.mode} ({st.workers} việc · {st.threads} luồng)</span>
+      <span>Cache hit/miss: {st.cache_hit}/{st.cache_miss} trang</span>
+    </div>
+  );
+}
 
 const ORDER: PdfStatus[] = ["queued", "processing", "review", "saved", "failed", "duplicate"];
 
@@ -38,6 +63,7 @@ export function BatchPanel({ state, dispatch }: { state: QueueState; dispatch: Q
           style={{ width: `${pct}%` }}
         />
       </div>
+      <OcrLine />
       <div className="mt-1.5 flex justify-between text-[11.5px] text-fg-subtle">
         <span>{state.running ? "Đang chạy · tối đa 2 file song song" : "Tạm dừng"}</span>
         <span>{pct}%</span>

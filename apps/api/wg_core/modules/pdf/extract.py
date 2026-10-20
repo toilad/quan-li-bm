@@ -233,6 +233,13 @@ def first_phone(phone: str) -> str:
     return phone.split("/")[0].strip()
 
 
+def address_consistent(f: str, g: str, h: str, i: str) -> bool:
+    """F (full address) contains the city, state and ZIP / CEP of G, H, I — the four cells say the same address."""
+    norm = lambda s: re.sub(r"[^A-Z0-9]", "", strip_accents(s or "").upper())  # noqa: E731
+    full = norm(f)
+    return all(norm(x) in full for x in (g, h, re.sub(r"\D", "", i) if re.fullmatch(r"[\d.\-]+", i or "") else i) if x)
+
+
 def us_style_address(street: str, city: str, state: str, code: str) -> str:
     """F as the owner writes it: "STREET, CITY, ST CODE" (the full line, also used on the website)."""
     tail = " ".join(x for x in (state, code) if x)
@@ -433,5 +440,10 @@ def fields_from_ai(ai: dict, doc_type: str) -> dict:
     h = out["H"]["value"]
     if h.upper() in ("CALIFORNIA", "CALIF.", "CALIF"):
         out["H"] = field("CA", "ai", f"Chuẩn hoá “{h}” → CA")
+    # F is the FULL business address (owner, 2026-10-20): a street line alone gets its city, state and ZIP appended
+    f, g, h, i = (out[k]["value"] for k in "FGHI")
+    if f and (g or h or i) and not address_consistent(f, g, h, i):
+        out["F"] = field(us_style_address(f, g, h, re.sub(r"\D", "", i) if doc_type == "br" else i), "ai",
+                         "F = địa chỉ đầy đủ: thêm thành phố / bang / mã bưu chính vào sau tên đường AI đọc")
     out["E"] = field(short_name(out["A"]["value"]), "auto", "Tự sinh từ A")
     return out

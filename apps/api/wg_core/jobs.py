@@ -116,19 +116,21 @@ def retry(session: Session, job_id: int) -> Job:
     return job
 
 
-def claim(session: Session) -> Job | None:
+def claim(session: Session, kinds: tuple[str, ...] | None = None) -> Job | None:
+    """kinds: only jobs of these kinds (the extra OCR worker thread in FAST mode)."""
     paused = paused_kinds(session)
     if "*" in paused:
         return None
     row = session.execute(text("""
         SELECT id FROM jobs j
         WHERE j.status = 'queued' AND j.run_after <= now() AND NOT (j.kind = ANY(CAST(:paused AS text[])))
+          AND (CAST(:kinds AS text[]) IS NULL OR j.kind = ANY(CAST(:kinds AS text[])))
           AND (j.resource IS NULL OR NOT EXISTS (
                 SELECT 1 FROM jobs r WHERE r.resource = j.resource AND r.status = 'running'))
         ORDER BY j.run_after, j.id
         FOR UPDATE SKIP LOCKED
         LIMIT 1
-    """), {"paused": list(paused)}).first()
+    """), {"paused": list(paused), "kinds": list(kinds) if kinds else None}).first()
     if not row:
         return None
     job = session.get(Job, row[0])
@@ -138,10 +140,10 @@ def claim(session: Session) -> Job | None:
     return job
 
 
-def run_one() -> bool:
+def run_one(kinds: tuple[str, ...] | None = None) -> bool:
     """Claim and run one job. Returns False when the queue is empty."""
     with session_scope() as s:
-        job = claim(s)
+        job = claim(s, kinds)
         if not job:
             return False
         ctx = JobContext(s, job)

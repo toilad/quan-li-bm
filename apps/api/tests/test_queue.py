@@ -112,3 +112,29 @@ def test_job_of_a_dead_worker_is_recovered_within_a_minute_but_a_live_one_is_lef
     with session_scope() as s:
         assert s.get(Job, dead).status == "queued"  # its worker stopped beating → back in the queue
         assert s.get(Job, live).status == "running"  # its worker is still alive → untouched
+
+
+def test_the_extra_ocr_thread_claims_only_scan_readings():
+    with session_scope() as s:
+        jobs.enqueue(s, "selftest_other", "q-other", {})
+        jobs.enqueue(s, "pdf_ocr_read", "q-ocr", {"doc_id": 0}, resource="ocr:1")
+    with session_scope() as s:
+        job = jobs.claim(s, kinds=("pdf_ocr_read",))
+        assert job.kind == "pdf_ocr_read"
+        assert jobs.claim(s, kinds=("pdf_ocr_read",)) is None  # the other kind is left for the main loop
+
+
+def test_ocr_never_takes_every_core(monkeypatch):
+    import os
+
+    from wg_core.modules.pdf import ocr
+
+    monkeypatch.setattr(os, "cpu_count", lambda: 16)
+    monkeypatch.setenv("OCR_PERFORMANCE_MODE", "NORMAL")
+    assert ocr.perf_mode() == "NORMAL" and ocr.ocr_workers() == 1 and ocr.ocr_threads() == 4
+    monkeypatch.setenv("OCR_PERFORMANCE_MODE", "FAST")
+    assert ocr.ocr_workers() == 2 and ocr.ocr_workers() * ocr.ocr_threads() <= 16 // 2
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    assert ocr.ocr_workers() == 1 and ocr.ocr_threads() == 1  # a small PC: FAST stays one job, one thread
+    monkeypatch.setenv("OCR_PERFORMANCE_MODE", "TURBO")
+    assert ocr.perf_mode() == "NORMAL"

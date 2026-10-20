@@ -24,10 +24,26 @@ def _recover():
         jobs.recover_stale(s)
 
 
+def _ocr_loop(stop: threading.Event):
+    """FAST mode only: a second thread that runs scan readings (OCR) and nothing else."""
+    while not stop.is_set():
+        try:
+            if not jobs.run_one(kinds=("pdf_ocr_read",)):
+                stop.wait(settings().worker_poll_seconds)
+        except Exception as e:  # noqa: BLE001 — keep the thread alive; the job records its error
+            print(f"ocr worker error: {e}", flush=True)
+            stop.wait(5)
+
+
 def main():
     registry.setup()
     stop = threading.Event()
     threading.Thread(target=_beat, args=(stop,), daemon=True).start()
+    from wg_core.modules.pdf.ocr import ocr_threads, ocr_workers, perf_mode
+
+    if ocr_workers() == 2:
+        threading.Thread(target=_ocr_loop, args=(stop,), daemon=True).start()
+    print(f"OCR: chế độ {perf_mode()} · {ocr_workers()} việc OCR cùng lúc · {ocr_threads()} luồng CPU mỗi việc", flush=True)
     _recover()
     last_recover = time.monotonic()
     if hasattr(sys.stdout, "reconfigure"):

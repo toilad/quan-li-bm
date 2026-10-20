@@ -58,12 +58,57 @@ class Page:
                         round(max(b.x2 for b in boxes) / self.w, 4), round(max(b.y2 for b in boxes) / self.h, 4)]}
 
 
+PERF_MODES = ("NORMAL", "FAST")  # owner, 2026-10-20: the PC must stay usable (Chrome, Cursor) while OCR runs
+
+
+def perf_mode() -> str:
+    from ...runtime_config import get
+
+    mode = (get("OCR_PERFORMANCE_MODE", "NORMAL") or "NORMAL").strip().upper()
+    return mode if mode in PERF_MODES else "NORMAL"
+
+
+def ocr_workers() -> int:
+    """OCR jobs at the same time: 1 (NORMAL), 2 (FAST, only on a PC with 8+ logical cores)."""
+    import os
+
+    return 2 if perf_mode() == "FAST" and (os.cpu_count() or 1) >= 8 else 1
+
+
+def ocr_threads() -> int:
+    """CPU threads one OCR run may use: a quarter of the logical cores (1–4) — never all of them."""
+    import os
+
+    return max(1, min(4, (os.cpu_count() or 4) // 4))
+
+
+def _lower_priority():
+    """OCR runs below normal priority, so the owner's other programs keep the CPU first (Windows only)."""
+    import sys
+
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
+        except Exception:  # noqa: BLE001 — only a courtesy to the other programs
+            pass
+
+
+_engine_lock = __import__("threading").Lock()
+
+
 def _ocr():
     global _engine
-    if _engine is None:
-        from rapidocr_onnxruntime import RapidOCR
+    with _engine_lock:
+        if _engine is None:
+            import cv2
+            from rapidocr_onnxruntime import RapidOCR
 
-        _engine = RapidOCR()
+            n = ocr_threads()
+            cv2.setNumThreads(n)
+            _lower_priority()
+            _engine = RapidOCR(intra_op_num_threads=n, inter_op_num_threads=1)
     return _engine
 
 
@@ -198,9 +243,14 @@ def _page_from_json(d: dict) -> "Page":
     return Page(d["index"], boxes, d["w"], d["h"], d["rotation"], " ".join(b.key for b in boxes))
 
 
+CACHE_STATS = {"hit": 0, "miss": 0}  # pages read from the cache / OCR'd, in this process
+
+
 def ocr_document(data: bytes, max_pages: int = MAX_PAGES, variant: str = "original", force: bool = False) -> list[Page]:
-    """Every page OCR'd (cached by SHA-256 of the file + page + OCR / preprocessing version + variant; force=True
-    re-reads, for debugging)."""
+    """Every page OCR'd at 300 dpi (cached by SHA-256 of the file + page + OCR / preprocessing version + variant;
+    force=True re-reads, for debugging). A cached page is never rendered or OCR'd again; a page image is freed as soon
+    as its boxes are stored."""
+    import gc
     import hashlib
     import json
 
@@ -215,51 +265,76 @@ def ocr_document(data: bytes, max_pages: int = MAX_PAGES, variant: str = "origin
         if cache.exists() and not force:
             try:
                 pages.append(_page_from_json(json.loads(cache.read_text(encoding="utf-8"))))
+                CACHE_STATS["hit"] += 1
                 continue
             except (ValueError, KeyError, TypeError):
                 pass  # a broken cache file is simply read again
+        CACHE_STATS["miss"] += 1
         img = preprocess(render(data, i, DPI), variant)
         boxes, rot, used = _upright(img, i)
         page = Page(i, boxes, used.width, used.height, rot, " ".join(b.key for b in boxes))
         cache.write_text(json.dumps(_page_to_json(page), ensure_ascii=False), encoding="utf-8")
         pages.append(page)
+        del img, used, boxes
+        gc.collect()
     return pages
 
 
-def reread(data: bytes, region: dict, dpi: int = ZOOM_DPI) -> tuple[str, float]:
-    """Second, independent reading of one cell: its region cut out at a higher resolution and OCR'd on its own."""
+def _crop(data: bytes, region: dict, dpi: int):
+    """Only the region, rendered at `dpi` (a turned page: the matching part of the unturned page is cut, then turned —
+    the whole page is never rendered at 450/600 dpi). Returns (image, full-page height in px, vertical pad)."""
     import pdfplumber
 
     x0, y0, x1, y1 = region["box"]
     pad_x, pad_y = 0.01, 0.002
-    rot = region.get("rotation", 0)
+    u0, v0, u1, v1 = max(0, x0 - pad_x), max(0, y0 - pad_y), min(1, x1 + pad_x), min(1, y1 + pad_y)
+    rot = region.get("rotation", 0) % 360
+    # PIL rotate(rot) turns counter-clockwise: map the box on the turned page back to the page as stored
+    box = {90: (1 - v1, u0, 1 - v0, u1), 180: (1 - u1, 1 - v1, 1 - u0, 1 - v0), 270: (v0, 1 - u1, v1, 1 - u0)}.get(rot, (u0, v0, u1, v1))
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         page = pdf.pages[region["page"] - 1]
-        if rot:  # a turned page: render it whole, turn it, then cut
-            img = page.to_image(resolution=dpi).original.convert("RGB").rotate(rot, expand=True)
-            crop = img.crop((max(0, (x0 - pad_x) * img.width), max(0, (y0 - pad_y) * img.height),
-                             min(img.width, (x1 + pad_x) * img.width), min(img.height, (y1 + pad_y) * img.height)))
-            full_h = img.height
-        else:  # render only the cell
-            w, h = float(page.width), float(page.height)
-            bbox = (max(0, (x0 - pad_x) * w), max(0, (y0 - pad_y) * h), min(w, (x1 + pad_x) * w), min(h, (y1 + pad_y) * h))
-            crop = page.crop(bbox).to_image(resolution=dpi).original.convert("RGB")
-            full_h = h * dpi / 72
-    boxes = _read_image(crop, region["page"] - 1)
-    span_top, span_bot = pad_y * full_h, crop.height - pad_y * full_h
-    keep = [b for b in boxes if span_top <= (b.y + b.y2) / 2 <= span_bot]  # not the printed label just above/below
-    if not keep:
-        return "", 0.0
-    lines: list[list[Box]] = []
-    for b in sorted(keep, key=lambda b: (b.y + b.y2) / 2):
-        if lines and abs((lines[-1][0].y + lines[-1][0].y2) / 2 - (b.y + b.y2) / 2) < (b.y2 - b.y) * 0.6:
-            lines[-1].append(b)
-        else:
-            lines.append([b])
-    text = " ".join(" ".join(x.text for x in sorted(line, key=lambda b: b.x)) for line in lines)
-    # the box rules around a cell come out as lone "I", "1", "|" — not part of the value
-    text = " ".join(t for t in text.split() if t not in ("I", "1", "|", "l", "[", "]"))
-    return text.strip(), min(b.conf for b in keep)
+        bx, by = float(page.bbox[0]), float(page.bbox[1])
+        w, h = float(page.width), float(page.height)
+        crop = page.crop((bx + box[0] * w, by + box[1] * h, bx + box[2] * w, by + box[3] * h)).to_image(resolution=dpi) \
+            .original.convert("RGB")
+        full_h = (w if rot in (90, 270) else h) * dpi / 72
+    if rot:
+        crop = crop.rotate(rot, expand=True)
+    return crop, full_h, pad_y
+
+
+def reread_many(data: bytes, region: dict, dpi: int = ZOOM_DPI, variants: tuple = ("original",)) -> list[tuple[str, float]]:
+    """Independent readings of one cell: the region rendered once at `dpi`, then each image variant of that small crop
+    OCR'd on its own (and freed)."""
+    crop, full_h, pad_y = _crop(data, region, dpi)
+    out = []
+    for v in variants:
+        im = preprocess(crop, v)
+        boxes = _read_image(im, region["page"] - 1)
+        del im
+        span_top, span_bot = pad_y * full_h, crop.height - pad_y * full_h
+        keep = [b for b in boxes if span_top <= (b.y + b.y2) / 2 <= span_bot]  # not the printed label just above/below
+        if not keep:
+            out.append(("", 0.0))
+            continue
+        lines: list[list[Box]] = []
+        for b in sorted(keep, key=lambda b: (b.y + b.y2) / 2):
+            if lines and abs((lines[-1][0].y + lines[-1][0].y2) / 2 - (b.y + b.y2) / 2) < (b.y2 - b.y) * 0.6:
+                lines[-1].append(b)
+            else:
+                lines.append([b])
+        text = " ".join(" ".join(x.text for x in sorted(line, key=lambda b: b.x)) for line in lines)
+        # the box rules around a cell come out as lone "I", "1", "|" — not part of the value
+        text = " ".join(t for t in text.split() if t not in ("I", "1", "|", "l", "[", "]"))
+        out.append((text.strip(), min(b.conf for b in keep)))
+    del crop
+    return out
+
+
+def reread(data: bytes, region: dict, dpi: int = ZOOM_DPI, variant: str = "original") -> tuple[str, float]:
+    """Second, independent reading of one cell: its region cut out at a higher resolution and OCR'd on its own."""
+    return reread_many(data, region, dpi, (variant,))[0]
+
 
 
 # ───────────────────────── suspicious readings ─────────────────────────
@@ -267,7 +342,7 @@ def reread(data: bytes, region: dict, dpi: int = ZOOM_DPI) -> tuple[str, float]:
 # "B0x" for Box, "Group. LLC" for "Group, LLC"). A suspicion is shown to the owner with a suggestion; nothing is changed.
 
 CONFUSIONS = [("m", "rn"), ("rn", "m"), ("nu", "tu"), ("tu", "nu"), ("cl", "d"), ("d", "cl"), ("li", "h"), ("vv", "w"),
-              ("rn", "rm"), ("ii", "u")]
+              ("rn", "rm"), ("ii", "u"), ("c", "e"), ("e", "c")]  # "Hotcl" for Hotel
 # Common words / word endings of US street and company names: a variant that produces one of them, while the reading
 # itself does not, is suspicious.
 LEXICON = set("""street avenue boulevard road drive lane way court place circle parkway highway suite floor unit building
@@ -358,7 +433,8 @@ PO_BOX = re.compile(r"^P\.?\s*[O0]\.?\s*B[O0]X\b", re.I)
 US_STATE_NAMES = {"CALIFORNIA": "CA", "NEVADA": "NV", "DELAWARE": "DE", "WASHINGTON": "WA", "OREGON": "OR", "ARIZONA": "AZ",
                   "TEXAS": "TX", "NEW YORK": "NY", "FLORIDA": "FL", "WYOMING": "WY"}
 # Versions whose layout was checked on real scans; anything else is read by its labels but flagged.
-VERIFIED = {"LLC-1 REV 03/2005", "LLC-1 REV 04/2007", "LLC-5 REV 04/2007", "LLC-1 REV 01/2013", "LP-1 REV 03/2005"}
+VERIFIED = {"LLC-1 REV 03/2005", "LLC-1 REV 04/2007", "LLC-5 REV 04/2007", "LLC-1 REV 01/2013", "LP-1 REV 03/2005",
+            "LP-1 REV 01/2008", "LP-1 REV 01/2010", "LP-5 REV 01/2010"}
 
 
 def _s() -> float:
@@ -379,8 +455,11 @@ def identify(pages: list[Page]) -> dict | None:
         m = re.search(r"(?:LLC|LP)-?\s*([15])\s*[(\[]?\s*REV\.?\s*([0-9OG]{1,2})\s*/\s*(\d{4})", b.text, re.I)
         if m:
             rev = f"REV {m.group(2).upper().replace('O', '0').replace('G', '0').zfill(2)}/{m.group(3)}"
-    if "CERTIFICATEOFLIMITEDPARTNERSHIP" in keys or ("PRINCIPALEXECUTIVEOFFICE" in keys and "GENERALPARTNERS" in keys):
-        form, layout = "LP-1", "2005"
+    if "FOREIGNLIMITEDPARTNERSHIP" in keys and ("APPLICATIONFORREGISTRATION" in keys or "LP5" in keys):
+        form, layout = "LP-5", "2010"
+    elif "CERTIFICATEOFLIMITEDPARTNERSHIP" in keys or ("GENERALPARTNERS" in keys and "PARTNERSHIP" in keys):
+        # REV 01/2008 and later: item 2 is the INITIAL DESIGNATED OFFICE in California (no principal office box)
+        form, layout = "LP-1", "2008" if re.search(r"INITIALDESIGNAT|DESIGNATE[DO]OFF", keys) else "2005"
     elif "PROPOSEDLLCNAME" in keys or "INITIALSTREETADDRESSOFLLC" in keys:
         form, layout = "LLC-1", "2013+"
     elif "APPLICATIONFORREGISTRATION" in keys or "LLC5" in keys:
@@ -416,7 +495,9 @@ def _below(boxes: list[Box], label: Box, depth: float = 75) -> list[Box]:
     stop = min((b.y for b in boxes if b.y > label.y2 - 4 and b is not label and _is_label(b)
                 and abs(b.y - label.y) > 18 * _s()), default=label.y2 + depth * _s())
     end = min(stop, label.y2 + depth * _s())
-    return [b for b in boxes if label.y2 - 4 < b.y < end and b is not label and not _is_label(b)]
+    # by the middle of the box too: a typed line can overlap the bottom of the header line (a state + ZIP box sitting low)
+    return [b for b in boxes if (label.y2 - 4 < b.y or (b.y + b.y2) / 2 > label.y2 + 4) and b.y < end
+            and b is not label and not _is_label(b)]
 
 
 def _above(boxes: list[Box], label: Box, height: float = 70) -> list[Box]:
@@ -466,7 +547,8 @@ def _address_row(p: Page, head: Box, role: str, label: str, depth: float = 75) -
     vals = _below(boxes, head, depth)
     if not vals:
         return None
-    city_x = city_h.x - 90 * _s() if city_h else p.w * 0.55  # the CITY header itself is sometimes not read
+    # a typed city can start well left of its header (seen on real scans); the CITY header is sometimes not read
+    city_x = city_h.x - 200 * _s() if city_h else p.w * 0.55
     parts: dict[str, list[Box]] = {"street": [], "city": [], "state": [], "zip": []}
     for b in sorted(vals, key=lambda v: v.x):
         if zip_h and b.x >= zip_h.x - 40 * _s():
@@ -526,25 +608,123 @@ def _return_to(p: Page, label: str = "Mục 8 — Return to") -> tuple[Addr | No
                 {"street": sb, "city": cb, "state": cb, "zip": cb}, min(b.conf for b in sb + cb)), firm
 
 
-def _name_old(p: Page, end_keys: tuple = ("2NAMEOFTHEFOREIGN", "PURPOSE")) -> Box | None:
-    """Item 1: the typed line between the ENTITY NAME instructions and the next item (the printed label "1. NAME OF …"
-    is sometimes not read)."""
-    end = _label(p.boxes, *end_keys)
-    tops = [b for b in p.boxes if end and b.y < end.y and b.key.startswith(
-        ("ENTITYNAME", "1NAME", "NAMEOFLIMITE", "NAMEUNDERWHICH", "THISSPACEFORFILING"))]
-    top = max(tops, key=lambda b: b.y) if tops else None
-    # below the middle of the label line: a typed value can start before the label's box ends (LP-1 item 1)
-    cands = [b for b in p.boxes if top and end and b is not top and (top.y + top.y2) / 2 < b.y < end.y and b.conf >= 0.8
-             and not re.search(r"NAMEOF|NAMEUNDER|ABBREVIAT|RESPECTIVELY|PROPOSESTOREGISTER", b.key)]
-    return cands[-1] if cands else None
+NAME_TOPS = ("ENTITYNAME", "1NAME", "NAMEOFLIMITE", "NAMEOFUMITE", "NAMEOFTHELIMITED", "NAMEUNDERWHICH", "NANEUNDERWHICH",
+             "NAMEOFFOREIGN", "THISSPACEFORFILING")
+# the first printed line after item 1 — the name never runs past it
+NAME_END = ("2NAMEOFTHEFOREIGN", "NAMEOFTHEFOREIGN", "IFDIFFERENTFROM", "ALTERNATENAME", "PURPOSE", "PLRPOSE", "THEPURPOSEOF",
+            "PRINCIPALEXECUTIVEOFFICE", "INITIALDESIGNATED", "DATEANDPLACE", "INITIALAGENT", "AGENTFORSERVICE",
+            "OFFICEADDRESSES", "MANAGEMENT")
+# printed form text (instructions, section titles) — never a company name, whatever the OCR confidence
+BOILERPLATE = (("STATUTE", "PURPOSE"), ("STATEMENTIS", "PURPOSE"), ("THEPURPOSEOF", "PURPOSE"), ("ISTOENGAGE", "PURPOSE"),
+               ("LAWFULACT", "PURPOSE"), ("AGENTFORSERVICE", "AGENT"), ("SERVICEOFPROCESS", "AGENT"),
+               ("CHECKONLYONE", "MANAGEMENT"), ("EXECUTEDTHISINSTRUMENT", "EXECUTION"), ("ADDITIONALINFORMATION", "ADDITIONAL INFORMATION"),
+               ("SIGNATUREOF", "SIGNATURE"), ("RETURNTOENTER", "RETURN TO"), ("ENTERTHENAMESANDADDRESSES", "GENERAL PARTNERS"),
+               ("NAMEOF", "nhãn NAME OF"), ("NAMEUNDER", "nhãn NAME UNDER"), ("ABBREVIAT", "hướng dẫn ENTITY NAME"),
+               ("RESPECTIVELY", "hướng dẫn ENTITY NAME"), ("PROPOSESTOREGISTER", "nhãn NAME UNDER"),
+               ("ENDTHENAME", "hướng dẫn ENTITY NAME"), ("FILINGUSE", "ô dành cho Secretary of State"),
+               ("READINSTRUCTIONS", "hướng dẫn"), ("FILINGFEE", "hướng dẫn"), ("IFDIFFERENT", "mục 2"))
+SECTION_START = ("PURPOSE", "PLRPOSE", "MANAGEMENT", "EXECUTION", "RETURNTO", "GENERALPARTNERS")
 
 
-def _read_ca(pages: list[Page], form: dict) -> tuple[Box | None, Box | None, list[Addr], str]:
-    """(name box, file-number box, addresses found with their role, note on the form)"""
+def _boilerplate(b: Box) -> str:
+    """Why this box is printed form text and not the company's name ("" = it may be the name)."""
+    hit = next((why for k, why in BOILERPLATE if k in b.key), "")
+    if not hit and b.key.startswith(SECTION_START) and len(b.key) > 20:
+        hit = next(s for s in SECTION_START if b.key.startswith(s)).replace("PLRPOSE", "PURPOSE")
+    return hit
+
+
+def _name_box(p: Page) -> tuple[Box | None, list[dict]]:
+    """Item 1: the first typed line under the item-1 label (or the ENTITY NAME instructions when that label was not
+    read), above the next item. Lines of printed form text are turned down, with the reason kept for the owner."""
+    tops = [b for b in p.boxes if b.key.startswith(NAME_TOPS)]
+    rejected: list[dict] = []
+    if not tops:
+        return None, rejected
+    # the lowest label of the item-1 group (ENTITY NAME → 1. NAME OF …), not a later "NAME OF THE FOREIGN …"
+    first = min(tops, key=lambda b: b.y)
+    group = [b for b in tops if b.y - first.y < 160 * _s() and not b.key.startswith(("NAMEOFTHEFOREIGN", "2NAME"))]
+    top = max(group, key=lambda b: b.y)
+    end = min((b.y for b in p.boxes if b.y > top.y2 - 4 and b is not top and any(k in b.key for k in NAME_END)
+               and not _name_like(b)), default=top.y2 + 160 * _s())
+    end = min(end, top.y2 + 160 * _s())
+    lines: list[list[Box]] = []
+    for b in sorted((b for b in p.boxes if b is not top and (top.y + top.y2) / 2 < b.y < end - 4), key=lambda b: b.y):
+        why = _boilerplate(b)
+        if why:
+            rejected.append({"value": b.text, "role": "entity_name", "reason": f"Không dùng làm tên: trùng phần in sẵn của mẫu ({why})"})
+            continue
+        if b.conf < 0.72 or len(re.sub(r"[^A-Za-z]", "", b.text)) < 2:
+            continue  # a mark, a lone item number, or the mirror image of the instructions
+        if lines and abs((lines[-1][0].y + lines[-1][0].y2) / 2 - (b.y + b.y2) / 2) < 20 * _s():
+            lines[-1].append(b)
+        else:
+            lines.append([b])
+    if not lines:
+        return None, rejected
+    line = sorted(lines[0], key=lambda b: b.x)
+    name = Box(min(b.x for b in line), min(b.y for b in line), max(b.x2 for b in line), max(b.y2 for b in line),
+               " ".join(b.text for b in line), min(b.conf for b in line), p.index)
+    for other in lines[1:]:
+        rejected.append({"value": " ".join(b.text for b in other), "role": "entity_name",
+                         "reason": "Dòng thứ hai trong ô mục 1 — tên lấy dòng đầu ngay dưới nhãn"})
+    return name, rejected
+
+
+def _name_like(b: Box) -> bool:
+    """A company name that happens to contain a boundary word ("… MANAGEMENT LLC") is not the next item's label."""
+    return bool(re.search(r"\b(LLC|L\.L\.C|LP|L\.P)\b", b.text)) and not _boilerplate(b)
+
+
+ROLE_LABELS = (  # the printed label above an address row → the role of that address (first match wins)
+    # "ADDRESS OF INITIAL DESIGNATED OFFICE IN CALIFORNIA" also contains "OFFICE IN CALIFORNIA": designated comes first
+    (("INITIALDESIGNAT", "DESIGNATEDOFFICE", "DESIGNATEOOFFICE"), "designated_office", "Initial Designated Office in California"),
+    (("PRINCIPALOFFICEINCALIFORNIA", "OFFICEINCALIFORNIA"), "principal_ca", "văn phòng tại California"),
+    (("PRINCIPALEXECUTIVEOFFICE",), "principal", "Principal Executive Office Address"),
+    (("ADDRESSOFPRINCIPALOFFICE", "PRINCIPALOFFICE"), "principal", "Address of Principal Office"),
+    (("REQUIREDINTHEJURISDICTION", "JURISDICTIONOFFORMATION"), "jurisdiction_office", "văn phòng ở bang thành lập"),
+    (("GENERALPARTNER",), "general_partner", "General Partner"),
+    (("AGENT",), "agent", "địa chỉ registered agent"),
+)
+
+
+def _role_above(p: Page, head: Box) -> tuple[str, str]:
+    """Role of the address row under this header line: the nearest printed label on or above it that names one."""
+    near = sorted((b for b in p.boxes if head.y - 260 * _s() < b.y < head.y + 18 * _s() and b.x < p.w * 0.5),
+                  key=lambda b: -b.y)
+    for b in near:
+        for keys, role, label in ROLE_LABELS:
+            if any(k in b.key for k in keys):
+                item = re.match(r"^(\d{1,2}[AB]?)", b.key)
+                return role, (f"Mục {item.group(1).lower()} — " if item else "") + label
+    return "", ""
+
+
+def _read_lp(p1: Page, form: dict) -> tuple[Box | None, list[Addr], list[dict]]:
+    """LP-1 (REV 03/2005: item 2 PRINCIPAL EXECUTIVE OFFICE; REV 01/2008 and 01/2010: item 2 INITIAL DESIGNATED OFFICE
+    IN CALIFORNIA, no principal office box) and LP-5 (foreign LP: item 3 PRINCIPAL OFFICE). Every row under a
+    CITY / STATE / ZIP header takes the role of the label above it; general partners, agents and "Return to" are never
+    the company's address."""
+    name, rejected = _name_box(p1)
+    addrs = []
+    for h in (b for b in p1.boxes if b.key.startswith("ZIPCODE") or b.key in ("ZIP", "ZPCODE")):
+        role, label = _role_above(p1, h)
+        a = _address_row(p1, h, role, label, 40) if role else None
+        if a and not re.match(r"see above", a.street, re.I):
+            addrs.append(a)
+    rt, _ = _return_to(p1, "Mục 10 — Return to")
+    if rt:
+        addrs.append(rt)
+    return name, addrs, rejected
+
+
+def _read_ca(pages: list[Page], form: dict) -> tuple[Box | None, Box | None, list[Addr], str, list[dict]]:
+    """(name box, file-number box, addresses found with their role, note on the form, lines turned down as the name)"""
     p1 = pages[0]
     number = _file_number(p1.boxes)
     addrs: list[Addr] = []
     note = ""
+    name_rejected: list[dict] = []
     if form["layout"] == "2013+":
         name_l = _label(p1.boxes, "PROPOSEDLLCNAME")
         name = next((b for b in reversed(_above(p1.boxes, name_l)) if b.x < name_l.x + 600 * _s()), None) if name_l else None
@@ -568,29 +748,12 @@ def _read_ca(pages: list[Page], form: dict) -> tuple[Box | None, Box | None, lis
             if street and not (role == "agent" and street.lower().startswith("b.")):
                 addrs.append(Addr(role, label, street, city, state, zipc,
                                   {"street": left, "city": right, "state": right, "zip": right}, min(b.conf for b in vals)))
-        return name, number, addrs, note
+        return name, number, addrs, note, name_rejected
+    if form["form"] in ("LP-1", "LP-5"):
+        name, addrs, name_rejected = _read_lp(p1, form)
+        return name, number, addrs, note, name_rejected
     heads = [b for b in p1.boxes if b.key.startswith("ZIPCODE") or b.key == "ZIP"]
-    if form["form"] == "LP-1":
-        # item 1 name; item 2 PRINCIPAL EXECUTIVE OFFICE (the only company address); item 5 agent; item 6 general
-        # partners; item 10 Return to — rows sit right under their header line, so they are read one line deep
-        name = _name_old(p1, ("PRINCIPALEXECUTIVEOFFICE",))
-        pe = _label(p1.boxes, "PRINCIPALEXECUTIVEOFFICE")
-        ag = _label(p1.boxes, "ADDRESSOFAGENT", "IFANINDIVIDUAL")
-        gp = _label(p1.boxes, "GENERALPARTNERS")
-        for h in heads:
-            if pe and h.y > pe.y and not (ag and h.y > ag.y) and not (gp and h.y > gp.y):
-                a = _address_row(p1, h, "principal", "Mục 2 — Principal Executive Office Address", 40)
-            elif gp and h.y > gp.y:
-                a = _address_row(p1, h, "general_partner", "Mục 6 — General Partner", 40)
-            else:
-                a = _address_row(p1, h, "agent", "Mục 5 — địa chỉ registered agent", 40)
-            if a:
-                addrs.append(a)
-        rt, _ = _return_to(p1, "Mục 10 — Return to")
-        if rt:
-            addrs.append(rt)
-        return name, number, addrs, note
-    name = _name_old(p1)
+    name, name_rejected = _name_box(p1)
     if form["form"] == "LLC-5":
         for h in heads:
             if _same_line(p1.boxes, h, "CITYANDSTATE"):
@@ -614,7 +777,7 @@ def _read_ca(pages: list[Page], form: dict) -> tuple[Box | None, Box | None, lis
                 note = f"Mục 8 “Return to” ghi FIRM là chính công ty này ({firm})"
         if not any(a.role in ("principal", "mailing") for a in addrs):
             note = (note + "; " if note else "") + "Mẫu LLC-1 đời 2005–2007 không có ô địa chỉ doanh nghiệp"
-    return name, number, addrs, note
+    return name, number, addrs, note, name_rejected
 
 
 MONTHS = {m: i + 1 for i, m in enumerate("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split())}
@@ -697,6 +860,186 @@ def _agent_name(p: Page, data: bytes | None = None) -> str:
     return _zoom_between(p, data, lab, nxt)[0]
 
 
+# ───────────────────────── entity name: signals + independent re-readings ─────────────────────────
+# Owner, 2026-10-20: a doubtful name is never "OK". Nothing is corrected from a guess (no "Hom" → "Home", "Ill" → "III"
+# rule): a different value is used only when the independent zoomed readings all agree on it.
+
+LEGAL_SUFFIX = re.compile(r"(?<![A-Za-z.])(LLC|L\.L\.C\.?|LP|L\.P\.?)(?![A-Za-z])|LIMITED LIABILITY COMPANY|LIMITED PARTNERSHIP", re.I)
+ODD_SUFFIX = re.compile(r"(?<![A-Za-z])(LL\.C|L\.LC|L1C|LIC|LiC|LIc|Lic|LLG|LLO|LLD|L1|LC)(?![A-Za-z])")
+GLUED_SUFFIX = re.compile(r"[A-Za-z0-9][.,](LLC|LP|L\.L\.C|L\.P)\b")
+NAME_PREFIXES = re.compile(r"^(Mc|Mac|De|Di|Da|Du|La|Le|Van|Von|O)[A-Z][a-z]+$")
+NAME_DPI = 600
+
+
+def _odd_case(word: str) -> bool:
+    """HOmA, HoMes, RoD, LiC — not UPPER, lower, Title or a McName."""
+    if len(word) < 2 or word.isupper() or word.islower() or (word[0].isupper() and word[1:].islower()):
+        return False
+    return not NAME_PREFIXES.match(word)
+
+
+def name_signals(text: str) -> list[tuple[str, str]]:
+    """(kind, message) for what makes a company name doubtful. kind: suffix | casing | letters"""
+    out = []
+    odd = ODD_SUFFIX.search(text)
+    if odd:
+        out.append(("suffix", f"Hậu tố pháp lý “{odd.group(1)}” không đúng dạng LLC / L.L.C. / LP / L.P. — có thể OCR đọc sai"))
+    elif GLUED_SUFFIX.search(text):
+        out.append(("suffix", f"Hậu tố dính liền dấu câu “{GLUED_SUFFIX.search(text).group(0)}” — thiếu khoảng trắng hoặc dấu đọc sai"))
+    elif not LEGAL_SUFFIX.search(text):
+        out.append(("suffix", "Không thấy hậu tố LLC / LP mà mẫu yêu cầu ở cuối tên — có thể đọc thiếu"))
+    words = re.findall(r"[A-Za-z]+", text)
+    odd_case = [w for w in words if _odd_case(w)]
+    if odd_case:
+        out.append(("casing", f"Chữ hoa / thường bất thường: {', '.join(odd_case)}"))
+    for w in re.findall(r"(?<![A-Za-z0-9])[Il1|]{2,4}(?![A-Za-z0-9])", text):
+        if len(set(w)) > 1:
+            out.append(("letters", f"“{w}”: I / l / 1 trông giống nhau trên bản scan (III? Ill?)"))
+    for w in words:
+        low = w.lower()
+        if len(low) >= 3 and low not in LEXICON and any(low + c in LEXICON for c in "abcdefghijklmnopqrstuvwxyz"):
+            out.append(("letters", f"“{w}”: có thể OCR đọc thiếu một chữ cuối"))
+    return out
+
+
+def _name_region(region: dict) -> dict:
+    return {**region, "box": [region["box"][0], region["box"][1], min(0.97, region["box"][2] + 0.05), region["box"][3]]}
+
+
+def _name_rereads(data: bytes, region: dict) -> list[dict]:
+    """Fallback for a doubtful name: the name cell alone rendered once at 600 dpi, each image variant of that small
+    crop read on its own (never the whole page)."""
+    got = reread_many(data, _name_region(region), dpi=NAME_DPI, variants=VARIANTS)
+    return [{"how": f"Vùng tên {NAME_DPI} dpi · ảnh {v}", "variant": v, "dpi": NAME_DPI, "text": t, "confidence": round(c * 100)}
+            for v, (t, c) in zip(VARIANTS, got)]
+
+
+def check_entity(cell: dict, data: bytes | None) -> None:
+    """Signals + re-readings on cell A (in place). A second reading at 450 dpi first; only when it differs, the name
+    is doubtful or its confidence is low, the 600 dpi readings on every image variant. Disagreeing readings, a doubtful
+    legal suffix, I/l/1 or a missing letter → suspects (REVIEW_REQUIRED); odd casing alone lowers the confidence;
+    casing with anything else → suspect."""
+    value = cell.get("value") or ""
+    if not value:
+        return
+    flags = list(suspects(value))
+    reads = [{"how": f"Toàn trang {DPI} dpi", "variant": "original", "dpi": DPI, "text": value, "confidence": cell.get("confidence")}]
+    nows = lambda s: re.sub(r"\s+", "", s)  # noqa: E731 — same characters, punctuation and case
+    if data is not None and cell.get("region"):
+        t450, c450 = reread(data, _name_region(cell["region"]))
+        reads.append({"how": f"Vùng tên {ZOOM_DPI} dpi · ảnh original", "variant": "original", "dpi": ZOOM_DPI,
+                      "text": t450, "confidence": round(c450 * 100)})
+        if t450 and nows(t450) == nows(value) and t450.count(" ") > value.count(" "):
+            cell["respaced_from"], value = value, t450  # spaces lost on the full page ("A&B ENTERPRISES,LLC")
+        clean = (t450 and nows(t450) == nows(value) and not name_signals(value) and not suspects(value)
+                 and (cell.get("confidence") or 0) >= 85)
+        if not clean:
+            reads += _name_rereads(data, cell["region"])
+            others = [r for r in reads[2:] if r["text"] and _plausible(r["text"], value)]
+            same = [r for r in reads[1:] if r["text"] and nows(r["text"]) == nows(value)]
+            if same:
+                spaced = max(same, key=lambda r: r["text"].count(" "))["text"]
+                if spaced.count(" ") > value.count(" "):
+                    cell["respaced_from"], value = cell.get("respaced_from", value), spaced
+            differ = [r for r in others if nows(r["text"]) != nows(value)]
+            agreed = {nows(r["text"]) for r in others}
+            if differ and len(others) == len(VARIANTS) and len(agreed) == 1 and min(r["confidence"] for r in others) >= 95 \
+                    and not [k for k, _ in name_signals(others[0]["text"]) if k != "casing"]:
+                # every 600 dpi reading, on every image variant, says the same clearly: that reading is used
+                cell["page_reading"] = value
+                value = max(others, key=lambda r: r["text"].count(" "))["text"]
+                cell["note"] = f"Toàn trang đọc “{cell['page_reading']}”; cả {len(others)} lần đọc phóng to {NAME_DPI} dpi đều ra “{value}”"
+                flags = list(suspects(value))
+            elif differ and not [r for r in others if nows(r["text"]) == nows(value)] and len(agreed) > 1 \
+                    and (cell.get("confidence") or 0) < 90:
+                # no zoomed reading repeats the page reading and they disagree among themselves: handwriting or a scan
+                # too poor to read — the cell is left empty (never a fragment), the readings are shown as suggestions
+                seen = list(dict.fromkeys([value] + [r["text"] for r in differ]))
+                cell.update(value="", source="missing", reads=reads, unreadable=seen,
+                            note="OCR đọc mỗi lần một khác (có thể viết tay hoặc quá mờ): " + " / ".join(f"“{t}”" for t in seen)
+                                 + " — anh nhập tay")
+                return
+            elif differ:
+                seen = list(dict.fromkeys([value] + [r["text"] for r in differ]))
+                flags.insert(0, {"message": "Các lần đọc tên khác nhau: " + " / ".join(f"“{t}”" for t in seen),
+                                 "suggestion": differ[0]["text"]})
+            flags += [f for f in suspects(value) if f not in flags]
+    cell["value"] = value
+    cell["reads"] = reads
+    signals = name_signals(value)
+    casing = [m for k, m in signals if k == "casing"]
+    flags += [{"message": m, "suggestion": ""} for k, m in signals if k != "casing"]
+    if casing:  # alone: a lower confidence (LOW_CONFIDENCE); with any other doubt: a suspect (REVIEW_REQUIRED)
+        read_conf = cell.get("confidence") or 0
+        cell["confidence"] = max(0, read_conf - 20)
+        cell["doubts"] = casing
+        if flags or read_conf < 85:
+            flags.append({"message": casing[0], "suggestion": ""})
+    if flags:
+        cell["suspects"] = flags
+
+
+CITY_RX = re.compile(r"[A-Za-z][A-Za-z .'\-]*")
+ZIP_RX = re.compile(r"\d{5}(-\d{4})?")
+
+
+def _address_doubtful(a: Addr) -> bool:
+    return not (ZIP_RX.fullmatch(a.zip or "") and CITY_RX.fullmatch(a.city or "") and re.fullmatch(r"[A-Z]{2}", a.state or ""))
+
+
+def _retry_address(p: Page, data: bytes, a: Addr) -> list[dict]:
+    """The business-address row read again column by column (street | city [| state] | ZIP) at 600 dpi on every image
+    variant, when it came out incomplete or invalid ("94ozs", a city in the street box). A part is replaced only when
+    all readings agree on a valid value — never from a list of known cities or a guess; otherwise the doubt is kept
+    (REVIEW_REQUIRED). Returns the doubts for F."""
+    allb = [x for v in a.boxes.values() for x in v]
+    top, bot = min(b.y for b in allb), max(b.y2 for b in allb)
+    heads = [b for b in p.boxes if top - 140 * _s() < b.y < top]
+    city_h = next((b for b in heads if b.key.startswith("CITY")), None)
+    zip_h = next((b for b in heads if b.key.startswith(("ZIPCODE", "ZPCODE")) or b.key == "ZIP"), None)
+    state_h = next((b for b in heads if b.key.startswith("STATE")), None)
+    if not city_h or not zip_h:
+        return [{"message": "Địa chỉ đọc không đủ / không hợp lệ và không tìm được cột CITY / ZIP để đọc lại", "suggestion": ""}]
+    cx, zx = (city_h.x - 200 * _s()) / p.w, (zip_h.x - 40 * _s()) / p.w
+    sx = (state_h.x - 40 * _s()) / p.w if state_h and not city_h.key.startswith("CITYANDSTATE") else None
+    cols = {"street": (0.04, cx), "city": (cx, sx or zx), "zip": (zx, 0.97), **({"state": (sx, zx)} if sx else {})}
+    # only the parts that are wrong are read again (a city typed into the street box: the street too)
+    bad = {"zip"} if not ZIP_RX.fullmatch(a.zip or "") else set()
+    if not CITY_RX.fullmatch(a.city or ""):
+        bad |= {"city"} | ({"street"} if re.search(r",|\d{3,}\W*$", a.street) else set())
+    if not re.fullmatch(r"[A-Z]{2}", a.state or ""):
+        bad.add("state" if sx else "city")
+    reads: dict[str, list] = {}
+    for part in (k for k in cols if k in bad):
+        x0, x1 = cols[part]
+        reg = {"page": p.index + 1, "rotation": p.rotation,
+               "box": [round(x0, 4), round((top - 8 * _s()) / p.h, 4), round(x1, 4), round((bot + 8 * _s()) / p.h, 4)]}
+        reads[part] = reread_many(data, reg, dpi=NAME_DPI, variants=VARIANTS)
+
+    def agreed(part: str) -> str:
+        got = reads.get(part) or []
+        texts = {t.strip(" ,.|[]") for t, _ in got}
+        return texts.pop() if len(texts) == 1 and all(t and c >= 0.9 for t, c in got) else ""
+
+    city, state = agreed("city"), agreed("state")
+    if city and not sx:  # one CITY AND STATE column
+        m = re.match(r"^(.*?)[,.\s]+([A-Z]{2})$", city)
+        city, state = (m.group(1).strip(" ,."), m.group(2)) if m else (city, state)
+    new = {"street": agreed("street"), "city": city if city and CITY_RX.fullmatch(city) else "",
+           "state": state if re.fullmatch(r"[A-Z]{2}", state) else "", "zip": agreed("zip") if ZIP_RX.fullmatch(agreed("zip")) else ""}
+    before = (a.street, a.city, a.state, a.zip)
+    for part, value in new.items():
+        if value:
+            setattr(a, part, value)
+    a.retry = {part: [{"variant": v, "text": t, "confidence": round(c * 100)} for v, (t, c) in zip(VARIANTS, got)]
+               for part, got in reads.items()}
+    if _address_doubtful(a) or (a.street, a.city, a.state, a.zip) != before and not all(new[k] for k in reads):
+        shown = " · ".join(f"{part}: " + " / ".join(dict.fromkeys(f"“{t}”" for t, _ in got)) for part, got in reads.items())
+        return [{"message": f"Địa chỉ đọc lại {NAME_DPI} dpi vẫn chưa thống nhất — {shown}", "suggestion": ""}]
+    a.note = f"Đọc lại từng cột {NAME_DPI} dpi trên {len(VARIANTS)} kiểu ảnh: các lần đọc trùng nhau"
+    return []
+
+
 def _cell(page: Page, boxes: list[Box], value: str, conf: float, note: str | None = None, **extra) -> dict:
     f = {**field(value, "ocr", note), "confidence": round(conf * 100), "checked": False}
     if value:
@@ -711,7 +1054,7 @@ def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict,
     if not form:
         return None
     p1 = pages[0]
-    name, number, addrs, note = _read_ca(pages, form)
+    name, number, addrs, note, name_rejected = _read_ca(pages, form)
     name_problem = ""
     if name and len(re.sub(r"\b(LLC|L\.L\.C\.?|LP|L\.P\.?|INC\.?|LTD\.?|CO\.?|COMPANY|LIMITED|LIABILITY|PARTNERSHIP)\b|[^A-Za-z0-9]", "", name.text, flags=re.I)) < 3:
         # only the legal suffix (or a stray letter, "Y") came out: the name is handwritten or unreadable — never fill
@@ -741,11 +1084,13 @@ def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict,
             business.street = _respace(business.street, text)
         elif text and _plausible(text, business.street):
             street_flags.append({"message": f"Hai lần đọc tên đường khác nhau: “{business.street}” / “{text}”", "suggestion": ""})
+    if business and data is not None and _address_doubtful(business):
+        street_flags += _retry_address(p1, data, business)
     if business:
         b = business
         fields["F"] = _cell(p1, [x for v in b.boxes.values() for x in v],
                             ", ".join(x for x in (b.street, b.city, f"{b.state} {b.zip}".strip()) if x), b.conf, b.label, role=b.role,
-                            street=b.street)
+                            street=b.street, address_retry=getattr(b, "retry", None), retry_note=getattr(b, "note", None))
         fields["G"] = _cell(p1, b.boxes["city"], b.city, b.conf, role=b.role)
         fields["H"] = _cell(p1, b.boxes["state"] or b.boxes["city"], b.state, b.conf, role=b.role)
         fields["I"] = _cell(p1, b.boxes["zip"], b.zip, b.conf, role=b.role)
@@ -763,12 +1108,9 @@ def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict,
         flags = (suspects(f["value"]) if k != "J" else []) + (street_flags if k == "F" else [])
         # (J is not re-read from a crop: its widely spaced typewriter digits break apart there — it is checked by its
         # digit count and against the copy stamped on later pages instead)
-        if data is not None and k == "A":
-            text, conf = reread(data, f["region"])
-            f["reads"] = [{"how": f"Toàn trang {DPI} dpi", "text": f["value"], "confidence": f["confidence"]},
-                          {"how": f"Phóng to vùng {ZOOM_DPI} dpi", "text": text, "confidence": round(conf * 100)}]
-            if text and not _same(text, f["value"]) and _plausible(text, f["value"]):
-                flags.insert(0, {"message": f"Hai lần đọc khác nhau: “{f['value']}” / “{text}”", "suggestion": text})
+        if k == "A":
+            check_entity(f, data)  # signals + independent zoomed readings; sets its own suspects
+            continue
         if flags:
             f["suspects"] = flags
     if fields["J"].get("value"):
@@ -778,7 +1120,7 @@ def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict,
         later = [b for b in (_file_number(p.boxes, top=False) for p in pages[1:]) if b]
         other = re.sub(r"\D", "", later[0].text) if later else ""
         j["check"] = {"other": other, "match": other == j["value"]} if other else {"other": "", "match": None}
-    fields["E"] = field(short_name(fields["A"]["value"]), "auto", "Tự sinh từ A")
+    fields["E"] = field(short_name(fields["A"]["value"]), "auto", "Tự sinh từ A")  # after check_entity
     extra = {
         "form": form["form"], "layout": form["layout"], "version": form["version"], "state_of_form": form["state"],
         "labels_found": {k: any(w in p1.words for w in keys) for k, keys in LABEL_KEYS.items()},
@@ -791,6 +1133,7 @@ def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict,
                                 "suspects": suspects(f"{a.street}, {a.city}")} for a in candidates],
         "filed_date": _filed(p1),
         "agent_name": _agent_name(p1, data),  # internal only: tells the agent apart from the company
+        "entity_rejected": name_rejected,
     }
     if form["form"] == "LLC-5":
         extra.update({k: v for k, v in _formation(p1).items() if v})
@@ -801,6 +1144,9 @@ def extract_ca_scan(pages: list[Page], data: bytes | None = None) -> tuple[dict,
         extra["note"] = note
     if not form["verified"]:
         extra["warning"] = f"Phiên bản biểu mẫu {form['version']} chưa được kiểm chứng trên phôi thật — đối chiếu kỹ từng ô"
+        # a printed version never checked on a real scan may have another layout → never OK without a look (when only
+        # the REV line was not read, the layout is the known one of that form)
+        extra["unverified_version"] = "REV" in form["version"]
     # what was chosen for F–I and why; what was turned down and why (shown to the owner, never written to F–I)
     if business:
         extra["address_selected"] = {"text": fields["F"]["value"], "label": business.label, "role": business.role,
@@ -817,12 +1163,15 @@ REJECTED = {
     "principal_ca": "văn phòng tại California (mục 8) — không thay địa chỉ trụ sở chính mục 7",
     "mailing": "địa chỉ nhận thư — đã có địa chỉ trụ sở chính",
     "general_partner": "địa chỉ của general partner, không phải địa chỉ doanh nghiệp",
+    "designated_office": "văn phòng chỉ định tại California theo luật LP (không nhất thiết là nơi kinh doanh) — mẫu này "
+                         "không có ô Principal Executive Office; anh xác nhận nếu muốn dùng",
+    "jurisdiction_office": "văn phòng bắt buộc ở bang thành lập — không phải ô Principal Office",
     "organizer": "địa chỉ người lập hồ sơ, không phải địa chỉ doanh nghiệp",
 }
 
 
-LABEL_KEYS = {"A": ("PROPOSEDLLCNAME", "ENTITYNAME", "1NAME", "NAMEOFLIMITE", "NAMEUNDERWHICH"),
-              "F": ("INITIALSTREETADDRESSOFLLC", "PRINCIPALEXECUTIVEOFFICE")}
+LABEL_KEYS = {"A": ("PROPOSEDLLCNAME", "ENTITYNAME", "1NAME", "NAMEOFLIMITE", "NAMEUNDERWHICH", "NAMEOFFOREIGN"),
+              "F": ("INITIALSTREETADDRESSOFLLC", "PRINCIPALEXECUTIVEOFFICE", "ADDRESSOFPRINCIPALOFFICE")}
 FINAL = ("OK", "NO_BUSINESS_ADDRESS_ON_FORM")  # no other image variant is tried after these
 
 
@@ -849,14 +1198,23 @@ def scan_status(fields: dict, extra: dict) -> dict:
     probs = problems(key, fields)
     if probs:
         miss_a = not v("A")
+        addr = any(p.startswith(("G ", "H ", "I ", "Địa chỉ")) for p in probs)
         cat = ("không tìm được label" if miss_a and not labels.get("A", True) else
                "đọc được label nhưng không đọc được value" if miss_a else
-               "parser address thất bại" if "Địa chỉ" in probs[0] else "đọc được label nhưng không đọc được value")
+               "parser address thất bại" if addr else "đọc được label nhưng không đọc được value")
         return review("; ".join(probs), cat)
+    if extra.get("unverified_version"):
+        return review(f"Phiên bản {extra.get('version')} chưa kiểm chứng trên phôi thật — bố cục có thể khác, cần xem từng ô",
+                      "phiên bản mẫu chưa kiểm chứng")
     doubts = [k for k in ("A", "J", "F", "G", "H", "I") if (fields.get(k) or {}).get("suspects") and (fields.get(k) or {}).get("source") != "manual"]
     if doubts:
         k = doubts[0]
         return review(f"Ô {k} có nhiều cách đọc: {fields[k]['suspects'][0]['message']}", "OCR đọc không chắc (cần xem)")
+    sel = extra.get("address_selected") or {}
+    low = [k for k in ("A", "J", "F") if (fields.get(k) or {}).get("source") in ("ocr", "ai") and (fields[k].get("confidence") or 100) < 85]
+    if low:
+        return {"status": "LOW_CONFIDENCE", "extraction_reason": f"Độ tin cậy OCR thấp ở {', '.join(low)} — đối chiếu ảnh",
+                "failure_category": "OCR đọc không chắc (cần xem)"}
     if not v("F"):
         seen = ", ".join(sorted({c["label"] for c in extra.get("address_candidates", [])})) or "không có địa chỉ nào khác"
         if has_address:
@@ -865,11 +1223,6 @@ def scan_status(fields: dict, extra: dict) -> dict:
                           "đọc được label nhưng không đọc được value" if found else "không tìm được label")
         return {"status": "NO_BUSINESS_ADDRESS_ON_FORM",
                 "extraction_reason": f"{extra.get('version', 'Phôi')} không có ô trụ sở / địa chỉ doanh nghiệp (trên phôi chỉ có: {seen})"}
-    sel = extra.get("address_selected") or {}
-    low = [k for k in ("A", "J", "F") if (fields.get(k) or {}).get("source") in ("ocr", "ai") and (fields[k].get("confidence") or 100) < 85]
-    if low:
-        return {"status": "LOW_CONFIDENCE", "extraction_reason": f"Độ tin cậy OCR thấp ở {', '.join(low)} — đối chiếu ảnh",
-                "failure_category": "OCR đọc không chắc (cần xem)"}
     return {"status": "OK", "extraction_reason": f"Địa chỉ lấy từ ô “{sel.get('label', '?')}”"}
 
 
@@ -915,42 +1268,21 @@ def scan_report(fields: dict | None, extra: dict) -> dict:
 
 
 def read_scan(data: bytes, force: bool = False) -> dict:
-    """The whole scan reading: OCR every page (cached) → identify the form → read its boxes; when the reading is not
-    usable or the form is not recognised, the page is read again from other image variants and the best candidate
-    kept. Returns scan_report(…) plus "sheet": (fields, extra) for the app, or None when nothing could be read
+    """The whole scan reading: OCR every page at 300 dpi, original image (cached) → identify the form → read its boxes;
+    doubtful cells are re-read on their own small crop (450 dpi, then 600 dpi × image variants). Returns scan_report(…) plus "sheet": (fields, extra) for the app, or None when nothing could be read
     (status OCR_FAILED | UNKNOWN_DOCUMENT)."""
     pages = ocr_document(data, force=force)
     if not any(p.boxes for p in pages):
         extra = {"status": "OCR_FAILED", "extraction_reason": "OCR không đọc được chữ nào trên các trang",
                  "failure_category": "OCR không đọc được"}
         return {**scan_report(None, extra), "sheet": None}
-    best = first = extract_ca_scan(pages, data)
-    tried = ["original"]
-    if not (best and best[1].get("status") in FINAL):
-        for variant in VARIANTS[1:]:
-            vp = ocr_document(data, variant=variant, force=force)
-            got = extract_ca_scan(vp, data)
-            tried.append(variant)
-            if got and (not best or _field_score(got[0]) > _field_score(best[0])):
-                best = (got[0], {**got[1], "image_variant": variant})
-            if best and best[1].get("status") in FINAL:
-                break
+    best = extract_ca_scan(pages, data)
     if not best:
         title = " | ".join(b.text for b in pages[0].boxes if b.y < pages[0].h * 0.3 and len(b.text) > 8)[:200]
         extra = {"status": "UNKNOWN_DOCUMENT", "failure_category": "detect sai mẫu / mẫu chưa hỗ trợ",
-                 "extraction_reason": f"Không khớp mẫu phôi nào đã biết (đã thử ảnh: {', '.join(tried)}). Đầu trang: {title}"}
+                 "extraction_reason": f"Không khớp mẫu phôi nào đã biết. Đầu trang: {title}"}
         return {**scan_report(None, extra), "sheet": None}
-    best[1]["variants_tried"] = tried
-    if first and best is not first:
-        # a reading from a processed image is kept only where it does not contradict the original image: a cell read
-        # differently, or one the original found unreadable (handwriting), goes to review — no side picked silently
-        key = lambda f: re.sub(r"\W", "", (f.get("value") or "")).upper()  # noqa: E731
-        conflicts = [{"field": k, "original": o.get("value") or o.get("note"), "variant": b["value"]}
-                     for k in ("A", "J", "F") for o, b in [(first[0].get(k) or {}, best[0].get(k) or {})]
-                     if b.get("value") and key(o) != key(b) and (o.get("value") or (k == "A" and o.get("note")))]
-        if conflicts:
-            best[1]["variant_conflicts"] = conflicts
-            best[1].update(scan_status(*best))
+    best[1]["variants_tried"] = ["original"]  # whole page: 300 dpi original only; variants are for small field crops
     return {**scan_report(*best), "sheet": best}
 
 

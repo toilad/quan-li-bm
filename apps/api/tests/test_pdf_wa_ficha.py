@@ -94,7 +94,7 @@ def test_split_address_reads_from_the_end():
 
 
 def test_wa_validation_warns_but_does_not_block_a_foreign_office():
-    fields = {k: {"value": v} for k, v in {"A": "X LLC", "D": "+1 206 555 0100", "E": "xllc", "F": "f", "G": "g", "H": "JALISCO",
+    fields = {k: {"value": v} for k, v in {"A": "X LLC", "D": "+1 206 555 0100", "E": "xllc", "F": "CALLE 1, GUADALAJARA, JALISCO 45640", "G": "GUADALAJARA", "H": "JALISCO",
                                               "I": "45640", "J": "600111222"}.items()}
     issues = validate(fields, "wa")
     # a foreign office: warnings only — H not a US state, and D's area code cannot be matched to a state
@@ -118,3 +118,26 @@ def test_ficha_cadastral():
     assert not {k for k, x in validate(f, "br").items() if x["level"] == "error"}
     t2 = PdfText(pages=1, text=text.replace("Telefone +55 (11) 44321746 ", "Telefone "))
     assert extract_text_layer(t2, "br")[0]["D"]["value"] == ""  # empty phone: never "E-mail"
+
+
+# ───── F = FULL address, G/H/I parsed back from it (owner, 2026-10-20) — every document type ─────
+
+def test_full_address_rule_f_g_h_i_consistent():
+    from wg_core.modules.pdf.extract import address_consistent, fields_from_ai
+    from wg_core.modules.pdf.fields import validate
+
+    assert address_consistent("R 7 DE SAMPLE, 876, SALA 302, CENTRO, BLUMENAU, SC 89010202", "BLUMENAU", "SC", "89010202")
+    assert address_consistent("R 7 DE SAMPLE, 876, SALA 302, CENTRO, BLUMENAU, SC 89010202", "BLUMENAU", "SC", "89.010-202")
+    assert address_consistent("100 Sample Blvd., Ste. 640, Los Angeles, CA 90049-1234", "Los Angeles", "CA", "90049-1234")
+    assert not address_consistent("210 Sample Street", "La Jolla", "CA", "92037")  # F = street only: a bug
+    issues = validate({k: {"value": v} for k, v in {"A": "X LLC", "J": "201099900001", "F": "210 Sample Street",
+                                                     "G": "La Jolla", "H": "CA", "I": "92037"}.items()}, "ca")
+    assert issues["F"]["level"] == "error" and "đầy đủ" in issues["F"]["message"]
+    # the AI reader returning a street line only: F is completed from G/H/I, never left as the street alone
+    ai = {k: {"value": v, "found": True} for k, v in {"A": "X LLC", "F": "210 Sample Street", "G": "La Jolla", "H": "CA",
+                                                       "I": "92037", "J": "201099900001"}.items()}
+    f = fields_from_ai(ai, "wy")
+    assert (f["F"]["value"], f["G"]["value"], f["H"]["value"], f["I"]["value"]) == ("210 Sample Street, La Jolla, CA 92037", "La Jolla", "CA", "92037")
+    br = fields_from_ai({**ai, "F": {"value": "R SAMPLE, 876, SALA 302, CENTRO", "found": True}, "G": {"value": "BLUMENAU", "found": True},
+                         "H": {"value": "SC", "found": True}, "I": {"value": "89.010-202", "found": True}}, "br")
+    assert br["F"]["value"] == "R SAMPLE, 876, SALA 302, CENTRO, BLUMENAU, SC 89010202"

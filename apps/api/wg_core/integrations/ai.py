@@ -98,11 +98,13 @@ doc_type:
 - "unknown": anything else, or not sure. evidence = the printed words that decided it.
 
 Fields for ca: A = item 1 LLC name as written (keep punctuation and suffix). J = the 12-digit filing number at the top right
-of page 1. F = item 3a initial street address (street line). G, H, I = city, state, ZIP of item 3a. D = phone (LLC-1 has none).
+of page 1. F = the FULL item 3a initial street address: street, suite, city, state ZIP (e.g. "100 Main St., Ste. 2, Los
+Angeles, CA 90049"). G, H, I = city, state, ZIP of item 3a. D = phone (LLC-1 has none).
 Fields for wy: A = name of the LLC. J = the Original ID / filing ID. F, G, H, I = the company's mailing or principal address
-(street, city, state, ZIP). D = the company's phone if printed.
-Fields for br: A = NOME EMPRESARIAL. J = NÚMERO DE INSCRIÇÃO (as printed, 00.000.000/0000-00). F = LOGRADOURO, NÚMERO,
-COMPLEMENTO - BAIRRO (skip boxes printed as asterisks). G = MUNICÍPIO. H = UF. I = CEP as printed. D = TELEFONE.
+— F = the FULL address (street, suite, city, state ZIP), G, H, I = city, state, ZIP. D = the company's phone if printed.
+Fields for br: A = NOME EMPRESARIAL. J = NÚMERO DE INSCRIÇÃO (as printed, 00.000.000/0000-00). F = the FULL address:
+LOGRADOURO, NÚMERO, COMPLEMENTO, BAIRRO, MUNICÍPIO, UF CEP (skip boxes printed as asterisks). G = MUNICÍPIO. H = UF.
+I = CEP as printed. D = TELEFONE.
 For unknown: return found=false for every field.
 
 Cross-check (ca only; for wy, br and unknown return found=false): the filing number and the LLC name are often printed

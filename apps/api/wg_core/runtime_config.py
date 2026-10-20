@@ -44,6 +44,7 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "PIXABAY_API_KEY": ("photos", "Khoá API Pixabay", True),
     "TWILIO_ACCOUNT_SID": ("phone", "Twilio Account SID (AC…)", True),
     "TWILIO_AUTH_TOKEN": ("phone", "Twilio Auth Token", True),
+    "OCR_PERFORMANCE_MODE": ("server", "Chế độ OCR: NORMAL (mặc định — 1 việc OCR, máy vẫn dùng bình thường) hoặc FAST (2 việc cùng lúc, máy ≥ 8 luồng CPU; khởi động lại worker)", False),
     "PUBLIC_API_URL": ("server", "Địa chỉ API công khai (cho OAuth redirect)", False),
     "PUBLIC_WEB_URL": ("server", "Địa chỉ giao diện", False),
     **{f"INET_API_KEY_{n}": (f"nick:{n.lower()}", "Khoá API iNET", True) for n in NICKS},
@@ -60,6 +61,8 @@ def credential_problem(name: str, value: str) -> str | None:
     v = value.strip()
     if not v:
         return None
+    if name == "OCR_PERFORMANCE_MODE" and v.upper() not in ("NORMAL", "FAST"):
+        return "Chế độ OCR chỉ nhận NORMAL hoặc FAST"
     if name.startswith("INET_API_KEY_"):
         # developers.inet.vn keys: "inet_sk_…" (Authorization: Bearer inet_sk_... in the official examples)
         if not v.startswith("inet_sk_") or not v.isascii() or any(c.isspace() for c in v):

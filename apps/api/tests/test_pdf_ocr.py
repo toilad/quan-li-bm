@@ -216,7 +216,7 @@ def test_status_follows_the_form_not_a_fixed_list():
     assert f["J"]["value"] == "" and extra["status"] == "NO_BUSINESS_ADDRESS_ON_FORM"
     assert extract_ca_scan(llc1(name_text="LLC", name_conf=0.91))[1]["status"] == "REVIEW_REQUIRED"
     assert extract_ca_scan(llc1(name_text="Y LLC"))[1]["failure_category"] == "đọc được label nhưng không đọc được value"
-    assert problems("br", {"A": {"value": "X LTDA"}, "F": {"value": "RUA A, 1"}, "G": {"value": "SP"}, "H": {"value": "SP"},
+    assert problems("br", {"A": {"value": "X LTDA"}, "F": {"value": "RUA A, 1, SAO PAULO, SP 01001000"}, "G": {"value": "SAO PAULO"}, "H": {"value": "SP"},
                            "I": {"value": "01001000"}}) == ["Thiếu J: không đọc được"]
     assert problems("wa", {"A": {"value": "X LLC"}}) == []  # UBI may be missing on a Washington filing
 
@@ -233,16 +233,19 @@ def test_text_layer_and_ocr_disagreeing_goes_to_review_with_both_readings():
     assert rep["fields"]["file_number"]["readings"][1] == {"value": "200799910008", "source": "text", "confidence": 100}
 
 
-def test_read_scan_report_and_a_processed_image_contradicting_the_original(monkeypatch):
+def test_read_scan_report_and_the_whole_page_read_once_on_the_original_image(monkeypatch):
     from wg_core.modules.pdf import ocr
 
-    plain, handwritten = lp1(), lp1()
+    handwritten = lp1()
     handwritten[0].boxes = [x if not x.text.startswith("Sample Canyon") else b(982, 211, "LP", 0.9) for x in handwritten[0].boxes]
-    monkeypatch.setattr(ocr, "ocr_document", lambda data, variant="original", **kw: handwritten if variant == "original" else plain)
+    variants = []
+    monkeypatch.setattr(ocr, "ocr_document", lambda data, variant="original", **kw: variants.append(variant) or handwritten)
     monkeypatch.setattr(ocr, "reread", lambda *a, **kw: ("", 0.0))
+    monkeypatch.setattr(ocr, "reread_many", lambda data, region, dpi=450, variants=("original",): [("", 0.0)] * len(variants))
     monkeypatch.setattr(ocr, "read_band", lambda *a, **kw: ("", 0.0))
     r = ocr.read_scan(b"%PDF")
-    assert r["status"] == "REVIEW_REQUIRED" and r["failure_category"] == "các lần đọc OCR mâu thuẫn"
+    assert variants == ["original"]  # owner, 2026-10-20: no image variants of the whole page — only of small field crops
+    assert r["status"] == "REVIEW_REQUIRED" and r["entity_name"] == "" and "viết tay" in r["reason"]
     assert set(r) >= {"document_type", "entity_name", "business_address", "file_number", "status", "reason",
                       "selected_candidates", "rejected_candidates", "fields", "sheet"}
     assert r["selected_candidates"][0]["role"] == "principal"
@@ -317,3 +320,167 @@ def test_typing_a_cell_counts_as_checked_and_keeps_its_region(client):
     r = client.patch(f"/api/pdf/{doc_id}", json={"fields": {"A": "Sample Ridge Holdings, LLC"}})
     a = r.json()["fields"]["A"]
     assert a["source"] == "manual" and a["checked"] is True and a["region"]["page"] == 1
+
+
+# ───── entity name: never a doubtful name as "OK" (owner, 2026-10-20) ─────
+
+@pytest.mark.parametrize("text, kind", [
+    ("SAMPLE HOLDINGS.LLC", "suffix"),          # suffix glued to the word
+    ("Sample Holdings LL.C", "suffix"),         # odd suffix
+    ("KLEIN SAMPLE, LiC", "suffix"),
+    ("Sample Holdings", "suffix"),              # no LLC / LP at all
+    ("LA SAMPA GUEST HOmE, LLC", "casing"),     # odd casing
+    ("Sample Holdings Ill, LLC", "letters"),    # III? Ill?
+    ("Hom Away From Hom Sampleton LLC", "letters"),  # a letter possibly missing (lexicon word + 1 letter)
+])
+def test_name_signals(text, kind):
+    from wg_core.modules.pdf.ocr import name_signals
+
+    assert kind in {k for k, _ in name_signals(text)}, name_signals(text)
+
+
+@pytest.mark.parametrize("text", ["HI Sample Hotel Holdings, LLC", "LINC-Sample Housing Investors, L.P.", "McSample Holdings LLC",
+                                  "Sample Brook House Limited Partnership", 'SAMPLE HOUSE LLC ("SH LLC")'])
+def test_name_signals_quiet_on_clean_names(text):
+    from wg_core.modules.pdf.ocr import name_signals
+
+    assert name_signals(text) == []
+
+
+def test_purpose_line_is_never_the_name():
+    """37948230 case (made-up name): the "PURPOSE (The following statement …)" line under the name is printed text."""
+    pages = llc1()
+    p = pages[0]
+    p.boxes = [x for x in p.boxes if not x.text.startswith("Sample Ridge")]
+    p.boxes.append(b(1180, 213, "PLRPOSE (The toltowing statemem l4 requlred by statute and shouid rot be altered.)"))
+    p.boxes.sort(key=lambda x: (x.y, x.x))
+    f, extra = extract_ca_scan(pages)
+    assert f["A"]["value"] == "" and extra["status"] == "REVIEW_REQUIRED"
+    p.boxes.append(b(1120, 260, "3400 SAMPLE STREET HOLDING COMPANY, LLC"))
+    p.boxes.sort(key=lambda x: (x.y, x.x))
+    assert extract_ca_scan(pages)[0]["A"]["value"] == "3400 SAMPLE STREET HOLDING COMPANY, LLC"
+
+
+def _reads(monkeypatch, at450, at600=None):
+    """The 450 dpi second reading, then (only if asked for) the four 600 dpi readings of the name crop."""
+    from wg_core.modules.pdf import ocr
+
+    calls = []
+    monkeypatch.setattr(ocr, "reread", lambda *a, **kw: at450)
+    monkeypatch.setattr(ocr, "reread_many", lambda data, region, dpi=450, variants=("original",):
+                        calls.append((dpi, variants)) or list(at600))
+    return calls
+
+
+def test_zoomed_readings_disagreeing_send_the_name_to_review(monkeypatch):
+    from wg_core.modules.pdf.ocr import check_entity
+
+    cell = {"value": "Sample Holdings III, LLC", "source": "ocr", "confidence": 99, "region": {"page": 1, "box": [0.1, 0.3, 0.5, 0.32]}}
+    calls = _reads(monkeypatch, ("Sample Holdings Ill, LLC", 0.97),
+                   [("Sample Holdings Ill, LLC", 0.97)] + [("Sample Holdings III, LLC", 0.98)] * 3)
+    check_entity(cell, b"%PDF")
+    assert cell["value"] == "Sample Holdings III, LLC" and "khác nhau" in cell["suspects"][0]["message"]
+    assert calls == [(600, ("original", "gray_contrast", "sharpen", "threshold"))]  # one 600 dpi crop, four variants
+    assert len(cell["reads"]) == 6 and [r["dpi"] for r in cell["reads"]] == [300, 450, 600, 600, 600, 600]
+
+
+def test_all_zoomed_readings_agreeing_clearly_are_used_and_said(monkeypatch):
+    from wg_core.modules.pdf.ocr import check_entity
+
+    cell = {"value": "Sample Holdings LL.C", "source": "ocr", "confidence": 96, "region": {"page": 1, "box": [0.1, 0.3, 0.5, 0.32]}}
+    _reads(monkeypatch, ("Sample Holdings LLC", 0.99), [("Sample Holdings LLC", 0.99)] * 4)
+    check_entity(cell, b"%PDF")
+    assert cell["value"] == "Sample Holdings LLC" and not cell.get("suspects") and "Sample Holdings LL.C" in cell["note"]
+
+
+def test_lost_spaces_come_back_from_a_zoomed_reading(monkeypatch):
+    from wg_core.modules.pdf.ocr import check_entity
+
+    cell = {"value": "SAMPLE&SAMPLE ENTERPRISES,LLC", "source": "ocr", "confidence": 97, "region": {"page": 1, "box": [0.1, 0.3, 0.5, 0.32]}}
+    calls = _reads(monkeypatch, ("SAMPLE & SAMPLE ENTERPRISES, LLC", 0.98), [])
+    check_entity(cell, b"%PDF")
+    assert cell["value"] == "SAMPLE & SAMPLE ENTERPRISES, LLC" and not cell.get("suspects")
+    assert calls == []  # the 450 dpi reading settled it: no 600 dpi crop at all
+
+
+def test_unstable_readings_leave_the_name_empty(monkeypatch):
+    from wg_core.modules.pdf.ocr import check_entity
+
+    cell = {"value": "iSampleHoll lytvoodHoldings LLC", "source": "ocr", "confidence": 81, "region": {"page": 1, "box": [0.1, 0.3, 0.5, 0.32]}}
+    _reads(monkeypatch, ("Samplcy Hollyuvoocd Holdings, LLC", 0.85),
+           [("Samplcy Hollyuvoocd Holdings, LLC", 0.85), ("SampleHollyuvood Holdings, LLC", 0.91),
+            ("SampleHollyuvood Holdings, LLC", 0.9), ("SamforicHollyuvood Holdings, LLC", 0.9)])
+    check_entity(cell, b"%PDF")
+    assert cell["value"] == "" and "viết tay" in cell["note"] and len(cell["unreadable"]) >= 3
+
+
+def test_odd_casing_alone_lowers_confidence_never_ok():
+    from wg_core.modules.pdf.ocr import check_entity
+
+    cell = {"value": "LA SAMPA GUEST HOmE, LLC", "source": "ocr", "confidence": 99}
+    check_entity(cell, None)
+    assert cell["confidence"] == 79 and cell["doubts"] and not cell.get("suspects")
+
+
+# ───── LP-1 REV 01/2010 (designated office only) and LP-5 (foreign LP) ─────
+
+def lp1_2010():
+    boxes = [b(79, 1663, "201099900001"), b(128, 1382, "LP-1"), b(202, 479, "State of California"), b(291, 540, "Secretary of State"),
+             b(525, 354, "Certificate of Limited Partnership"), b(743, 1729, "This Space For Filing Use Only"),
+             b(813, 121, 'Entity Name (End the name with the words "Limited Partnership" or the abbreviation "LP" or "L.P.")'),
+             b(885, 118, "1. NAME OF LIMITED PARTNERSHIP"), b(971, 134, "Samplebrook House Limited Partnership"),
+             b(1066, 113, "Initial Designated Office Address (Do not abbreviate the name of the city.)"),
+             b(1133, 116, "2. ADDRESS OF INITIAL DESIGNATED OFFICE IN CALIFORNIA"), b(1136, 1522, "CITY"), b(1136, 1991, "STATE"),
+             b(1136, 2132, "ZIP CODE"), b(1212, 1532, "Los Angeles"), b(1216, 2139, "90048"), b(1217, 2016, "CA"),
+             b(1219, 139, "120 Sample Blvd., 3rd Floor"),
+             b(1312, 111, "Initial Agent For Service of Process (If the initial agent is an individual"),
+             b(1643, 114, "4.IF AN INDIVIDUAL ADDRESS OF INITIAL AGENT FOR SERVICE OF PROCESS IN CA"), b(1643, 1517, "CITY"),
+             b(1647, 2084, "ZIP CODE"), b(1648, 1989, "STATE"), b(1727, 2007, "CA"), b(1730, 2137, "90048"),
+             b(1732, 139, "120 Sample Blvd., 3rd Floor"), b(1735, 1332, "Los Angeles"),
+             b(1816, 109, "General Partners (Enter the names and addresses of all the general partners."),
+             b(1891, 835, "ADDRESS"), b(1891, 2124, "ZIP CODE"), b(1893, 113, "6a. NAME"), b(1893, 1986, "STATE"), b(1895, 1520, "CITY"),
+             b(1964, 2129, "90048"), b(1966, 1507, "Los Angeles"), b(1968, 2006, "CA"), b(1971, 133, "Jane Sample"),
+             b(1974, 770, "120 Sample Blvd., 3rd Flr."), b(2415, 109, "Execution (This certificate must be signed"),
+             b(3147, 99, "LP-1 (REV 01/2010)")]
+    return [page(boxes)]
+
+
+def test_lp1_2010_designated_office_is_a_suggestion_not_the_business_address():
+    f, extra = extract_ca_scan(lp1_2010())
+    assert extra["version"] == "LP-1 REV 01/2010" and extra["layout"] == "2008"
+    assert vals(f)["A"] == "Samplebrook House Limited Partnership" and vals(f)["F"] == ""
+    roles = [c["role"] for c in extra["address_candidates"]]
+    assert roles == ["designated_office", "agent", "general_partner"] and extra["status"] == "NO_BUSINESS_ADDRESS_ON_FORM"
+
+
+def test_lp5_foreign_lp_principal_office():
+    boxes = [b(137, 1650, "201099900011"), b(212, 1320, "LP-5"), b(267, 473, "State of California"), b(359, 539, "Secretary of State"),
+             b(519, 454, "Foreign Limited Partnership"), b(582, 459, "Application for Registration"),
+             b(770, 1683, "This Space For Filing Use Only"), b(833, 184, "Entity Name (See instructions for name requirements)"),
+             b(888, 187, "1. NAME OF FOREIGN LIMITED PARTNERSHIP"), b(959, 227, "Sample Hills Hotel LP"),
+             b(1026, 206, "ALTERNATE NAME (if the name in Item 1 does not comply"),
+             b(1172, 186, "Office Addresses (Please do not abbreviate the name of the city.)"),
+             b(1218, 2072, "ZIP CODE"), b(1219, 1922, "STATE"), b(1221, 182, "3.ADDRESS OF PRINCIPAL OFFICE"), b(1221, 1457, "CITY"),
+             b(1287, 1462, "Bethesda"), b(1289, 230, "6900 Sample Drive, Suite 1500"), b(1289, 2101, "20817"), b(1290, 1953, "MD"),
+             b(1351, 204, ".ADDRESSOFOFFICEREQUIREDINTHEJURISDICTIONOFFORMATION,IFANY"), b(1355, 1458, "CITY"),
+             b(1356, 1923, "STATE"), b(1356, 2077, "ZIP CODE"), b(1498, 187, "Date and Place of Organization"),
+             b(2068, 187, "General Partners (Enter the names and addresses of all the general partners."),
+             b(2160, 1925, "STATE"), b(2162, 186, "8a. NAME"), b(2162, 863, "ADDRESS"), b(2162, 1460, "CITY"), b(2162, 2078, "ZIP CODE"),
+             b(2228, 773, "6900 Sample Drive"), b(2230, 1417, "Bethesda"), b(2231, 225, "Sample Hills GP LLC"), b(2231, 2096, "20817"),
+             b(2236, 1951, "MD"), b(3022, 187, "LP-5 (REV 01/2010)")]
+    f, extra = extract_ca_scan([page(boxes)])
+    assert extra["form"] == "LP-5" and extra["version_verified"]
+    assert vals(f)["A"] == "Sample Hills Hotel LP"
+    assert (vals(f)["G"], vals(f)["H"], vals(f)["I"]) == ("Bethesda", "MD", "20817") and f["F"]["role"] == "principal"
+    assert [c["role"] for c in extra["address_candidates"]] == ["general_partner"] and extra["status"] == "OK"
+
+
+def test_city_starting_left_of_its_header_is_not_glued_to_the_street():
+    """A typed city starting left of the CITY AND STATE header (made-up values)."""
+    pages = llc5()
+    p = pages[0]
+    p.boxes = [x for x in p.boxes if x.text not in ("701 13th St. NW, Suite 1000,", "Washington,", "DC 20005")]
+    p.boxes += [b(2385, 150, "175 E Sample Ave, #B"), b(2385, 1460, "Sample Valley"), b(2385, 1960, "CA"), b(2385, 2080, "91024")]
+    p.boxes.sort(key=lambda x: (x.y, x.x))
+    v = vals(extract_ca_scan(pages)[0])
+    assert (v["G"], v["H"], v["I"]) == ("Sample Valley", "CA", "91024") and v["F"].startswith("175 E Sample Ave, #B, Sample Valley")

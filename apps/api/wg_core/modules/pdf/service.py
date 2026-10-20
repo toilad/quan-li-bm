@@ -99,20 +99,27 @@ def text_layer_problem(t, doc_type: str, read) -> str:
 
 
 def request_scan_read(s: Session, doc: PdfDocument):
-    return enqueue(s, "pdf_ocr_read", f"pdf_ocr:{doc.md5}", {"doc_id": doc.id}, resource="ocr")
+    from .ocr import ocr_workers
+
+    # one OCR job at a time (NORMAL); FAST: two slots, so at most two scans are read together — never one per core
+    slot = "ocr" if ocr_workers() == 1 else f"ocr:{doc.id % 2}"
+    return enqueue(s, "pdf_ocr_read", f"pdf_ocr:{doc.md5}", {"doc_id": doc.id}, resource=slot)
 
 
 @handler("pdf_ocr_read")
 def _ocr_read(ctx: JobContext):
     """Scanned page → RapidOCR on this machine (free, nothing sent out) → the boxes of a known form. A form the reader
     does not know goes to the AI when a key is set; otherwise the owner picks the type or types the cells."""
-    from .ocr import read_scan, scan_report, with_text_layer
+    from .ocr import CACHE_STATS, read_scan, scan_report, with_text_layer
 
     doc = ctx.session.get(PdfDocument, ctx.job.payload["doc_id"])
     ctx.step("OCR bản scan (miễn phí, trên máy)")
     data = storage_path(doc.md5).read_bytes()
-    res = read_scan(data, force=bool(ctx.job.payload.get("force")))  # every page, upright, cached; image variants if needed
+    hit0, miss0 = CACHE_STATS["hit"], CACHE_STATS["miss"]
+    res = read_scan(data, force=bool(ctx.job.payload.get("force")))  # every page, upright, cached; field crops re-read
     got = res.pop("sheet")
+    cache = {"hit": CACHE_STATS["hit"] - hit0, "miss": CACHE_STATS["miss"] - miss0}
+    ctx.log(f"OCR {cache['hit'] + cache['miss']} trang — cache: {cache['hit']} có sẵn, {cache['miss']} đọc mới", "info")
     manual = doc.detection_reason == "Chọn thủ công"
     text_layer = (doc.extra or {}).get("text_layer") or {}
     text_fields = text_layer.get("fields") or {}
@@ -120,12 +127,13 @@ def _ocr_read(ctx: JobContext):
         # OCR found no known form, but the (doubtful) text layer gave something: shown for review, never "OK"
         doc.fields = text_fields
         tag_phone(doc.fields, doc.extra)
-        doc.extra = {**(doc.extra or {}), "status": "REVIEW_REQUIRED", "debug": res,
+        doc.extra = {**(doc.extra or {}), "status": "REVIEW_REQUIRED", "debug": res, "ocr_cache": cache,
                      "extraction_reason": f"{res['reason']} — dùng tạm phần đọc được từ lớp chữ, cần kiểm tra"}
         doc.status, doc.error = "review", None
         return
     if not got:
-        doc.extra = {**(doc.extra or {}), "status": res["status"], "extraction_reason": res["reason"], "debug": res}
+        doc.extra = {**(doc.extra or {}), "status": res["status"], "extraction_reason": res["reason"], "debug": res,
+                     "ocr_cache": cache}
     if got and (not manual or doc.doc_type == "ca"):
         fields, extra = got
         if text_fields:  # both readings kept with their source; any difference → REVIEW_REQUIRED
@@ -133,6 +141,7 @@ def _ocr_read(ctx: JobContext):
             with_text_layer(fields, extra, text_fields)
             res = scan_report(fields, extra)
         extra["debug"] = res
+        extra["ocr_cache"] = cache
         doc.fields, doc.extra = fields, extra
         tag_phone(doc.fields, doc.extra)
         doc.doc_type, doc.status, doc.error = "ca", "review", None

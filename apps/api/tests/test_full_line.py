@@ -28,7 +28,7 @@ PDF_BYTES = b"%PDF-1.4\n% synthetic test document, no real company\n%%EOF\n"
 def _doc(s) -> PdfDocument:
     md5 = hashlib.md5(PDF_BYTES).hexdigest()
     pdf.storage_path(md5).write_bytes(PDF_BYTES)
-    values = {"A": "Acme Plumbing LLC", "D": "(11) 3251-4400", "F": "RUA EXEMPLO, 100 - CENTRO", "G": "SAO PAULO",
+    values = {"A": "Acme Plumbing LLC", "D": "(11) 3251-4400", "F": "RUA EXEMPLO, 100 - CENTRO, SAO PAULO, SP 01001000", "G": "SAO PAULO",
               "H": "SP", "I": "01.001-000", "J": "11.222.333/0001-81"}  # public example CNPJ, not a real filing
     fields = {k: field(v, "text") for k, v in values.items()}
     fields["E"] = field("acmeplumbingllc", "auto")
