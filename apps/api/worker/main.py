@@ -35,6 +35,22 @@ def _ocr_loop(stop: threading.Event):
             stop.wait(5)
 
 
+INBOX_SECONDS = 10
+
+
+def _inbox_loop(stop: threading.Event):
+    """The PDF folder (Desktop\Ảnh Phôi): new PDFs are read like an upload; finished ones are deleted."""
+    from wg_core.modules.pdf import inbox
+
+    while not stop.is_set():
+        try:
+            with session_scope() as s:
+                inbox.scan(s, log=lambda m: print(m, flush=True))
+        except Exception as e:  # noqa: BLE001 — the database may be restarting; try again next pass
+            print(f"inbox error: {e}", flush=True)
+        stop.wait(INBOX_SECONDS)
+
+
 def main():
     registry.setup()
     stop = threading.Event()
@@ -45,6 +61,7 @@ def main():
         threading.Thread(target=_ocr_loop, args=(stop,), daemon=True).start()
     print(f"OCR: chế độ {perf_mode()} · {ocr_workers()} việc OCR cùng lúc · {ocr_threads()} luồng CPU mỗi việc", flush=True)
     _recover()
+    threading.Thread(target=_inbox_loop, args=(stop,), daemon=True).start()
     last_recover = time.monotonic()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")

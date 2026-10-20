@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 type OcrStatus = { total: number; done: number; running: number; queued: number; mode: string; workers: number;
   threads: number; cache_hit: number; cache_miss: number; cache: { files: number; mb: number; limit_mb: number };
   auto_save: boolean;
+  inbox: { dir: string; on: boolean; files: number; pending: number; review: number; other: number };
   batch: { total: number; processed: number; saved: number; review_required: number; unknown: number; ocr_failed: number; not_written: number } };
 
 /** Scan readings of the last 24 h on this machine: OCR file x/N, the CPU mode, pages from the cache / read anew. */
@@ -31,6 +32,15 @@ function OcrLine() {
   };
   return (
     <>
+    {st.inbox.on && (
+      <p className="mt-3 text-[12.5px] text-fg-muted">
+        Thư mục phôi <span className="font-mono text-fg">{st.inbox.dir}</span>: thả PDF vào là app tự đọc → ghi Sheet → xoá hẳn file
+        (bản gốc ở Drive, cột K).{" "}
+        {st.inbox.files ? <>Còn <b className="text-fg">{st.inbox.files}</b> file: {st.inbox.pending} đang xử lý
+          {st.inbox.review > 0 && <span className="text-amber-300"> · {st.inbox.review} cần duyệt (giữ lại)</span>}
+          {st.inbox.other > 0 && <span className="text-rose-300"> · {st.inbox.other} không đọc / không ghi được (giữ lại)</span>}</> : "Thư mục trống."}
+      </p>
+    )}
     {st.batch.total > 0 && (
       <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[12.5px]">
         <span>Đã xử lý <b>{st.batch.processed}</b>/{st.batch.total}</span>

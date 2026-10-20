@@ -264,10 +264,12 @@ def _save(ctx: JobContext):
         for other in s.scalars(select(PdfDocument).where(PdfDocument.id != doc.id, PdfDocument.status == "saved")):
             if same_company({"J": (other.fields.get("J") or {}).get("value", ""), "H": (other.fields.get("H") or {}).get("value", "")}, j, h):
                 doc.status, doc.error = "failed", f"Trùng mã {j} ({h}) với file đã lưu “{other.original_name}”"
+                doc.extra = {**(doc.extra or {}), "duplicate": True}  # the inbox folder may drop this file
                 raise Conflict(doc.error)
         for r in Sheets().read_rows():
             if same_company(r.cells, j, h) and r.row != doc.sheet_row:
                 doc.status = "failed"
+                doc.extra = {**(doc.extra or {}), "duplicate": True}
                 doc.error = (f"Sheet đã có mã {j} ({h}) ở dòng {r.row} (tên “{r.cells.get('A', '')}”) — không thêm dòng trùng; "
                              f"nếu tên trên PDF đúng hơn, dùng “Đối chiếu Sheet” để cập nhật cột A của dòng {r.row}")
                 raise Conflict(doc.error)

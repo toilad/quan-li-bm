@@ -192,6 +192,7 @@ def ocr_status(s: Session = Depends(db)):
     from datetime import datetime, timedelta, timezone
 
     from wg_core.modules.pdf.ocr import cache_info, ocr_threads, ocr_workers, perf_mode
+    from wg_core.modules.pdf import inbox
 
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     rows = list(s.scalars(select(Job).where(Job.kind == "pdf_ocr_read", Job.created_at >= since)))
@@ -201,7 +202,7 @@ def ocr_status(s: Session = Depends(db)):
             "running": sum(j.status == "running" for j in rows), "queued": sum(j.status == "queued" for j in rows),
             "mode": perf_mode(), "workers": ocr_workers(), "threads": ocr_threads(),
             "cache_hit": sum(c.get("hit", 0) for c in cache), "cache_miss": sum(c.get("miss", 0) for c in cache),
-            "cache": cache_info(), "batch": batch_summary(s, since),
+            "cache": cache_info(), "batch": batch_summary(s, since), "inbox": inbox.status(s),
             "auto_save": pdf._on("AUTO_SAVE_TO_SHEET", "true") and not pdf._on("MANUAL_REVIEW_MODE", "false")}
 
 
