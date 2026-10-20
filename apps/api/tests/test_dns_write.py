@@ -62,17 +62,11 @@ def test_full_flow_adds_exactly_one_record_via_action_add_and_keeps_the_others()
         add = _routes(m, sheet, {"acme.huxma.life": []})
         patch = inet.install(m)
         job_id = _job()
-        drain()
-        with session_scope() as s:  # DNS not propagated yet → retry later, created steps kept
-            j = s.get(Job, job_id)
-            assert j.status == "queued" and j.state["dns_created"] and j.state["host_created"]
-            assert j.state["dns_record"] == {"result": "created", "domain_id": 501, "record_id": 9001}
-            j.run_after = j.created_at
-        install_doh(m, {"acme.huxma.life": [IP]})
-        drain()
+        drain()  # owner, 2026-10-20: created = done — no waiting for public DNS (B2 waits before SSL)
     with session_scope() as s:
         j = s.get(Job, job_id)
         assert j.status == "done" and j.state["written_b"] == "acme.huxma.life"
+        assert j.state["dns_record"] == {"result": "created", "domain_id": 501, "record_id": 9001}
     assert inet.patches == [{"recordList": [{"domainId": 501, "name": "acme", "type": "A", "data": IP, "ttl": "300", "action": "ACTION_ADD"}]}]
     assert patch.call_count == 1 and add.call_count == 1  # neither repeated on retry
     assert add.calls[0].request.url.params["dir"] == "public_html/acme.huxma.life"

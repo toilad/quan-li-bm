@@ -89,7 +89,8 @@ def test_subdomain_created_by_a_lost_attempt_is_not_created_again_and_b_waits_fo
     assert not add.called and sheet.writes == []  # not created twice; B not written on another company's row
 
 
-def test_dns_propagation_is_waited_for_without_using_up_retries():
+def test_b1_does_not_wait_for_dns_propagation():
+    """Owner, 2026-10-20: "tạo xong là xong" — B is written once the A record is on iNET and the name on cPanel."""
     from tests.mocks import install_doh
     from tests.test_dns_write import batch_mode, fake_inet
     from tests.test_domains import ROW, _routes, _tick
@@ -103,17 +104,11 @@ def test_dns_propagation_is_waited_for_without_using_up_retries():
         fake_inet().install(m)
         with session_scope() as s:
             job_id = domains.enqueue_rows(s, [{"row": ROW, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])["queued"][0]["job_id"]
-        for _ in range(8):  # more checks than max_attempts (5): still waiting, not failed
-            _retry_now(job_id)
-            drain()
-        with session_scope() as s:
-            j = s.get(Job, job_id)
-            assert j.status == "queued" and "đã chờ" in j.last_error and j.attempts <= 1
-        install_doh(m, {"acme.huxma.life": ["103.75.187.26"]})
-        _retry_now(job_id)
-        drain()
+        drain()  # public DNS has nothing yet
     with session_scope() as s:
-        assert s.get(Job, job_id).status == "done"
+        j = s.get(Job, job_id)
+        assert j.status == "done" and j.attempts == 1 and j.state["written_b"] == "acme.huxma.life"
+    assert sheet.writes == [(f"B{ROW}", "acme.huxma.life")]
 
 
 # ───────── websites ─────────

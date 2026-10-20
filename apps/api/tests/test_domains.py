@@ -3,6 +3,7 @@ from tests.conftest import drain
 from tests.mocks import FakeSheet, cp_account, cp_ok, install_doh, wrap
 
 from wg_core.db import session_scope
+from wg_core.integrations.google import Sheets
 from wg_core.integrations.inet import Inet
 from wg_core.models import Job, RootDomain
 from wg_core.modules.domains import service as domains
@@ -75,12 +76,21 @@ def test_b_filled_meanwhile_is_conflict_not_overwrite():
         fake_inet().install(m)
         with session_scope() as s:
             job_id = domains.enqueue_rows(s, [{"row": ROW, "company": "Acme LLC", "root": "huxma.life", "label": "acme"}])["queued"][0]["job_id"]
-        drain()
-        sheet.rows[ROW]["B"] = "someone-else.example.com"
-        install_doh(m, {"acme.huxma.life": ["103.75.187.26"]})
-        with session_scope() as s:
-            s.get(Job, job_id).run_after = s.get(Job, job_id).created_at
-        drain()
+        # someone types into B while the domain is being created (between the start checks and the write)
+        real_cell, reads = Sheets.read_cell, []
+
+        def read_cell(self, cell):
+            if cell == f"B{ROW}":
+                reads.append(cell)
+                if len(reads) == 2:  # the read just before the write
+                    sheet.rows[ROW]["B"] = "someone-else.example.com"
+            return real_cell(self, cell)
+
+        Sheets.read_cell = read_cell
+        try:
+            drain()
+        finally:
+            Sheets.read_cell = real_cell
     with session_scope() as s:
         j = s.get(Job, job_id)
         assert j.status == "conflict" and j.state["orphan"]["fqdn"] == "acme.huxma.life"

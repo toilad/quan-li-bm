@@ -362,11 +362,16 @@ def _create(ctx: JobContext):
                 raise Conflict(f"{fqdn} trên cPanel dùng thư mục {found.get('basedir')} (không phải {want}) — không ghi đè, B giữ trống")
         ctx.checkpoint(host_created=True)
 
-    ctx.step("Xác minh DNS trỏ đúng IP")
+    # Owner, 2026-10-20: "tạo xong là xong" — like the old app, B1 does not sit waiting for the new record to reach
+    # public DNS (that took ~5 min per row). The A record is confirmed on iNET above; B2 waits for DNS before SSL.
+    ctx.step("Kiểm tra DNS (không chờ)")
     ips = net.resolve_a(fqdn)
-    if nick.ip not in ips:
-        wait_or_fail(st, "dns_wait_since", DNS_WAIT_HOURS, f"DNS {fqdn} chưa trỏ về {nick.ip} (đang: {', '.join(ips) or 'chưa có'})", 300)
-    ctx.log(f"DNS {fqdn} → {nick.ip}", "ok")
+    if nick.ip in ips:
+        ctx.log(f"DNS {fqdn} → {nick.ip}", "ok")
+    elif ips:  # pointing somewhere else is a real problem, not propagation
+        raise Conflict(f"DNS công khai của {fqdn} đang trỏ {', '.join(ips)}, không phải {nick.ip} — không ghi B")
+    else:
+        ctx.log(f"DNS {fqdn} chưa lan truyền (bản ghi A đã có trên iNET) — B2 sẽ chờ DNS trước khi bật SSL", "info")
 
     ctx.step("Xác nhận domain trên hosting")
     cp = CPanel(nick.id, nick.cpanel_host)
