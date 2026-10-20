@@ -286,8 +286,9 @@ def _save(ctx: JobContext):
         if res.get("md5Checksum") != doc.md5:
             raise Permanent(f"md5 trên Drive ({res.get('md5Checksum')}) khác file gốc ({doc.md5}) — dừng, không ghi Sheet")
         doc.drive_file_id, doc.drive_link = res["id"], res.get("webViewLink") or f"https://drive.google.com/file/d/{res['id']}/view"
+        drive.share_anyone(doc.drive_file_id)  # owner: the K link opens for anyone who has it, view only
         ctx.checkpoint(drive_file_id=doc.drive_file_id)
-        ctx.log(f"Drive: đã upload, md5 khớp, ID {doc.drive_file_id}", "ok")
+        ctx.log(f"Drive: đã upload, md5 khớp, ID {doc.drive_file_id} · ai có link đều xem được", "ok")
     else:
         ctx.log("Đã có Drive ID từ lượt trước → không upload lại", "info")
 

@@ -7,6 +7,7 @@
 - Nothing here ever returns a secret to the API layer except get() for the integrations themselves.
 """
 import os
+import re
 import time
 from datetime import datetime, timezone
 
@@ -44,6 +45,8 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "PIXABAY_API_KEY": ("photos", "Khoá API Pixabay", True),
     "TWILIO_ACCOUNT_SID": ("phone", "Twilio Account SID (AC…)", True),
     "TWILIO_AUTH_TOKEN": ("phone", "Twilio Auth Token", True),
+    "DOMAIN_START_ROW": ("server", "Tạo miền (B1) chỉ xét từ dòng này trở xuống — các dòng cũ phía trên bỏ qua dù cột B trống (trống = mọi dòng)", False),
+    "DOMAIN_SKIP_ROWS": ("server", "Tạo miền (B1) bỏ qua các khối dòng này, vd 2762-2864 (nhiều khối cách nhau dấu phẩy)", False),
     "AUTO_SAVE_TO_SHEET": ("server", "Tự ghi Google Sheet khi đọc xong phôi OK / không có ô địa chỉ: true (mặc định) hoặc false", False),
     "MANUAL_REVIEW_MODE": ("server", "Duyệt từng file trước khi ghi Sheet: false (mặc định) hoặc true", False),
     "OCR_PERFORMANCE_MODE": ("server", "Chế độ OCR: NORMAL (mặc định — 1 việc OCR, máy vẫn dùng bình thường) hoặc FAST (2 việc cùng lúc, máy ≥ 8 luồng CPU; khởi động lại worker)", False),
@@ -64,6 +67,10 @@ def credential_problem(name: str, value: str) -> str | None:
     v = value.strip()
     if not v:
         return None
+    if name == "DOMAIN_SKIP_ROWS" and not re.fullmatch(r"\d+(-\d+)?(,\s*\d+(-\d+)?)*", v):
+        return "Nhập khối dòng dạng 2762-2864 (nhiều khối cách nhau dấu phẩy)"
+    if name == "DOMAIN_START_ROW" and not (v.isdigit() and int(v) >= 1):
+        return "Nhập số dòng (vd 720)"
     if name in ("AUTO_SAVE_TO_SHEET", "MANUAL_REVIEW_MODE") and v.lower() not in ("true", "false"):
         return "Chỉ nhận true hoặc false"
     if name == "OCR_PERFORMANCE_MODE" and v.upper() not in ("NORMAL", "FAST"):

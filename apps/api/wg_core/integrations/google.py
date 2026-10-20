@@ -301,6 +301,14 @@ class Drive:
             db.merge(AppSetting(key="drive_folder", value={"id": res["id"], "name": FOLDER_NAME}))
             return res["id"]
 
+    def share_anyone(self, file_id: str) -> None:
+        """Owner, 2026-10-20 (confirmed: anyone with the link, view only): the K link ("Xem phôi") opens for whoever has
+        it — reader only, never listed in search. Idempotent: Drive keeps a single "anyone" permission."""
+        with _client() as c:
+            _check(c.post(f"{DRIVE_FILES}/{file_id}/permissions", headers=_auth(c),
+                          params={"supportsAllDrives": "true", "sendNotificationEmail": "false"},
+                          json={"type": "anyone", "role": "reader", "allowFileDiscovery": False}), "Drive chia sẻ link")
+
     def find_by_md5(self, md5: str) -> dict | None:
         """A file this app already uploaded with the same content (appProperties qlbm_md5) — never upload twice."""
         q = f"appProperties has {{ key='qlbm_md5' and value='{md5}' }} and trashed = false"

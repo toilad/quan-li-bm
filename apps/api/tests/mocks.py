@@ -118,6 +118,15 @@ def install_drive(mock, md5_of=lambda body: None, calls=None, existing: dict | N
 
     mock.post(url__startswith="https://www.googleapis.com/upload/drive/v3/files").mock(side_effect=upload)
 
+    def share(request):  # "anyone with the link: view" on the uploaded file
+        SHARES.append((request.url.path.split("/files/")[1].split("/")[0], json.loads(request.content)))
+        return httpx.Response(200, json={"id": "anyoneWithLink"})
+
+    SHARES.clear()
+    mock.post(url__regex=r"https://www\.googleapis\.com/drive/v3/files/[^/]+/permissions.*").mock(side_effect=share)
+
+
+SHARES: list = []  # (file id, permission body) of the last fake Drive — tests read it
 
 def install_doh(mock, answers: dict[str, list[str]]):
     def doh(request):

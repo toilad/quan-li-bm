@@ -37,6 +37,9 @@ def test_ok_reading_goes_straight_to_the_sheet_full_address_in_f(auto_on):
         f, g, h, i, j = (doc.fields[k]["value"] for k in "FGHIJ")
         assert row[5:10] == [f, g, h, i, j]  # F full address, G city, H state, I ZIP, J number
         assert f.endswith(f"{g}, {h} {i}")
+    from tests.mocks import SHARES
+    # the K link opens for anyone who has it — view only, not listed in search (owner, 2026-10-20)
+    assert SHARES == [("DRIVE123", {"type": "anyone", "role": "reader", "allowFileDiscovery": False})]
 
 
 @needs_fixtures

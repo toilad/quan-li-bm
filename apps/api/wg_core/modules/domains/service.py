@@ -172,13 +172,43 @@ def already_has_domain(index: dict, cells: dict) -> str | None:
     return None
 
 
+def start_row() -> int:
+    """DOMAIN_START_ROW (owner, 2026-10-20: 720): B1 only looks at rows from there down — the older rows are left alone
+    even when their B is empty. 0 / unset = every row."""
+    try:
+        return max(0, int((cfg("DOMAIN_START_ROW") or "0").strip()))
+    except ValueError:
+        return 0
+
+
+def skip_rows() -> list[tuple[int, int]]:
+    """DOMAIN_SKIP_ROWS (owner, 2026-10-20: "2762-2864", an older block lower down): ranges B1 never touches."""
+    out = []
+    for part in (cfg("DOMAIN_SKIP_ROWS") or "").replace(" ", "").split(","):
+        if m := re.fullmatch(r"(\d+)(?:-(\d+))?", part):
+            a, b = int(m.group(1)), int(m.group(2) or m.group(1))
+            out.append((min(a, b), max(a, b)))
+    return out
+
+
+def old_row(row: int) -> str | None:
+    """Why B1 leaves this row alone (None = it may be used)."""
+    if row < start_row():
+        return f"Dòng cũ — chỉ tạo miền từ dòng {start_row()} trở xuống"
+    if any(a <= row <= b for a, b in skip_rows()):
+        return "Dòng nằm trong khối cũ anh đã loại (DOMAIN_SKIP_ROWS)"
+    return None
+
+
 def scan(s: Session) -> dict:
     rows = Sheets().read_rows()
-    has = domains_by_company(rows)
+    has = domains_by_company(rows)  # every row counts here: a company with a domain anywhere is not given another
     out, excluded = [], []
+    first = start_row()
+    before = sum(1 for r in rows if old_row(r.row) and not r.cells["B"].strip() and r.cells["A"].strip())
     for r in rows:
         c = r.cells
-        if c["B"].strip():
+        if c["B"].strip() or old_row(r.row):
             continue
         if not c["A"].strip():
             excluded.append({"row": r.row, "reason": "Thiếu tên doanh nghiệp (A)"})
@@ -195,7 +225,7 @@ def scan(s: Session) -> dict:
                     "J": c["J"], "K": c["K"], "flags": flags, "label": label_for(c)})
     existing_b = sorted({r.cells["B"].strip().lower() for r in rows if r.cells["B"].strip()})
     return {"total": len(rows), "with_b": len(existing_b), "rows": out, "excluded": excluded, "existing_b": existing_b,
-            "tab": Sheets().tab}
+            "tab": Sheets().tab, "start_row": first, "skipped_before_start": before}
 
 
 def validate_items(s: Session, items: list[dict]) -> tuple[list[dict], dict]:
@@ -212,6 +242,8 @@ def validate_items(s: Session, items: list[dict]) -> tuple[list[dict], dict]:
             why = f"Miền gốc {root} chưa được tích chọn"
         else:
             why = root_issue(r, s.get(Nick, r.nick_id))
+        if not why:
+            why = old_row(int(it.get("row") or 0))
         if not why and not LABEL_RX.match(label):
             why = "Tên miền phụ chỉ gồm a–z, 0–9, “-”, tối đa 63 ký tự"
         fqdn = f"{label}.{root}"

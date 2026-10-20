@@ -48,7 +48,9 @@ export function QuickRun({ state, dispatch }: { state: DomainState; dispatch: Do
     <section className="panel p-5">
       <h2 className="text-[16px] font-semibold">Chọn tên miền gốc</h2>
       <p className="mt-0.5 text-[12.5px] text-fg-muted">
-        App tự lấy mọi dòng cột B trống (từ trên xuống) và chia lần lượt cho các miền đã chọn, rồi quay vòng.
+        App tự lấy mọi dòng cột B trống{state.scan?.startRow ? <> <b>từ dòng {state.scan.startRow} trở xuống</b></> : " (từ trên xuống)"} và chia
+        lần lượt cho các miền đã chọn, rồi quay vòng.
+        {!!state.scan?.skippedBefore && <span className="text-fg-subtle"> Bỏ qua {state.scan.skippedBefore} dòng cũ.</span>}
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         {roots.map(({ root, nick }) => {

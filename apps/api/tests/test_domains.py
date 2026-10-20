@@ -200,3 +200,38 @@ def test_b1_never_writes_b_when_cpanel_does_not_list_the_new_subdomain():
         j = s.get(Job, job_id)
         assert j.status == "failed" and "không liệt kê" in j.last_error
     assert sheet.writes == []
+
+
+def test_b1_only_looks_at_rows_from_the_start_row_down(client, monkeypatch):
+    """Owner, 2026-10-20: DOMAIN_START_ROW = 720 — older rows are left alone even with B empty (made-up rows)."""
+    from wg_core.modules.domains import dns_plan
+
+    monkeypatch.setenv("DOMAIN_START_ROW", "9")
+    _tick("huxma.life")
+    sheet = FakeSheet({7: {"A": "Old Co", "E": "oldco"}, 8: {"A": "Old Two", "E": "oldtwo", "B": "oldtwo.huxma.life"},
+                       9: {"A": "New Co", "E": "newco"}, 10: {"A": "Newer Co", "E": "newerco"}})
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        with session_scope() as s:
+            out = domains.scan(s)
+            assert [r["row"] for r in out["rows"]] == [9, 10] and out["start_row"] == 9 and out["skipped_before_start"] == 1
+            # the browser is never trusted: an older row sent anyway is refused by the server
+            p = dns_plan.preview(s, [{"row": 7, "company": "Old Co", "root": "huxma.life", "label": "oldco"}])
+    assert p["rows"][0]["action"] == "refuse" and "dòng 9" in p["rows"][0]["reason"]
+
+
+def test_b1_leaves_the_skipped_block_alone(client, monkeypatch):
+    """Owner, 2026-10-20: DOMAIN_SKIP_ROWS = "2762-2864" (an older block lower down) — made-up rows here."""
+    from wg_core.modules.domains import dns_plan
+
+    monkeypatch.setenv("DOMAIN_START_ROW", "7")
+    monkeypatch.setenv("DOMAIN_SKIP_ROWS", "9-10")
+    _tick("huxma.life")
+    sheet = FakeSheet({7: {"A": "New Co", "E": "newco"}, 9: {"A": "Old Block", "E": "oldblock"},
+                       10: {"A": "Old Block Two", "E": "oldblocktwo"}, 11: {"A": "Newer Co", "E": "newerco"}})
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        with session_scope() as s:
+            assert [r["row"] for r in domains.scan(s)["rows"]] == [7, 11]
+            p = dns_plan.preview(s, [{"row": 9, "company": "Old Block", "root": "huxma.life", "label": "oldblock"}])
+    assert p["rows"][0]["action"] == "refuse" and "khối cũ" in p["rows"][0]["reason"]

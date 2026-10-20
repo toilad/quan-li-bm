@@ -31,7 +31,7 @@ export type DomainState = {
   created: Record<string, string[]>;
   /** Domains already in column B (live Sheet) — a new subdomain must not repeat one. */
   existingB: string[];
-  scan: { total: number; withB: number; excluded: number; tab: string } | null;
+  scan: { total: number; withB: number; excluded: number; tab: string; startRow: number; skippedBefore: number } | null;
   loadError: ApiError | null;
   message: string | null;
 };
@@ -39,7 +39,8 @@ export type DomainState = {
 type ServerRoot = { name: string; dns_host: DnsHost; expires: string | null; apex_on_hosting: boolean; suspended: boolean; selected: boolean; busy: boolean; on_cpanel: boolean | null };
 type ServerNick = { id: string; name: string; ip: string; hosting: string | null; cpanel_host: string; enabled: boolean; roots: ServerRoot[] };
 type ScanRow = { row: number; A: string; D: string; E: string; F: string; G: string; H: string; I: string; J: string; K: string; flags: string[]; label: string };
-type Scan = { total: number; with_b: number; rows: ScanRow[]; excluded: { row: number }[]; existing_b: string[]; tab: string };
+type Scan = { total: number; with_b: number; rows: ScanRow[]; excluded: { row: number }[]; existing_b: string[]; tab: string;
+  start_row?: number; skipped_before_start?: number };
 
 type Action =
   | { type: "server"; nicks?: Nick[]; selected?: string[]; scan?: Scan | null; jobs?: Job[]; error?: ApiError | null; paused?: boolean }
@@ -186,7 +187,8 @@ function reducer(s: DomainState, a: Action): DomainState {
         next.rows = rows;
         if (scan) {
           next.existingB = scan.existing_b;
-          next.scan = { total: scan.total, withB: scan.with_b, excluded: scan.excluded.length, tab: scan.tab };
+          next.scan = { total: scan.total, withB: scan.with_b, excluded: scan.excluded.length, tab: scan.tab,
+            startRow: scan.start_row ?? 0, skippedBefore: scan.skipped_before_start ?? 0 };
         }
         next.running = rows.some((r) => r.status === "queued" || r.status === "running");
         next.lastSync = new Date().toLocaleTimeString("vi-VN", { hour12: false });
