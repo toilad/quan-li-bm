@@ -35,7 +35,7 @@ def test_annual_report_principal_office():
            "PRINCIPAL OFFICE Phone: 3605550100 Email: " + FOOT)
     assert f["A"] == "NORTH FORK CIDER LLC" and f["J"] == "600111222" and f["D"] == "3605550100"
     assert f["F"] == "100 MAIN ST NE SUITE B, LACEY, WA 98516" and (f["G"], f["H"], f["I"]) == ("LACEY", "WA", "98516")
-    assert f["E"] == "northforkciderllc"
+    assert f["E"] == "northforkc"  # first 10 characters, like the old app
 
 
 def test_certificate_principal_office_in_another_state_with_a_floor_and_no_footer_in_the_address():

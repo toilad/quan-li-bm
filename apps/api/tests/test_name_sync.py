@@ -152,7 +152,16 @@ def test_a_california_llc1_without_address_is_matched_under_ca():
 def test_correcting_a_regenerates_the_short_name(client):
     doc_id = _ocr_doc()
     f = client.patch(f"/api/pdf/{doc_id}", json={"fields": {"A": "JDS Fixture Co., LLC"}}).json()["fields"]
-    assert f["E"]["value"] == "jdsfixturecollc" and f["E"]["source"] == "auto"
-    client.patch(f"/api/pdf/{doc_id}", json={"fields": {"E": "jdsfixture"}})
+    assert f["E"]["value"] == "jdsfixture" and f["E"]["source"] == "auto"  # first 10 characters, like the old app
+    client.patch(f"/api/pdf/{doc_id}", json={"fields": {"E": "jdsfix"}})
     f = client.patch(f"/api/pdf/{doc_id}", json={"fields": {"A": "JDS Fixture Co, LLC"}}).json()["fields"]
-    assert f["E"]["value"] == "jdsfixture"  # typed by the owner: kept
+    assert f["E"]["value"] == "jdsfix"  # typed by the owner: kept
+
+
+def test_short_name_is_the_first_ten_characters_like_the_old_app():
+    from wg_core.modules.pdf.fields import short_name
+
+    assert short_name("MAC ASSISTANCE LTDA") == "macassista"
+    assert short_name("J. C. RELOJOARIA LTDA") == "jcrelojoar"
+    assert short_name("Hollybrook House Limited Partnership") == "hollybrook"
+    assert short_name("Açaí Ltda") == "acailtda"  # shorter names stay whole, accents folded

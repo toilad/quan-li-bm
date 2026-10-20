@@ -21,7 +21,8 @@ OPS = {"dns": "Thêm bản ghi A (iNET)", "host": "Tạo miền trên cPanel", "
        "phone": "Mua số điện thoại (có phí)"}
 DEFAULT = {"enabled": False, "trial_fqdn": "", "ops": [], "trial_passed": False, "trial_job": None,
            "web_trial_passed": False, "web_trial_job": None, "changed_at": None, "locked_reason": None,
-           "also": []}  # other names the owner approved for this opening (e.g. AutoSSL on both trial domains)
+           "also": [],  # other names the owner approved for this opening (e.g. AutoSSL on both trial domains)
+           "always": []}  # ops the owner keeps open for good (2026-10-20: dns + host = B1) — never relocked
 
 
 def load(s=None) -> dict:
@@ -40,6 +41,8 @@ def load(s=None) -> dict:
 def why_not(sw: dict, op: str, fqdn: str) -> str | None:
     """None = this write is allowed now."""
     name = OPS[op]
+    if op in (sw.get("always") or []):  # owner: B1 always open, no locking (still only for the rows B1 accepts)
+        return None
     if not sw["enabled"]:
         return f"Ghi thật đang KHOÁ — chưa {name.lower()} cho {fqdn}. Anh mở ở Cài đặt › Ghi thật khi duyệt chạy thử"
     if op not in (sw.get("ops") or []):

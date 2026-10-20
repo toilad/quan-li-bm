@@ -13,9 +13,13 @@ def strip_accents(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
 
 
+E_LENGTH = 10  # owner, 2026-10-20: like the old app — rows 600–720 all carry the first 10 characters
+
+
 def short_name(a: str) -> str:
-    """Legacy column E: lowercase, keep the legal suffix, drop accents and symbols."""
-    return re.sub(r"[^a-z0-9]", "", strip_accents(a).lower())
+    """Column E as the old app wrote it: the first 10 letters/digits of the name, lowercase, accents dropped
+    (MAC ASSISTANCE LTDA → macassista). It is also the subdomain label B1 uses (macassista.yhawt.press)."""
+    return re.sub(r"[^a-z0-9]", "", strip_accents(a).lower())[:E_LENGTH]
 
 
 def field(value: str, source: str, note: str | None = None) -> dict:

@@ -235,3 +235,22 @@ def test_b1_leaves_the_skipped_block_alone(client, monkeypatch):
             assert [r["row"] for r in domains.scan(s)["rows"]] == [7, 11]
             p = dns_plan.preview(s, [{"row": 9, "company": "Old Block", "root": "huxma.life", "label": "oldblock"}])
     assert p["rows"][0]["action"] == "refuse" and "khối cũ" in p["rows"][0]["reason"]
+
+
+def test_b1_kept_open_for_good_survives_relocks_but_b2_stays_locked(client):
+    """Owner, 2026-10-20: "luôn luôn để không phải khoá" for B1 (dns + host); B2 (upload, ssl) untouched."""
+    import pytest
+
+    from wg_core import write_guard
+    from wg_core.modules.domains import dns_plan
+
+    with session_scope() as s:
+        sw = dns_plan.set_switch(s, always=["dns", "host"])
+        assert dns_plan.gate(sw, ["a.huxma.life", "b.yhawt.press"]) is None and dns_plan.mode(sw) == "batch"
+        with pytest.raises(ValueError):
+            dns_plan.set_switch(s, always=["upload"])
+    with session_scope() as s:
+        write_guard.relock(s, "test")  # what a failure / a restart does
+    sw = write_guard.load()
+    assert write_guard.why_not(sw, "dns", "x.huxma.life") is None and write_guard.why_not(sw, "host", "x.huxma.life") is None
+    assert write_guard.why_not(sw, "upload", "x.huxma.life") and write_guard.why_not(sw, "ssl", "x.huxma.life")

@@ -27,14 +27,20 @@ def get_switch(s: Session) -> dict:
     return write_guard.load(s)
 
 
+def always_b1(sw: dict) -> bool:
+    return {"dns", "host"} <= set(sw.get("always") or [])
+
+
 def mode(sw: dict) -> str:
+    if always_b1(sw):
+        return "batch"
     if not sw["enabled"]:
         return "off"
     return "batch" if sw["trial_passed"] else "trial"
 
 
 def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None = None, ops: list[str] | None = None,
-               also: list[str] | None = None) -> dict:
+               also: list[str] | None = None, always: list[str] | None = None) -> dict:
     from .service import LABEL_RX
 
     sw = get_switch(s)
@@ -56,6 +62,10 @@ def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None =
         if bad := [n for n in also if n.strip().lower() not in made]:
             raise ValueError(f"Chỉ thêm được tên do app đã tạo: {', '.join(bad)}")
         sw["also"] = sorted({n.strip().lower() for n in also})
+    if always is not None:  # only B1's own writes can stay open for good
+        if bad := sorted(set(always) - {"dns", "host"}):
+            raise ValueError(f"Chỉ để mở thường trực được thao tác B1 (dns, host), không phải: {', '.join(bad)}")
+        sw["always"] = [o for o in ("dns", "host") if o in always]
     if ops is not None:
         bad = sorted(set(ops) - set(OPS))
         if bad:
@@ -73,6 +83,8 @@ def set_switch(s: Session, enabled: bool | None = None, trial_fqdn: str | None =
 
 def gate(sw: dict, fqdns: list[str]) -> str | None:
     """Why a run with these subdomains may not write DNS now (None = allowed)."""
+    if always_b1(sw):  # owner, 2026-10-20: B1 always open
+        return None
     m = mode(sw)
     if m == "off":
         return "Ghi thật đang KHOÁ — anh mở ở Cài đặt › Ghi thật khi duyệt chạy thử"

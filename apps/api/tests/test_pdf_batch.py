@@ -27,7 +27,7 @@ def test_one_row_per_pdf_appended_duplicates_skipped_review_keeps_candidates(tmp
     assert head[:10] == ["A · Tên doanh nghiệp", "B", "C", "D · Điện thoại", "E · Tên rút gọn", "F · FULL ADDRESS", "G · CITY",
                          "H · STATE", "I · ZIP", "J · Mã số"]  # the owner's layout: F full, G city, H state, I zip, J number
     a = [c.value for c in ws[2]]
-    assert a[0] == "Sample Holdings, LLC" and a[4] == "sampleholdingsllc" and a[1] == a[2] is None
+    assert a[0] == "Sample Holdings, LLC" and a[4] == "samplehold" and a[1] == a[2] is None
     assert (a[5], a[6], a[7], a[8]) == ("1 Sample St, Los Angeles, CA 90001", "Los Angeles", "CA", "90001")
     assert a[9] == "201099900001" and isinstance(a[9], str) and ws["J2"].number_format == "@" and ws["I2"].number_format == "@"
     assert a[10] == "a - Copy.pdf" and a[11] == "OK"

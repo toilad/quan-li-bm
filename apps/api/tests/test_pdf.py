@@ -12,7 +12,7 @@ from wg_core.db import session_scope
 from wg_core.models import Job, PdfDocument, SheetWrite
 from wg_core.modules.pdf import service as pdf
 from wg_core.modules.pdf.extract import detect, extract_br, read_pdf
-from wg_core.modules.pdf.fields import cnpj_valid, validate
+from wg_core.modules.pdf.fields import cnpj_valid, short_name, validate
 
 # Real sample filings live only in test-fixtures/ (gitignored). They are sorted by what they are, not by file name,
 # and the expected values come from test-fixtures/expected.local.json (also gitignored), keyed by md5.
@@ -55,8 +55,10 @@ def test_brazil_exact_values_against_checked_expectations():
         if not exp or exp["doc_type"] != "br":
             continue
         f, extra = extract_br(read_pdf(data))
-        for k in "ADEFGHIJ":
+        for k in "ADFGHIJ":
             assert f[k]["value"] == exp[k], (k, f[k]["value"], exp[k])
+        # E: the old app's rule (owner, 2026-10-20) — first 10 characters of A, not the older free-form E in the key
+        assert f["E"]["value"] == short_name(exp["A"])
         assert extra["cnae_principal"].startswith(exp["cnae_principal_code"])
         checked += 1
     assert checked == len(BR)
@@ -255,7 +257,7 @@ def test_scan_is_classified_and_read_by_ai_then_needs_owner_check(monkeypatch):
         assert d.fields["A"] == {"value": "EXAMPLE SUPPLY CO., LLC", "source": "ai", "check": {"other": "Example Supply Co., LLC", "match": True}}
         assert d.fields["J"]["value"] == "202400000000" and d.fields["J"]["check"]["match"] is True  # same number on page 2
         assert d.fields["H"]["value"] == "CA"  # normalised, noted
-        assert d.fields["E"]["value"] == "examplesupplycollc"
+        assert d.fields["E"]["value"] == "examplesup"
         # scanned → A/J read by AI → cannot be saved until the owner ticks "đã đối chiếu"
         assert any("đối chiếu" in r for r in pdf.save_check(d, confirm_missing=True, critical_checked=False))
         assert not pdf.save_check(d, confirm_missing=True, critical_checked=True)
