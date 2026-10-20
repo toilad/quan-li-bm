@@ -1,27 +1,15 @@
 "use client";
 
-import { useState } from "react";
 import clsx from "clsx";
-import { Zap, Play, Pause, RotateCcw, ListChecks, Shuffle, Eye, Layers } from "lucide-react";
+import { Zap, Play, Pause, RotateCcw, Shuffle, Eye, Layers } from "lucide-react";
 import { ROW_STATUS, SimTag } from "./ui";
-import { previewIssue, usablePool, type DomainDispatch, type DomainState, type Strategy } from "./use-domain-queue";
+import { previewIssue, usablePool, type DomainDispatch, type DomainState } from "./use-domain-queue";
 import type { RowStatus } from "@/lib/domain-mock";
 
 const ORDER: RowStatus[] = ["queued", "running", "done", "failed", "conflict", "idle"];
 
-const STRATEGIES: { key: Strategy; label: string }[] = [
-  { key: "roundRobin", label: "Xoay vòng các miền đã chọn (đan xen nick)" },
-  { key: "weighted", label: "Theo tỷ trọng nick, xoay vòng miền trong nick" },
-  { key: "single", label: "Dồn vào một miền" },
-];
-
 export function RunPanel({ state, dispatch, onPreview }: { state: DomainState; dispatch: DomainDispatch; onPreview: () => void }) {
-  const [n, setN] = useState(10);
-  const [skipFlagged, setSkipFlagged] = useState(true);
-  const [strategy, setStrategy] = useState<Strategy>("roundRobin");
   const pool = usablePool(state);
-  const [root, setRoot] = useState("");
-  const singleRoot = pool.some((p) => p.root.name === root) ? root : pool[0]?.root.name ?? "";
   const { rows } = state;
   const count = (s: RowStatus) => rows.filter((r) => r.status === s).length;
   const inRun = rows.filter((r) => r.status !== "idle");
@@ -85,63 +73,20 @@ export function RunPanel({ state, dispatch, onPreview }: { state: DomainState; d
           <span className="text-[11px] text-fg-subtle">dòng · khác hạn mức từng nick/ngày</span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <ListChecks className="size-4 text-fg-subtle" />
-          <span className="text-fg-muted">Chọn nhanh</span>
-          <input
-            type="number"
-            min={1}
-            max={state.batchLimit}
-            value={n}
-            onChange={(e) => setN(Math.max(1, Math.min(state.batchLimit, Number(e.target.value) || 1)))}
-            className="h-8 w-16 rounded-lg border border-line bg-ink-850 px-2 text-center outline-none focus:border-brand/60"
-            aria-label="Số dòng muốn chọn"
-          />
-          <button
-            onClick={() => dispatch({ type: "checkFirst", n, skipFlagged })}
-            className="rounded-lg bg-white/[0.07] px-2.5 py-1 font-medium hover:bg-white/[0.11]"
-          >
-            Chọn {n} dòng
-          </button>
-          <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[11.5px] text-fg-muted">
-            <input type="checkbox" checked={skipFlagged} onChange={(e) => setSkipFlagged(e.target.checked)} className="accent-[#4f7cff]" />
-            Bỏ qua dòng cần kiểm tra
-          </label>
+        <div className="flex items-start gap-2 rounded-lg border border-line bg-ink-850/50 px-3 py-2">
+          <Shuffle className="mt-0.5 size-4 shrink-0 text-fg-subtle" />
+          <div className="text-[12px] leading-relaxed">
+            {pool.length ? (
+              <>
+                <b>{checked.length}</b> dòng cột B trống (từ trên xuống) · chia lần lượt cho{" "}
+                <span className="font-mono">{[...pool].map((p) => p.root.name).sort().join(" → ")}</span>, rồi quay vòng.
+                {checked.length > state.batchLimit && <span className="text-fg-subtle"> Lượt này chạy {state.batchLimit} dòng đầu.</span>}
+              </>
+            ) : (
+              <span className="text-amber-200">Bấm chọn miền gốc ở bảng “Miền gốc” bên dưới — app tự lấy các dòng cột B trống.</span>
+            )}
+          </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Shuffle className="size-4 text-fg-subtle" />
-          <select
-            value={strategy}
-            onChange={(e) => setStrategy(e.target.value as Strategy)}
-            className="h-8 flex-1 rounded-lg border border-line bg-ink-850 px-2 outline-none focus:border-brand/60"
-            aria-label="Cách phân bổ nick"
-          >
-            {STRATEGIES.map((s) => (
-              <option key={s.key} value={s.key}>{s.label}</option>
-            ))}
-          </select>
-          {strategy === "single" && (
-            <select
-              value={singleRoot}
-              onChange={(e) => setRoot(e.target.value)}
-              className="h-8 max-w-[180px] rounded-lg border border-line bg-ink-850 px-2 font-mono text-[12px] outline-none focus:border-brand/60"
-              aria-label="Miền gốc nhận"
-            >
-              {pool.map((p) => (
-                <option key={p.root.name} value={p.root.name}>{p.root.name} · {p.nick.name}</option>
-              ))}
-            </select>
-          )}
-          <button
-            onClick={() => dispatch({ type: "strategy", strategy, root: singleRoot })}
-            disabled={!checked.length || !pool.length}
-            className="rounded-lg border border-line px-2.5 py-1 font-medium text-fg-muted hover:border-line-strong hover:text-fg disabled:opacity-40"
-          >
-            Phân bổ {checked.length} dòng
-          </button>
-        </div>
-        <p className="-mt-1 text-[11px] text-fg-subtle">Chỉ phân bổ vào {pool.length} miền gốc đã tích chọn và dùng được (nick bật, đủ quyền API, còn hạn mức).</p>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
@@ -150,7 +95,7 @@ export function RunPanel({ state, dispatch, onPreview }: { state: DomainState; d
           disabled={!checked.length || !pool.length}
           className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-brand to-brand-2 px-3 py-2.5 text-[13px] font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Eye className="size-4" /> Xem trước & chạy {checked.length} dòng
+          <Eye className="size-4" /> Xem trước & chạy {Math.min(startable, state.batchLimit)} dòng
           {checked.length > startable && <span className="font-normal opacity-80">· {checked.length - startable} bị chặn</span>}
         </button>
         <button

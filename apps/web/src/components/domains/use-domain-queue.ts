@@ -75,6 +75,23 @@ export const fqdnOf = (r: DomainRow, s: Pick<DomainState, "rule">) => `${labelOf
 export const nickOfRow = (r: DomainRow, nicks: Nick[]): Nick | null => findRoot(r.root, nicks)?.nick ?? null;
 export const usablePool = (s: Pick<DomainState, "nicks" | "selectedRoots">): RootRef[] => rootPool(s.nicks, s.selectedRoots);
 
+/** Owner, 2026-10-20: he only clicks the root domains. Every row whose column B is empty goes, top to bottom; the
+ * clicked roots are taken in name order, in turn, round and round. A row blocked for another reason (no valid label,
+ * a duplicate) is left out and does not use up a turn. Planning only — the preview still checks everything. */
+export function autoPlan(s: DomainState): DomainState {
+  const pool = usablePool(s).filter((p) => !quotaFull(p.nick)).sort((x, y) => x.root.name.localeCompare(y.root.name));
+  const plan = new Map<number, string>();
+  let k = 0;
+  for (const r of [...s.rows].sort((x, y) => x.row - y.row)) {
+    if (!pool.length || !editable(r) || r.jobId || r.status !== "idle") continue;
+    const root = pool[k % pool.length].root.name;
+    if (previewIssue({ ...r, root }, s)) continue;
+    plan.set(r.row, root);
+    k++;
+  }
+  return { ...s, rows: s.rows.map((r) => (r.status === "idle" && !r.jobId ? { ...r, root: plan.get(r.row) ?? r.root, checked: plan.has(r.row) } : r)) };
+}
+
 export const rootBusy = (root: string, rows: DomainRow[]) =>
   rows.some((r) => r.root === root && (r.status === "queued" || r.status === "running" || (r.status === "failed" && r.dnsCreated)));
 
@@ -165,7 +182,7 @@ function reducer(s: DomainState, a: Action): DomainState {
           const company = companyOf({ row, A: String(j.payload.company ?? "") });
           rows.push(fromJob({ row, company, flags: [], root: "", status: "idle", step: 0, progress: 0, dnsCreated: false, hostCreated: false, log: [], checked: false }, j));
         }
-        rows.sort((x, y) => x.flags.length - y.flags.length || x.row - y.row);
+        rows.sort((x, y) => x.row - y.row); // top to bottom, the order the rows are done in
         next.rows = rows;
         if (scan) {
           next.existingB = scan.existing_b;
@@ -174,11 +191,7 @@ function reducer(s: DomainState, a: Action): DomainState {
         next.running = rows.some((r) => r.status === "queued" || r.status === "running");
         next.lastSync = new Date().toLocaleTimeString("vi-VN", { hour12: false });
       }
-      // Rows without a usable root get the ticked roots in turn (planning only).
-      const pool = usablePool(next);
-      let k = 0;
-      next.rows = next.rows.map((r) => (editable(r) && !r.jobId && !next.selectedRoots.includes(r.root) && pool.length ? { ...r, root: pool[k++ % pool.length].root.name } : r));
-      return next;
+      return autoPlan(next);
     }
     case "select":
       return { ...s, selected: a.row };
