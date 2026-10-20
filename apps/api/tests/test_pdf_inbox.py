@@ -1,5 +1,5 @@
-"""PDF inbox folder (owner, 2026-10-20): PDFs dropped in Desktop\\Ảnh Phôi are read like an upload; a file is deleted
-for good only once its row is on the Sheet (Drive md5 checked) or it is a duplicate. Temp folder, fake Sheet / Drive."""
+"""PDF inbox folder (owner, 2026-10-20): PDFs dropped in the Desktop folder "Ảnh Phôi" are read like an upload and deleted for good
+as soon as the app holds its own copy (md5 checked). Temp folder, fake Sheet / Drive."""
 import hashlib
 
 import respx
@@ -10,16 +10,19 @@ from tests.test_pdf import BR, needs_fixtures
 from wg_core.db import session_scope
 from wg_core.models import PdfDocument
 from wg_core.modules.pdf import inbox
+from wg_core.modules.pdf.service import storage_path
 
 
 def pdf(tag: str) -> bytes:
     return f"%PDF-1.4 {tag}\n%%EOF\n".encode()
 
 
-def test_new_files_read_finished_ones_deleted_the_rest_kept(tmp_path, monkeypatch):
+def test_taken_into_the_app_then_deleted_at_once_review_too(tmp_path, monkeypatch):
+    """Owner: keep the disk small — a PDF is deleted from the folder as soon as the app holds its own copy, even one
+    still to review (the app reads, reviews and uploads to Drive from that copy)."""
     monkeypatch.setenv("PDF_INBOX_DIR", str(tmp_path))
     monkeypatch.setattr(inbox, "_sizes", {})
-    files = {"saved.pdf": pdf("saved"), "saved - Copy.PDF": pdf("saved"), "dup.pdf": pdf("dup"), "review.pdf": pdf("review"),
+    files = {"a.pdf": pdf("a"), "a - Copy.PDF": pdf("a"), "review.pdf": pdf("review"),
              "half.pdf": b"%PDF-1.4 still copying", "notes.pdf": b"not a pdf"}
     for name, data in files.items():
         (tmp_path / name).write_bytes(data)
@@ -29,6 +32,8 @@ def test_new_files_read_finished_ones_deleted_the_rest_kept(tmp_path, monkeypatc
     def fake_ingest(s, name, data):
         doc = PdfDocument(md5=hashlib.md5(data).hexdigest(), original_name=name, size=len(data), fields={}, extra={},
                           industry={}, status="review")
+        if name != "review.pdf":
+            storage_path(doc.md5).write_bytes(data)  # review.pdf: the app copy is missing → the file must stay
         s.add(doc)
         s.flush()
         read.append(name)
@@ -38,28 +43,24 @@ def test_new_files_read_finished_ones_deleted_the_rest_kept(tmp_path, monkeypatc
     with session_scope() as s:
         assert inbox.scan(s, log=lambda m: None)["read"] == 0  # first look: sizes only (a copy may still be running)
         r = inbox.scan(s, log=lambda m: None)
-    assert r["read"] == 3 and r["deleted"] == 0 and sorted(read) == ["dup.pdf", "review.pdf", "saved - Copy.PDF"]
-    with session_scope() as s:
-        for d in s.query(PdfDocument).filter(PdfDocument.original_name.in_(read)):
-            if d.original_name.startswith("saved"):
-                d.status, d.drive_file_id, d.sheet_row = "saved", "drive-1", 730
-            elif d.original_name == "dup.pdf":
-                d.status, d.extra = "failed", {"duplicate": True}
-    with session_scope() as s:
-        r = inbox.scan(s, log=lambda m: None)
         st = inbox.status(s)
-    left = sorted(f.name for f in tmp_path.iterdir())
-    assert r["deleted"] == 3 and left == ["half.pdf", "keep.txt", "notes.pdf", "review.pdf"]  # both copies + the duplicate
-    assert st["files"] == 3 and st["review"] == 1 and st["pending"] == 2
-
-
-def test_failed_save_that_is_not_a_duplicate_keeps_the_file(tmp_path, monkeypatch):
-    monkeypatch.setenv("PDF_INBOX_DIR", str(tmp_path))
-    data = pdf("drive md5 mismatch")
-    (tmp_path / "x.pdf").write_bytes(data)
+    assert r["read"] == 2 and r["deleted"] == 2 and sorted(read) == ["a - Copy.PDF", "review.pdf"]  # same bytes read once
+    assert sorted(f.name for f in tmp_path.iterdir()) == ["half.pdf", "keep.txt", "notes.pdf", "review.pdf"]
+    assert st["files"] == 3 and st["bad"] == 1 and st["pending"] == 2
+    storage_path(hashlib.md5(pdf("review")).hexdigest()).write_bytes(pdf("review"))
     with session_scope() as s:
-        s.add(PdfDocument(md5=hashlib.md5(data).hexdigest(), original_name="x.pdf", size=len(data), fields={}, extra={},
-                          industry={}, status="failed", error="md5 trên Drive khác file gốc"))
+        assert inbox.scan(s, log=lambda m: None)["deleted"] == 1  # app copy now there → deleted, nothing read twice
+    assert len(read) == 2 and not (tmp_path / "review.pdf").exists()
+
+
+def test_app_copy_must_match_before_the_folder_file_goes(tmp_path, monkeypatch):
+    monkeypatch.setenv("PDF_INBOX_DIR", str(tmp_path))
+    data = pdf("x")
+    (tmp_path / "x.pdf").write_bytes(data)
+    md5 = hashlib.md5(data).hexdigest()
+    storage_path(md5).write_bytes(b"%PDF damaged copy")
+    with session_scope() as s:
+        s.add(PdfDocument(md5=md5, original_name="x.pdf", size=len(data), fields={}, extra={}, industry={}, status="review"))
     with session_scope() as s:
         inbox.scan(s, log=lambda m: None)
         assert inbox.scan(s, log=lambda m: None)["deleted"] == 0
@@ -81,8 +82,6 @@ def test_real_flow_folder_to_sheet_then_file_deleted(tmp_path, monkeypatch):
         with session_scope() as s:
             inbox.scan(s, log=lambda m: None)
             assert inbox.scan(s, log=lambda m: None)["read"] == 1
-        assert (tmp_path / "phoi.pdf").exists()  # not deleted before the Sheet write
+        assert not (tmp_path / "phoi.pdf").exists()  # taken in → deleted at once; the app copy goes on to the Sheet
         drain()
-        with session_scope() as s:
-            assert inbox.scan(s, log=lambda m: None)["deleted"] == 1
-    assert not (tmp_path / "phoi.pdf").exists() and len(sheet.appends) == 1
+    assert len(sheet.appends) == 1

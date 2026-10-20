@@ -1,7 +1,8 @@
 """PDF inbox folder (owner, 2026-10-20): drop PDFs into one folder (Desktop\\Ảnh Phôi) and the worker reads each new
-one exactly like an upload (read → auto-save to the Sheet). Once a file is done — its row is on the Sheet with the
-Drive copy's md5 checked, or the Sheet / app already had it (duplicate) — the file is deleted from the folder for good:
-the original stays on Drive (column K). A file still to review, unknown or not read stays in the folder."""
+one exactly like an upload (read → auto-save to the Sheet). The owner wants the disk kept small: as soon as the app
+holds its own copy of the file (data/pdf, md5 checked) the folder file is deleted for good — the app reads, reviews
+and uploads to Drive (column K) from its copy, so a file still to review is not lost. Only a file the app could not
+take (still being copied, not a PDF) stays in the folder."""
 import hashlib
 import os
 from pathlib import Path
@@ -11,10 +12,9 @@ from sqlalchemy.orm import Session
 
 from ...runtime_config import get as cfg
 from ...models import PdfDocument
-from .service import ingest
+from .service import ingest, storage_path
 
 _sizes: dict[str, int] = {}  # size seen at the last pass: a file still being copied is left for the next one
-_md5s: dict[tuple, str] = {}  # (path, size, mtime) → md5, so the status line does not re-read every file
 
 
 def inbox_dir() -> Path | None:
@@ -29,18 +29,21 @@ def pdf_files(d: Path) -> list[Path]:
 
 
 def done_reason(doc: PdfDocument | None) -> str:
-    """Why the folder copy is no longer needed ("" = keep it)."""
+    """Why the folder copy is no longer needed ("" = keep it): the app holds the same bytes."""
     if not doc:
         return ""
-    if doc.status == "saved" and doc.drive_file_id and doc.sheet_row:
-        return f"đã ghi Sheet dòng {doc.sheet_row}, bản gốc trên Drive"
+    copy = storage_path(doc.md5)
+    if not (copy.exists() and hashlib.md5(copy.read_bytes()).hexdigest() == doc.md5):
+        return ""
+    if doc.status == "saved" and doc.sheet_row:
+        return f"đã ghi Sheet dòng {doc.sheet_row}"
     if doc.status == "failed" and (doc.extra or {}).get("duplicate"):
         return "trùng — Sheet / app đã có"
-    return ""
+    return "đã nhận vào app"
 
 
 def scan(s: Session, log=print) -> dict:
-    """One pass over the folder: read the new PDFs, delete the finished ones. Never raises for a single file."""
+    """One pass over the folder: take the new PDFs into the app, delete them. Never raises for a single file."""
     d = inbox_dir()
     out = {"dir": str(d) if d else "", "read": 0, "deleted": 0, "kept": 0}
     if not d or not d.is_dir():
@@ -79,25 +82,17 @@ def scan(s: Session, log=print) -> dict:
 
 
 def status(s: Session) -> dict:
-    """What is still in the folder, for the PDF page: waiting to be read / saved, to review, not readable."""
+    """For the PDF page: files still in the folder — about to be taken in, or ones the app cannot take (not a PDF)."""
     d = inbox_dir()
-    res = {"dir": str(d) if d else "", "on": bool(d and d.is_dir()), "files": 0, "pending": 0, "review": 0, "other": 0}
+    res = {"dir": str(d) if d else "", "on": bool(d and d.is_dir()), "files": 0, "pending": 0, "bad": 0}
     if not res["on"]:
         return res
     for f in pdf_files(d):
         res["files"] += 1
         try:
-            st = f.stat()
-            k = (str(f), st.st_size, st.st_mtime_ns)
-            md5 = _md5s.get(k) or _md5s.setdefault(k, hashlib.md5(f.read_bytes()).hexdigest())
+            with open(f, "rb") as fh:
+                head = fh.read(5)
         except OSError:
-            res["pending"] += 1
-            continue
-        doc = s.scalar(select(PdfDocument).where(PdfDocument.md5 == md5))
-        if not doc or doc.status in ("uploaded", "needs_ai", "queued") or done_reason(doc):
-            res["pending"] += 1
-        elif doc.status == "review" and (doc.extra or {}).get("status") not in ("UNKNOWN_DOCUMENT", "OCR_FAILED"):
-            res["review"] += 1
-        else:
-            res["other"] += 1
+            head = b"%PDF"  # locked: still being copied
+        res["pending" if head.startswith(b"%PDF") else "bad"] += 1
     return res

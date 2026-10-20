@@ -12,7 +12,7 @@ import { api } from "@/lib/api";
 type OcrStatus = { total: number; done: number; running: number; queued: number; mode: string; workers: number;
   threads: number; cache_hit: number; cache_miss: number; cache: { files: number; mb: number; limit_mb: number };
   auto_save: boolean;
-  inbox: { dir: string; on: boolean; files: number; pending: number; review: number; other: number };
+  inbox: { dir: string; on: boolean; files: number; pending: number; bad: number };
   batch: { total: number; processed: number; saved: number; review_required: number; unknown: number; ocr_failed: number; not_written: number } };
 
 /** Scan readings of the last 24 h on this machine: OCR file x/N, the CPU mode, pages from the cache / read anew. */
@@ -34,11 +34,10 @@ function OcrLine() {
     <>
     {st.inbox.on && (
       <p className="mt-3 text-[12.5px] text-fg-muted">
-        Thư mục phôi <span className="font-mono text-fg">{st.inbox.dir}</span>: thả PDF vào là app tự đọc → ghi Sheet → xoá hẳn file
-        (bản gốc ở Drive, cột K).{" "}
-        {st.inbox.files ? <>Còn <b className="text-fg">{st.inbox.files}</b> file: {st.inbox.pending} đang xử lý
-          {st.inbox.review > 0 && <span className="text-amber-300"> · {st.inbox.review} cần duyệt (giữ lại)</span>}
-          {st.inbox.other > 0 && <span className="text-rose-300"> · {st.inbox.other} không đọc / không ghi được (giữ lại)</span>}</> : "Thư mục trống."}
+        Thư mục phôi <span className="font-mono text-fg">{st.inbox.dir}</span>: thả PDF vào là app nhận phôi rồi xoá hẳn file khỏi thư mục
+        (app giữ bản sao để đọc, duyệt, ghi Sheet + Drive).{" "}
+        {st.inbox.files ? <>Còn <b className="text-fg">{st.inbox.files}</b> file: {st.inbox.pending} đang nhận
+          {st.inbox.bad > 0 && <span className="text-rose-300"> · {st.inbox.bad} không phải PDF (để nguyên)</span>}</> : "Thư mục trống."}
       </p>
     )}
     {st.batch.total > 0 && (

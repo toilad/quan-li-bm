@@ -50,7 +50,7 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "AUTO_SAVE_TO_SHEET": ("server", "Tự ghi Google Sheet khi đọc xong phôi OK / không có ô địa chỉ: true (mặc định) hoặc false", False),
     "MANUAL_REVIEW_MODE": ("server", "Duyệt từng file trước khi ghi Sheet: false (mặc định) hoặc true", False),
     "OCR_PERFORMANCE_MODE": ("server", "Chế độ OCR: NORMAL (mặc định — 1 việc OCR, máy vẫn dùng bình thường) hoặc FAST (2 việc cùng lúc, máy ≥ 8 luồng CPU; khởi động lại worker)", False),
-    "PDF_INBOX_DIR": ("server", "Thư mục phôi: thả PDF vào là app tự đọc, ghi Sheet xong thì xoá hẳn file (mặc định Desktop\\Ảnh Phôi; off = tắt)", False),
+    "PDF_INBOX_DIR": ("server", "Thư mục phôi: thả PDF vào là app nhận vào app rồi xoá hẳn file ngay (app giữ bản sao để đọc, duyệt, lên Drive) (mặc định Desktop\\Ảnh Phôi; off = tắt)", False),
     "OCR_CACHE_LIMIT_MB": ("server", "Giới hạn cache OCR (MB, mặc định 500) — chỉ lưu chữ + vị trí chữ đọc được, không lưu ảnh", False),
     "PUBLIC_API_URL": ("server", "Địa chỉ API công khai (cho OAuth redirect)", False),
     "PUBLIC_WEB_URL": ("server", "Địa chỉ giao diện", False),
