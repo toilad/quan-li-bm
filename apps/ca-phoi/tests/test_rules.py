@@ -8,7 +8,7 @@ from ca_phoi.jobs import random_batch
 from ca_phoi.store import DONE, Store
 
 
-def row(title, date="04/28/2004", status="Active", etype=rules.DOMESTIC_LLC):
+def row(title, date="04/28/2009", status="Active", etype=rules.DOMESTIC_LLC):
     return {"TITLE": [title], "FILING_DATE": date, "STATUS": status, "ENTITY_TYPE": etype,
             "ID": 1, "RECORD_NUM": "rn"}
 
@@ -23,25 +23,30 @@ class FilterTest(unittest.TestCase):
         return rules.reject_reason(rules.parse_row(r), **kw) is None
 
     def test_parse(self):
-        t = rules.parse_row(row("SNC MANAGEMENT & HOLDINGS, LLC (200412110197)"))
+        t = rules.parse_row(row("SNC MANAGEMENT & HOLDINGS, LLC (200412110197)", date="04/28/2004"))
         self.assertEqual((t.entity_name, t.entity_number, t.date),
                          ("SNC MANAGEMENT & HOLDINGS, LLC", "200412110197", "2004-04-28"))
 
     def test_rules(self):
-        self.assertTrue(self.ok(row("SNC MANAGEMENT & HOLDINGS, LLC (200412110197)")))
+        self.assertTrue(self.ok(row("AURA STAGING & DESIGN LLC (200922910045)", date="08/14/2009")))
         self.assertTrue(self.ok(row("HOLDINGSPHERE LLC (201102410200)", date="01/07/2011")))
         self.assertTrue(self.ok(row("ABC HOLDINGS LLC (1)", etype=rules.FOREIGN_LLC)))
         self.assertFalse(self.ok(row("ABC HOLDINGS, INC. (1)", etype="Stock Corporation - CA - General")))
         self.assertFalse(self.ok(row("ABC HOLDINGS L.L.C. (1)")))           # must end in LLC
         self.assertFalse(self.ok(row("ABC LLC HOLDINGS (1)")))
-        self.assertFalse(self.ok(row("ABC HOLDINGS LLC (1)", date="01/01/2017")))
-        self.assertTrue(self.ok(row("ABC HOLDINGS LLC (1)", date="12/31/2016")))
+        # year window 2007–2013 (2014+ forms are not read; older ones untested)
+        self.assertFalse(self.ok(row("ABC HOLDINGS LLC (1)", date="12/31/2006")))
+        self.assertTrue(self.ok(row("ABC HOLDINGS LLC (1)", date="01/01/2007")))
+        self.assertTrue(self.ok(row("ABC HOLDINGS LLC (1)", date="12/31/2013")))
+        self.assertFalse(self.ok(row("ABC HOLDINGS LLC (1)", date="01/01/2014")))
+        self.assertFalse(self.ok(row("DESIGN SAVVY LLC (201620910378)", date="07/21/2016")))
+        self.assertFalse(self.ok(row("SNC MANAGEMENT & HOLDINGS, LLC (200412110197)", date="04/28/2004")))
         self.assertFalse(self.ok(row("ABC HOLDINGS LLC (1)", status="Suspended - FTB")))
         self.assertTrue(self.ok(row("ABC HOLDINGS LLC (1)", status="Suspended - FTB"), active_only=False))
         # converted entity: number filed 2016, Initial Filing Date from the old corporation (2010)
         self.assertFalse(self.ok(row("HOLDINGS MANAGER, LLC (201622510332)", date="07/26/2010")))
-        self.assertTrue(self.ok(row("X LLC (200501010001)", date="12/30/2004")))  # late-Dec numbering
-        self.assertTrue(self.ok(row("SNC MANAGEMENT & HOLDINGS, LLC (200412110197)", date="04/28/2004")))
+        self.assertTrue(self.ok(row("X LLC (200801010001)", date="12/30/2007")))  # late-Dec numbering
+        self.assertTrue(self.ok(row("PLUMB CAPITAL & HOLDINGS, LLC (201308710040)", date="03/27/2013")))
         name30 = "A" * 26 + " LLC"
         self.assertTrue(self.ok(row(f"{name30} (1)")))
         self.assertFalse(self.ok(row(f"B{name30} (1)")))

@@ -7,7 +7,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-DATE_LIMIT = "2017-01-01"
+# Initial Filing Date window (owner, 2026-10-21): 2007–2013 are the years whose forms the PDF reader
+# handles (LLC-1/LLC-5 REV 03/2005, 04/2007 …); 2014–2016 filings (REV 01/2014+) all landed in review.
+DATE_FROM = "2007-01-01"
+DATE_LIMIT = "2014-01-01"
 DEFAULT_MAX_NAME_LEN = 30
 
 DOMESTIC_LLC = "Limited Liability Company - CA"
@@ -69,8 +72,8 @@ def reject_reason(t: Target, *, max_name_len: int = DEFAULT_MAX_NAME_LEN,
         return "converted entity (number year != filing year)"
     if active_only and t.status != "Active":
         return "not Active"
-    if not t.date < DATE_LIMIT:
-        return "filed 2017 or later"
+    if not DATE_FROM <= t.date < DATE_LIMIT:
+        return "filed outside 2007–2013"
     if len(t.entity_name) > max_name_len:
         return "name too long"
     if not _LLC_END_RE.search(t.entity_name.upper()):

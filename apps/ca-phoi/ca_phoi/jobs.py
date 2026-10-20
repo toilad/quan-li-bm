@@ -19,7 +19,8 @@ TARGET_BUFFER = 10
 POOL_GOAL = DAILY_DOWNLOAD_GOAL + TARGET_BUFFER
 BATCH_SIZE = 5
 SEARCH_CAP = 500
-SLICE_YEARS = range(2016, 1993, -1)  # LLCs exist in California since 1994
+# Only the target window (rules.DATE_FROM … DATE_LIMIT), oldest first: 2007–2010 are the best-read years.
+SLICE_YEARS = range(2007, 2014)
 
 Progress = Callable[[dict], None]
 

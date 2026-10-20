@@ -10,7 +10,7 @@ The daily flow:
 ## Target filter
 - LLC only (CA and Out of State).
 - Active Only, on by default.
-- Initial Filing Date before 2017-01-01.
+- Initial Filing Date in 2007–2013: the forms the PDF reader handles. 2014–2016 filings (REV 01/2014 and later) all ended up in review.
 - Name of at most 30 characters (adjustable).
 - Name ends in `LLC` or `, LLC`.
 - Deduplicated by Entity Number.
