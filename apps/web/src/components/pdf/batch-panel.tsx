@@ -10,24 +10,32 @@ import type { QueueDispatch, QueueState } from "./use-pdf-backend";
 import { api } from "@/lib/api";
 
 type OcrStatus = { total: number; done: number; running: number; queued: number; mode: string; workers: number;
-  threads: number; cache_hit: number; cache_miss: number };
+  threads: number; cache_hit: number; cache_miss: number; cache: { files: number; mb: number; limit_mb: number } };
 
 /** Scan readings of the last 24 h on this machine: OCR file x/N, the CPU mode, pages from the cache / read anew. */
 function OcrLine() {
   const [st, setSt] = useState<OcrStatus | null>(null);
+  const load = () => api.get<OcrStatus>("/api/pdf/ocr-status").then(setSt).catch(() => {});
   useEffect(() => {
-    let alive = true;
-    const load = () => api.get<OcrStatus>("/api/pdf/ocr-status").then((r) => alive && setSt(r)).catch(() => {});
     load();
     const id = setInterval(load, 5000);
-    return () => { alive = false; clearInterval(id); };
+    return () => clearInterval(id);
   }, []);
-  if (!st || !st.total) return null;
+  if (!st) return null;
+  const clear = async () => {
+    if (!window.confirm(`Xoá cache OCR (${st.cache.files} trang, ${st.cache.mb} MB)? Chỉ xoá chữ OCR đã lưu — PDF và dữ liệu đã đọc giữ nguyên; lần đọc sau sẽ OCR lại.`)) return;
+    await api.post("/api/pdf/ocr-cache/clear").catch(() => {});
+    load();
+  };
   return (
-    <div className="mt-2 flex flex-wrap gap-x-3 font-mono text-[11.5px] text-fg-muted">
-      <span>OCR: file {st.done}/{st.total}{st.running ? ` · đang đọc ${st.running}` : ""}</span>
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 font-mono text-[11.5px] text-fg-muted">
+      {st.total > 0 && <span>OCR: file {st.done}/{st.total}{st.running ? ` · đang đọc ${st.running}` : ""}</span>}
       <span>CPU mode: {st.mode} ({st.workers} việc · {st.threads} luồng)</span>
-      <span>Cache hit/miss: {st.cache_hit}/{st.cache_miss} trang</span>
+      {st.total > 0 && <span>Cache hit/miss: {st.cache_hit}/{st.cache_miss} trang</span>}
+      <span>Cache: {st.cache.mb}/{st.cache.limit_mb} MB</span>
+      <button type="button" onClick={clear} className="rounded border border-line px-1.5 py-0.5 text-[11px] hover:bg-white/[0.06]">
+        Xoá cache OCR
+      </button>
     </div>
   );
 }
