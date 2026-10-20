@@ -24,6 +24,7 @@ def test_one_row_per_pdf_appended_duplicates_skipped_review_keeps_candidates(tmp
     assert [r["source_file"] for r in got] == ["a - Copy.pdf", "b.pdf"]
     assert got[0]["business_full_address"] == "1 Sample St, Los Angeles, CA 90001" and got[0]["business_city"] == "Los Angeles"
     assert got[1]["entity_name"] == "Sample Holdings Ill, LLC" and got[1]["status"] == "REVIEW_REQUIRED"  # candidate kept
+    assert got[0]["check"] == "OK" and got[1]["check"].startswith("CẦN DUYỆT")
     batch.run(folder, out)  # a second run appends below, the header is not repeated
     assert len(list(csv.DictReader(out.open(encoding="utf-8-sig")))) == 4
 
@@ -43,3 +44,22 @@ def test_ocr_cache_is_small_json_capped_and_clearable(tmp_path, monkeypatch):
     assert ocr.prune_cache() == 2
     assert [f.name for f in d.iterdir()] == ["ab-p1-original-x.json"]
     assert ocr.cache_info()["mode"] == "minimal" and ocr.clear_cache() == 1 and ocr.cache_info()["files"] == 0
+
+
+def test_files_and_folders_picked_together_unknown_gets_no_guess(tmp_path, monkeypatch):
+    folder = tmp_path / "in"
+    folder.mkdir()
+    (folder / "x.pdf").write_bytes(b"%PDF x")
+    (folder / "notes.txt").write_text("not a pdf")
+    single = tmp_path / "y.PDF"
+    single.write_bytes(b"%PDF y")
+    rows = {b"%PDF x": {"status": "UNKNOWN_DOCUMENT", "entity_name": "guess", "reason": "Không khớp mẫu"},
+            b"%PDF y": {"status": "NO_BUSINESS_ADDRESS_ON_FORM", "entity_name": "Sample LLC", "state_file_number": "201099900001"}}
+    monkeypatch.setattr(batch, "_text_layer_row", lambda data: None)
+    monkeypatch.setattr(batch, "_scan_row", lambda data, force=False: rows[data])
+    out = tmp_path / "r.csv"
+    s = batch.run([folder, single], out)
+    got = {r["source_file"]: r for r in csv.DictReader(out.open(encoding="utf-8-sig"))}
+    assert s["files"] == 2 and set(got) == {"x.pdf", "y.PDF"}
+    assert got["x.pdf"]["entity_name"] == "" and got["x.pdf"]["check"].startswith("KHÔNG ĐỌC")  # nothing guessed
+    assert got["y.PDF"]["business_full_address"] == "" and got["y.PDF"]["check"].startswith("OK")

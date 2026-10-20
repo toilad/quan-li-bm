@@ -104,7 +104,12 @@ def _fernet() -> Fernet:
     return Fernet(key.encode() if isinstance(key, str) else key)
 
 
+OFFLINE = False  # the PDF batch tool: settings from env / .env only — it never starts the database to read one
+
+
 def _db_value(name: str) -> str | None:
+    if OFFLINE:
+        return None
     hit = _cache.get(name)
     if hit and hit[1] > time.time():
         return hit[0]

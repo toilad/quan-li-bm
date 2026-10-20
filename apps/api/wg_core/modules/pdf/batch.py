@@ -1,6 +1,7 @@
 """Read a folder of PDFs straight into one results file — no database, nothing written to Google (owner, 2026-10-20).
 
-    python -m wg_core.modules.pdf.batch "C:/…/Ảnh Phôi" [--out data/reports/extracted_results.csv]
+    python -m wg_core.modules.pdf.batch "C:/…/Ảnh Phôi" [more PDFs or folders…] [--out file.csv] [--open]
+    (or double-click scripts/doc-phoi.bat: pick the PDFs, the result opens in Excel when done)
 
 One PDF at a time: read → extract → append its row → free it. A file needing review still gets its candidates in the
 row (the owner fixes one letter in Excel instead of reading the scan again); status and reason say what to check.
@@ -13,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-COLUMNS = ["source_file", "entity_name", "business_full_address", "business_street", "business_city", "business_state",
+COLUMNS = ["source_file", "check", "entity_name", "business_full_address", "business_street", "business_city", "business_state",
            "business_zip", "state_file_number", "document_type", "status", "confidence", "reason", "address_source"]
 
 
@@ -64,15 +65,31 @@ def _scan_row(data: bytes, force: bool = False) -> dict:
             "address_source": "; ".join(f"{c['role']}: {c['reason']}" for c in r.get("selected_candidates") or [])}
 
 
-def run(folder: Path, out: Path, force: bool = False) -> dict:
+# what the owner does with each row (the "check" column, to filter in Excel)
+CHECK = {"OK": "OK", "NO_BUSINESS_ADDRESS_ON_FORM": "OK — phôi không có ô địa chỉ (F–I trống)",
+         "REVIEW_REQUIRED": "CẦN DUYỆT — sửa theo cột reason", "LOW_CONFIDENCE": "CẦN DUYỆT — độ tin cậy thấp",
+         "UNKNOWN_DOCUMENT": "KHÔNG ĐỌC — mẫu chưa biết", "OCR_FAILED": "KHÔNG ĐỌC — OCR không ra chữ",
+         "ERROR": "KHÔNG ĐỌC — lỗi khi đọc file"}
+
+
+def pdf_files(paths: list[Path]) -> list[Path]:
+    """The PDFs picked: files as given, folders → their *.pdf (not subfolders), in name order."""
+    out = []
+    for p in paths:
+        out += sorted(p.glob("*.pdf"), key=lambda f: f.name.lower()) if p.is_dir() else [p] if p.suffix.lower() == ".pdf" else []
+    return out
+
+
+def run(paths: list[Path] | Path, out: Path, force: bool = False) -> dict:
     out.parent.mkdir(parents=True, exist_ok=True)
     new = not out.exists() or out.stat().st_size == 0
-    seen, stats = set(), {"files": 0, "duplicates": 0, "seconds": 0.0}
+    files = pdf_files(paths if isinstance(paths, list) else [paths])
+    seen, stats = set(), {"files": 0, "duplicates": 0, "seconds": 0.0, "status": {}, "total": len(files)}
     with out.open("a", newline="", encoding="utf-8-sig" if new else "utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=COLUMNS)
         if new:
             w.writeheader()
-        for pdf in sorted(folder.glob("*.pdf")):
+        for pdf in files:
             data = pdf.read_bytes()
             sha = hashlib.sha256(data).hexdigest()
             if sha in seen:  # the same file under another name ("… - Copy.pdf")
@@ -84,11 +101,15 @@ def run(folder: Path, out: Path, force: bool = False) -> dict:
                 row = _text_layer_row(data) or _scan_row(data, force)
             except Exception as e:  # noqa: BLE001 — one bad file never stops the batch
                 row = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"}
-            w.writerow({**{c: "" for c in COLUMNS}, **row, "source_file": pdf.name})
+            if row.get("status") in ("UNKNOWN_DOCUMENT", "OCR_FAILED", "ERROR"):  # nothing guessed for these
+                row = {"status": row["status"], "reason": row.get("reason", ""), "document_type": row.get("document_type", "")}
+            w.writerow({**{c: "" for c in COLUMNS}, **row, "source_file": pdf.name, "check": CHECK.get(row.get("status"), "CẦN DUYỆT")})
             fh.flush()  # the row is on disk before the next PDF is opened
             stats["files"] += 1
             stats["seconds"] += time.time() - t0
-            print(f"{stats['files']:>3} {pdf.name:<30} {row.get('status', ''):<28} {row.get('entity_name', '')[:50]}", flush=True)
+            stats["status"][row.get("status")] = stats["status"].get(row.get("status"), 0) + 1
+            print(f"{stats['files'] + stats['duplicates']:>3}/{len(files)} {pdf.name:<30} {row.get('status', ''):<28} "
+                  f"{row.get('entity_name', '')[:50]}", flush=True)
             del data, row
             gc.collect()
     return stats
@@ -96,14 +117,26 @@ def run(folder: Path, out: Path, force: bool = False) -> dict:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("folder", type=Path)
-    ap.add_argument("--out", type=Path, default=Path("data/reports/extracted_results.csv"))
+    ap.add_argument("paths", type=Path, nargs="+", help="file PDF và/hoặc thư mục chứa PDF")
+    ap.add_argument("--out", type=Path, default=None, help="mặc định: data/reports/ket-qua-<ngày-giờ>.csv")
     ap.add_argument("--force", action="store_true", help="đọc lại OCR, bỏ qua cache")
+    ap.add_argument("--open", action="store_true", help="mở file kết quả khi xong")
     a = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    s = run(a.folder, a.out, a.force)
-    print(f"Xong {s['files']} file ({s['duplicates']} file trùng nội dung bỏ qua) — {round(s['seconds'])} giây → {a.out}")
+    from ... import runtime_config
+
+    runtime_config.OFFLINE = True  # no database, no Google: PDFs in, one results file out
+    out = a.out or Path("data/reports") / f"ket-qua-{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    s = run(a.paths, out, a.force)
+    print(f"Xong {s['files']} file ({s['duplicates']} file trùng nội dung bỏ qua) — {round(s['seconds'])} giây")
+    for st, n in sorted(s["status"].items(), key=lambda kv: -kv[1]):
+        print(f"  {st}: {n}")
+    print(f"Kết quả: {out.resolve()}")
+    if a.open and s["files"]:
+        import os
+
+        os.startfile(out.resolve())  # noqa: S606 — Windows: opens the CSV in Excel
 
 
 if __name__ == "__main__":
