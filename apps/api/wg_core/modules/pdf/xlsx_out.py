@@ -1,6 +1,7 @@
 """The batch result as one .xlsx (owner, 2026-10-20). Sheet KET_QUA keeps the owner's column layout — A name, B/C
 empty, D phone, E short name, F FULL ADDRESS, G CITY, H STATE, I ZIP, J file number — with the review columns after
-it; sheet CAN_DUYET lists only the REVIEW_REQUIRED records with their reason. Every identifier is TEXT (no 2.01E+11,
+it, hidden by default (owner, 2026-10-20: the main sheet shows his columns only); sheet CAN_DUYET lists only the
+REVIEW_REQUIRED records with every reason / debug column. Every identifier is TEXT (no 2.01E+11,
 no lost leading zero). Written again after each PDF, so a stopped run keeps every row read so far."""
 from pathlib import Path
 
@@ -38,14 +39,19 @@ CAN_DUYET = [
     ("STATE (H)", "business_state", 9, False, True),
     ("ZIP (I)", "business_zip", 11, False, True),
     ("Mã số (J)", "state_file_number", 16, False, True),
-    ("reason", "reason", 70, True, True),
+    ("check", "check", 26, True, True),
+    ("status", "status", 18, False, True),
     ("document_type", "document_type", 18, False, True),
+    ("confidence", "confidence", 11, False, False),
+    ("reason", "reason", 70, True, True),
+    ("address_source", "address_source", 40, True, True),
 ]
+MAIN_COLUMNS = 10  # A–J: the owner's data; the review columns after J start hidden
 FILL = {"OK": "E8F5E9", "NO_BUSINESS_ADDRESS_ON_FORM": "E3F2FD", "REVIEW_REQUIRED": "FFF4CC", "LOW_CONFIDENCE": "FFF4CC",
         "UNKNOWN_DOCUMENT": "FDE2E1", "OCR_FAILED": "FDE2E1", "ERROR": "FDE2E1"}
 
 
-def _sheet(ws, columns, rows):
+def _sheet(ws, columns, rows, visible: int | None = None):
     ws.append([h for h, *_ in columns])
     for c in ws[1]:
         c.font = Font(bold=True)
@@ -67,6 +73,8 @@ def _sheet(ws, columns, rows):
                 cell.fill = PatternFill("solid", fgColor=fill)
     for i, (_, _, width, _, text) in enumerate(columns, start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
+        if visible and i > visible:
+            ws.column_dimensions[get_column_letter(i)].hidden = True  # Unhide in Excel to see them
         if text:  # the empty cells under the data stay TEXT too, for what the owner types in later
             ws.column_dimensions[get_column_letter(i)].number_format = "@"
     ws.freeze_panes = "A2"
@@ -79,7 +87,7 @@ def write(rows: list[dict], out: Path) -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = "KET_QUA"
-    _sheet(ws, KET_QUA, rows)
+    _sheet(ws, KET_QUA, rows, visible=MAIN_COLUMNS)
     _sheet(wb.create_sheet("CAN_DUYET"), CAN_DUYET, [r for r in rows if r.get("status") == "REVIEW_REQUIRED"])
     tmp = out.with_suffix(".tmp.xlsx")
     wb.save(tmp)

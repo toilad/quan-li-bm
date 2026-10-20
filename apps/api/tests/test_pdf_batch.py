@@ -32,10 +32,14 @@ def test_one_row_per_pdf_appended_duplicates_skipped_review_keeps_candidates(tmp
     assert a[9] == "201099900001" and isinstance(a[9], str) and ws["J2"].number_format == "@" and ws["I2"].number_format == "@"
     assert a[10] == "a - Copy.pdf" and a[11] == "OK"
     assert ws.freeze_panes == "A2" and ws.auto_filter.ref and ws["F2"].alignment.wrap_text
+    assert not any(ws.column_dimensions[c].hidden for c in "ABCDEFGHIJ")  # the owner's columns shown
+    assert all(ws.column_dimensions[c].hidden for c in "KLMNOPQ")  # review columns after J start hidden
     b = [c.value for c in ws[3]]
     assert b[0] == "Sample Holdings Ill, LLC" and b[12] == "REVIEW_REQUIRED" and b[11].startswith("CẦN DUYỆT")  # candidate kept
     review = [[c.value for c in r] for r in wb["CAN_DUYET"].iter_rows(min_row=2)]
-    assert [(r[0], r[1], r[7]) for r in review] == [("b.pdf", "Sample Holdings Ill, LLC", "III/Ill")]  # review rows only
+    rh = [c.value for c in wb["CAN_DUYET"][1]]
+    assert {"check", "status", "document_type", "confidence", "reason", "address_source"} <= set(rh)  # every debug column
+    assert [(r[0], r[1], r[rh.index("reason")]) for r in review] == [("b.pdf", "Sample Holdings Ill, LLC", "III/Ill")]  # review only
 
 
 def test_ocr_cache_is_small_json_capped_and_clearable(tmp_path, monkeypatch):
