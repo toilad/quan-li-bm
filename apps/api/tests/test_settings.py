@@ -101,7 +101,8 @@ def test_first_data_row_is_a_setting(client, monkeypatch):
         Sheets().read_rows()
         Sheets().append_row(["X"] * 11)
         ranges = [str(c.request.url) for c in m.calls if "spreadsheets/TESTSHEET/values" in str(c.request.url)]
-    assert any("A2%3AL" in u for u in ranges) and any("A2%3AK" in u and ":append" in u for u in ranges)
+    # rows read from 2; the new row goes into the first empty row from 2 (row 2 is empty here)
+    assert any("A2%3AL" in u for u in ranges) and any("A2%3AK" in u for u in ranges) and sheet.rows[2]["A"] == "X"
 
 
 def test_client_id_and_secret_fields_are_enough_to_connect(client):

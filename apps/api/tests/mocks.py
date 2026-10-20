@@ -14,11 +14,11 @@ class FakeSheet:
         self.appends, self.writes = [], []
         self.links: dict[str, str] = {}
 
-    def values(self):
+    def values(self, start: int = 3):
         if not self.rows:
             return []
         last = max(self.rows)
-        return [[self.rows.get(r, {}).get(c, "") for c in "ABCDEFGHIJKL"] for r in range(3, last + 1)]
+        return [[self.rows.get(r, {}).get(c, "") for c in "ABCDEFGHIJKL"] for r in range(start, last + 1)]
 
     def install(self, mock: respx.MockRouter, fail_append: int = 0, ghost_append: int = 0):
         """fail_append: n appends refused (503). ghost_append: n appends WRITTEN but answered 503 (lost reply)."""
@@ -26,14 +26,32 @@ class FakeSheet:
         base = "https://sheets.googleapis.com/v4/spreadsheets/TESTSHEET/values/"
 
         def get(request):
-            rng = httpx.URL(str(request.url)).path.split("/values/")[1]
-            m = re.search(r"!([A-L])(\d+)$", rng.replace("%21", "!").replace("%27", "'"))
+            rng = httpx.URL(str(request.url)).path.split("/values/")[1].replace("%21", "!").replace("%27", "'").replace("%3A", ":")
+            m = re.search(r"!([A-L])(\d+)$", rng)
             if m and ":" not in rng:
                 return httpx.Response(200, json={"values": [[self.rows.get(int(m.group(2)), {}).get(m.group(1), "")]]})
-            return httpx.Response(200, json={"values": self.values()})
+            one = re.search(r"!A(\d+):K(\d+)$", rng)
+            if one and one.group(1) == one.group(2):  # a single row A–K
+                cells = self.rows.get(int(one.group(1)), {})
+                vals = [cells.get(c, "") for c in "ABCDEFGHIJK"]
+                return httpx.Response(200, json={"values": [vals] if any(vals) else []})
+            open_rng = re.search(r"!A(\d+):[KL]$", rng)  # "A2:L", "A3:K": rows from that one down, like Google
+            return httpx.Response(200, json={"values": self.values(int(open_rng.group(1)) if open_rng else 3)})
 
         def put(request):
-            rng = httpx.URL(str(request.url)).path.split("/values/")[1].replace("%21", "!")
+            rng = httpx.URL(str(request.url)).path.split("/values/")[1].replace("%21", "!").replace("%3A", ":")
+            one = re.search(r"!A(\d+):K(\d+)$", rng)
+            if one:  # a whole new row A–K (append_row writes the first empty row)
+                if state["fail"]:
+                    state["fail"] -= 1
+                    return httpx.Response(503, json={"error": {"message": "backend error"}})
+                vals = json.loads(request.content)["values"][0]
+                self.rows[int(one.group(1))] = dict(zip("ABCDEFGHIJK", vals))
+                self.appends.append(vals)
+                if state["ghost"]:
+                    state["ghost"] -= 1
+                    return httpx.Response(503, json={"error": {"message": "backend error"}})
+                return httpx.Response(200, json={"updatedRange": f"'Phoi US'!A{one.group(1)}:K{one.group(1)}"})
             m = re.search(r"!([A-L])(\d+)$", rng)
             val = json.loads(request.content)["values"][0][0]
             self.rows.setdefault(int(m.group(2)), {})[m.group(1)] = val

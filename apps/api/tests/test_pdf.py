@@ -324,3 +324,29 @@ def test_california_number_that_differs_on_page_2_blocks_saving_until_fixed_by_h
     f3 = fields_from_ai({**base, "J_repeat": {"value": "202400000008", "found": True},
                          "A_repeat": {"value": "OTHER NAME LLC", "found": True}}, "ca")
     assert validate(f3, "ca")["A"]["level"] == "warn" and "J" not in validate(f3, "ca")
+
+
+def test_new_row_goes_into_the_first_empty_row_under_the_owners_block_never_over_data():
+    """Owner, 2026-10-20: rows 3–4 filled, 5 empty, 9 filled further down → the next row is 5 (not after 9, which the
+    Sheets "append" call would pick); a row that got data meanwhile is never overwritten."""
+    from wg_core.integrations.errors import Transient
+    from wg_core.integrations.google import Sheets
+
+    sheet = FakeSheet({3: {"A": "One"}, 4: {"A": "Two"}, 9: {"I": "91304", "J": "201099900048", "K": "Xem phôi"}})
+    with respx.mock(assert_all_called=False) as m:
+        sheet.install(m)
+        assert Sheets().append_row(["New Co", "", "", "", "newco", "", "", "", "", "201099900001", ""]) == 5
+        assert sheet.rows[5]["A"] == "New Co" and sheet.rows[9]["J"] == "201099900048"  # the stray row untouched
+        assert Sheets().append_row(["Next Co"] + [""] * 10) == 6
+    busy = FakeSheet({3: {"A": "One"}, 4: {"A": "Typed meanwhile"}})
+    with respx.mock(assert_all_called=False) as m:
+        busy.install(m)
+        # the empty-row scan said 4, but someone typed there before the write: re-read → refused, nothing overwritten
+        orig = Sheets.next_empty_row
+        Sheets.next_empty_row = lambda self, c: 4
+        try:
+            with pytest.raises(Transient):
+                Sheets().append_row(["X"] + [""] * 10)
+        finally:
+            Sheets.next_empty_row = orig
+        assert busy.rows[4] == {"A": "Typed meanwhile"} and not busy.appends

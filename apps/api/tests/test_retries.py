@@ -39,9 +39,10 @@ def test_sheet_append_whose_reply_was_lost_is_not_written_twice():
 def test_google_network_error_is_retried_not_failed():
     sheet = FakeSheet({})
     with respx.mock(assert_all_called=False) as m:
+        # the row write times out (registered before the fake's own routes, so it is the one matched)
+        m.put(url__regex=r".*/values/.*A\d+(%3A|:)K\d+.*").mock(side_effect=httpx.ConnectTimeout("timed out"))
         sheet.install(m)
         install_drive(m)
-        m.post(url__regex=r".*/values/.*:append.*").mock(side_effect=httpx.ConnectTimeout("timed out"))
         with session_scope() as s:
             doc = _doc(s)
             job, _ = pdf.request_save(s, doc)

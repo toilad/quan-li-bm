@@ -253,17 +253,26 @@ class Sheets:
                 "fields": "userEnteredValue,textFormatRuns"}}]}
             return _check(c.post(f"{SHEETS}/{self.id}:batchUpdate", headers=_auth(c), json=body), "Sheets ghi link")
 
+    def next_empty_row(self, c) -> int:
+        """The first row from SHEET_FIRST_ROW whose A–K are all empty — right under the owner's block, like the old app
+        (the Sheets "append" call instead jumps past every gap to the end of the last block on the tab)."""
+        first = first_row()
+        data = _check(c.get(f"{SHEETS}/{self.id}/values/{_a1(self.tab, f'A{first}:K')}", headers=_auth(c)), "Sheets đọc")
+        rows = data.get("values", [])
+        return next((first + i for i, r in enumerate(rows) if not any(str(x).strip() for x in r)), first + len(rows))
+
     def append_row(self, values: list[str]) -> int:
-        """Append A..K (L untouched). Returns the sheet row number written."""
+        """Write A..K (L untouched) into the first empty row. Returns the sheet row number written. The row is read again
+        just before writing: a row that is not empty any more is never overwritten (the save job retries)."""
         with _client() as c:
-            data = _check(c.post(f"{SHEETS}/{self.id}/values/{_a1(self.tab, f'A{first_row()}:K')}:append",
-                                 headers=_auth(c), params={"valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"},
-                                 json={"values": [values]}), "Sheets thêm dòng")
-        rng = data.get("updates", {}).get("updatedRange", "")
-        m = re.search(r"![A-Z]+(\d+)", rng)
-        if not m:
-            raise Permanent(f"Sheets không trả về vị trí dòng đã ghi ({rng!r})")
-        return int(m.group(1))
+            row = self.next_empty_row(c)
+            rng = _a1(self.tab, f"A{row}:K{row}")
+            now = _check(c.get(f"{SHEETS}/{self.id}/values/{rng}", headers=_auth(c)), "Sheets đọc").get("values", [])
+            if any(str(x).strip() for r in now for x in r):
+                raise Transient(f"Dòng {row} vừa có dữ liệu — không ghi đè, thử lại")
+            _check(c.put(f"{SHEETS}/{self.id}/values/{rng}", headers=_auth(c), params={"valueInputOption": "RAW"},
+                         json={"values": [values]}), "Sheets ghi dòng")
+        return row
 
 
 def hyperlink_formula(url: str, label: str = "Xem phôi") -> str:
