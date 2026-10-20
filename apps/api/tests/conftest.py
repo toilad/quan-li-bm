@@ -36,6 +36,7 @@ def _env(tmp_path_factory):
         "GOOGLE_SERVICE_ACCOUNT_FILE": str(_fake_service_account(tmp)),
         "SHEET_ID": "TESTSHEET", "SHEET_TAB": "Phoi US", "DRIVE_FOLDER_ID": "TESTFOLDER",
         "ANTHROPIC_API_KEY": "test-key",
+        "AUTO_SAVE_TO_SHEET": "false",  # older tests cover the manual flow; tests/test_pdf_autosave.py turns it on
         "CPANEL_USER_N1": "u1", "CPANEL_TOKEN_N1": "t1", "INET_API_KEY_N1": "k1",
     })
     from wg_core import registry

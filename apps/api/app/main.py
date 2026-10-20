@@ -201,7 +201,20 @@ def ocr_status(s: Session = Depends(db)):
             "running": sum(j.status == "running" for j in rows), "queued": sum(j.status == "queued" for j in rows),
             "mode": perf_mode(), "workers": ocr_workers(), "threads": ocr_threads(),
             "cache_hit": sum(c.get("hit", 0) for c in cache), "cache_miss": sum(c.get("miss", 0) for c in cache),
-            "cache": cache_info()}
+            "cache": cache_info(), "batch": batch_summary(s, since),
+            "auto_save": pdf._on("AUTO_SAVE_TO_SHEET", "true") and not pdf._on("MANUAL_REVIEW_MODE", "false")}
+
+
+def batch_summary(s: Session, since) -> dict:
+    """End of a batch (the PDFs added in the last 24 h): processed / written to the Sheet / waiting for review /
+    unknown form / OCR failed / not written (duplicate or a save error)."""
+    docs = list(s.scalars(select(PdfDocument).where(PdfDocument.created_at >= since)))
+    st = lambda d: (d.extra or {}).get("status", "")  # noqa: E731
+    return {"total": len(docs), "processed": sum(d.status not in ("uploaded", "needs_ai") or bool(d.error) for d in docs),
+            "saved": sum(d.status == "saved" for d in docs),
+            "review_required": sum(d.status == "review" and st(d) not in ("UNKNOWN_DOCUMENT", "OCR_FAILED") for d in docs),
+            "unknown": sum(st(d) == "UNKNOWN_DOCUMENT" for d in docs), "ocr_failed": sum(st(d) == "OCR_FAILED" for d in docs),
+            "not_written": sum(d.status in ("failed", "duplicate") for d in docs)}
 
 
 @app.post("/api/pdf/ocr-cache/clear")

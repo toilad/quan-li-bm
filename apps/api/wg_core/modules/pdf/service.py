@@ -56,7 +56,40 @@ def ingest(s: Session, name: str, data: bytes) -> tuple[PdfDocument, bool]:
     extract_into(doc, data)
     if doc.status == "needs_ai":
         request_scan_read(s, doc)  # scans: free OCR on this machine first (AI only if OCR does not know the form)
+    else:
+        auto_save(s, doc)
     return doc, True
+
+
+def _on(name: str, default: str) -> bool:
+    return (cfg(name, default) or default).strip().lower() in ("1", "true", "yes", "on")
+
+
+AUTO_STATUSES = ("OK", "NO_BUSINESS_ADDRESS_ON_FORM")
+
+
+def auto_save(s: Session, doc: PdfDocument) -> str:
+    """Owner, 2026-10-20 — the old app's flow: read → straight into the Sheet (Drive + K link, the usual save job).
+    AUTO_SAVE_TO_SHEET (on by default) saves a reading that is OK, or NO_BUSINESS_ADDRESS_ON_FORM (F–I empty as on
+    the form), when nothing blocks it; MANUAL_REVIEW_MODE (off by default) stops every file for the owner instead.
+    REVIEW_REQUIRED stays in the review list, UNKNOWN_DOCUMENT / OCR_FAILED are skipped — nothing guessed, the batch
+    goes on. Returns what happened, for the log."""
+    if _on("MANUAL_REVIEW_MODE", "false") or not _on("AUTO_SAVE_TO_SHEET", "true"):
+        return "manual"
+    status = (doc.extra or {}).get("status", "")
+    if doc.status != "review" or status not in AUTO_STATUSES:
+        return "review" if status in ("REVIEW_REQUIRED", "LOW_CONFIDENCE") else "skipped"
+    # F–I empty is the right answer on a form without a business-address box; anything else must be complete
+    reasons = save_check(doc, confirm_missing=status == "NO_BUSINESS_ADDRESS_ON_FORM", critical_checked=False)
+    # a doubt read on the form (OCR suspicion, P.O. Box…) stops it; D is not read from the form (the temporary
+    # 555-01xx number of the state is the owner's rule), so its notice does not
+    doubts = [k for k, v in validate(doc.fields, doc.doc_type).items() if v["kind"] == "review" and k != "D"]
+    if reasons or doubts:
+        doc.extra = {**(doc.extra or {}), "auto_save": "; ".join(reasons + [f"{k}: cần xem" for k in doubts])}
+        return "review"
+    request_save(s, doc)
+    doc.extra = {**(doc.extra or {}), "auto_save": "queued"}
+    return "saved"
 
 
 def extract_into(doc: PdfDocument, data: bytes, forced_type: str | None = None):
@@ -150,8 +183,10 @@ def _ocr_read(ctx: JobContext):
             doc.detection_reason = (f"OCR: mẫu {doc.extra['version']} · State of California · Secretary of State"
                                     + ("" if doc.extra.get("version_verified") else " · phiên bản chưa kiểm chứng"))
         doc.industry = industry_for(doc)
-        ctx.log(f"OCR đọc xong {doc.extra['version']} ({doc.extra['pages_read']} trang) — mọi ô đọc bằng OCR cần anh đánh dấu "
-                f"đã kiểm tra trước khi lưu", "ok")
+        done = auto_save(ctx.session, doc)
+        ctx.log(f"OCR đọc xong {doc.extra['version']} ({doc.extra['pages_read']} trang) — {doc.extra.get('status')}: "
+                + {"saved": "tự ghi Google Sheet (Drive → Sheet)", "review": "chờ anh duyệt",
+                   "manual": "chế độ duyệt từng file", "skipped": "bỏ qua"}[done], "ok")
         return
     if cfg("ANTHROPIC_API_KEY"):
         request_ai_read(ctx.session, doc)

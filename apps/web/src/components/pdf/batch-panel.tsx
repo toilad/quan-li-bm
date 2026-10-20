@@ -10,7 +10,9 @@ import type { QueueDispatch, QueueState } from "./use-pdf-backend";
 import { api } from "@/lib/api";
 
 type OcrStatus = { total: number; done: number; running: number; queued: number; mode: string; workers: number;
-  threads: number; cache_hit: number; cache_miss: number; cache: { files: number; mb: number; limit_mb: number } };
+  threads: number; cache_hit: number; cache_miss: number; cache: { files: number; mb: number; limit_mb: number };
+  auto_save: boolean;
+  batch: { total: number; processed: number; saved: number; review_required: number; unknown: number; ocr_failed: number; not_written: number } };
 
 /** Scan readings of the last 24 h on this machine: OCR file x/N, the CPU mode, pages from the cache / read anew. */
 function OcrLine() {
@@ -28,7 +30,19 @@ function OcrLine() {
     load();
   };
   return (
+    <>
+    {st.batch.total > 0 && (
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[12.5px]">
+        <span>Đã xử lý <b>{st.batch.processed}</b>/{st.batch.total}</span>
+        <span className="text-emerald-300">Đã ghi Sheet <b>{st.batch.saved}</b></span>
+        <span className="text-amber-300">Cần duyệt <b>{st.batch.review_required}</b></span>
+        <span className="text-rose-300">Không nhận dạng <b>{st.batch.unknown}</b></span>
+        <span className="text-rose-300">OCR lỗi <b>{st.batch.ocr_failed}</b></span>
+        {st.batch.not_written > 0 && <span className="text-rose-300">Không ghi (trùng / lỗi) <b>{st.batch.not_written}</b></span>}
+      </div>
+    )}
     <div className="mt-2 flex flex-wrap items-center gap-x-3 font-mono text-[11.5px] text-fg-muted">
+      <span>{st.auto_save ? "Tự ghi Sheet: BẬT" : "Duyệt từng file (tự ghi Sheet: TẮT)"}</span>
       {st.total > 0 && <span>OCR: file {st.done}/{st.total}{st.running ? ` · đang đọc ${st.running}` : ""}</span>}
       <span>CPU mode: {st.mode} ({st.workers} việc · {st.threads} luồng)</span>
       {st.total > 0 && <span>Cache hit/miss: {st.cache_hit}/{st.cache_miss} trang</span>}
@@ -37,6 +51,7 @@ function OcrLine() {
         Xoá cache OCR
       </button>
     </div>
+    </>
   );
 }
 

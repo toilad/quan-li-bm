@@ -44,6 +44,8 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "PIXABAY_API_KEY": ("photos", "Khoá API Pixabay", True),
     "TWILIO_ACCOUNT_SID": ("phone", "Twilio Account SID (AC…)", True),
     "TWILIO_AUTH_TOKEN": ("phone", "Twilio Auth Token", True),
+    "AUTO_SAVE_TO_SHEET": ("server", "Tự ghi Google Sheet khi đọc xong phôi OK / không có ô địa chỉ: true (mặc định) hoặc false", False),
+    "MANUAL_REVIEW_MODE": ("server", "Duyệt từng file trước khi ghi Sheet: false (mặc định) hoặc true", False),
     "OCR_PERFORMANCE_MODE": ("server", "Chế độ OCR: NORMAL (mặc định — 1 việc OCR, máy vẫn dùng bình thường) hoặc FAST (2 việc cùng lúc, máy ≥ 8 luồng CPU; khởi động lại worker)", False),
     "OCR_CACHE_LIMIT_MB": ("server", "Giới hạn cache OCR (MB, mặc định 500) — chỉ lưu chữ + vị trí chữ đọc được, không lưu ảnh", False),
     "PUBLIC_API_URL": ("server", "Địa chỉ API công khai (cho OAuth redirect)", False),
@@ -62,6 +64,8 @@ def credential_problem(name: str, value: str) -> str | None:
     v = value.strip()
     if not v:
         return None
+    if name in ("AUTO_SAVE_TO_SHEET", "MANUAL_REVIEW_MODE") and v.lower() not in ("true", "false"):
+        return "Chỉ nhận true hoặc false"
     if name == "OCR_PERFORMANCE_MODE" and v.upper() not in ("NORMAL", "FAST"):
         return "Chế độ OCR chỉ nhận NORMAL hoặc FAST"
     if name.startswith("INET_API_KEY_"):

@@ -1,7 +1,7 @@
 """Read a folder of PDFs straight into one results file — no database, nothing written to Google (owner, 2026-10-20).
 
     python -m wg_core.modules.pdf.batch "C:/…/Ảnh Phôi" [more PDFs or folders…] [--out file.xlsx] [--open]
-    (or the Desktop shortcut "Đọc phôi PDF": pick the PDFs, the result opens in Excel when done)
+    An offline check tool: the result goes to a temporary .xlsx (the real flow is the app — read → Google Sheet).
 
 One PDF at a time: read → extract → its row added → the .xlsx saved → the PDF freed. A file needing review still gets
 its candidates in the row (the owner fixes one letter in Excel instead of reading the scan again); status and reason
@@ -115,7 +115,7 @@ def run(paths: list[Path] | Path, out: Path, force: bool = False) -> dict:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("paths", type=Path, nargs="+", help="file PDF và/hoặc thư mục chứa PDF")
-    ap.add_argument("--out", type=Path, default=None, help="mặc định: data/reports/ket-qua-<ngày-giờ>.xlsx")
+    ap.add_argument("--out", type=Path, default=None, help="mặc định: thư mục TEMP/doc-phoi/ket-qua-<ngày-giờ>.xlsx (file kiểm tra tạm)")
     ap.add_argument("--force", action="store_true", help="đọc lại OCR, bỏ qua cache")
     ap.add_argument("--open", action="store_true", help="mở file kết quả khi xong")
     a = ap.parse_args(argv)
@@ -124,7 +124,10 @@ def main(argv=None):
     from ... import runtime_config
 
     runtime_config.OFFLINE = True  # no database, no Google: PDFs in, one results file out
-    out = a.out or Path("data/reports") / f"ket-qua-{time.strftime('%Y%m%d-%H%M%S')}.xlsx"
+    # a check file only — the Sheet is where the data lives (owner, 2026-10-20): it goes to the temp folder
+    import tempfile
+
+    out = a.out or Path(tempfile.gettempdir()) / "doc-phoi" / f"ket-qua-{time.strftime('%Y%m%d-%H%M%S')}.xlsx"
     s = run(a.paths, out, a.force)
     print(f"Xong {s['files']} file ({s['duplicates']} file trùng nội dung bỏ qua) — {round(s['seconds'])} giây")
     for st, n in sorted(s["status"].items(), key=lambda kv: -kv[1]):
