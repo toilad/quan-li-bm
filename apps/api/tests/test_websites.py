@@ -278,3 +278,10 @@ def test_b2_works_on_the_same_rows_as_b1(monkeypatch):
             assert [r["row"] for r in out["rows"]] == [11, 22] and out["old_rows_left"] == 2
             res = web.enqueue_rows(s, [{"row": 20, "domain": "someoneelse.huxma.life", "company": "Shifted Co LLC"}])
     assert not res["queued"] and "khối cũ" in res["refused"][20]
+
+
+def test_run_endpoint_takes_the_rows_not_a_domain_preview_token(client):
+    """The B2 "Xem trước & chạy" button posts {items}; the B1 run's {token} body must not be required here (2026-10-21:
+    a shared body model answered 422 "token required" and nothing ran)."""
+    r = client.post("/api/websites/run", json={"items": []})
+    assert r.status_code == 200 and r.json() == {"queued": [], "refused": {}}

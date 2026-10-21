@@ -628,6 +628,10 @@ def web_choice(body: ChoiceBody, s: Session = Depends(db)):
     return {"ok": True}
 
 
+class WebRunBody(BaseModel):
+    items: list[dict]  # the B2 rows the owner confirmed (the server checks every one again)
+
+
 @app.post("/api/websites/run")
-def web_run(body: RunBody, s: Session = Depends(db)):
+def web_run(body: WebRunBody, s: Session = Depends(db)):
     return websites.enqueue_rows(s, body.items)
