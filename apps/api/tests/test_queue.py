@@ -138,3 +138,43 @@ def test_ocr_never_takes_every_core(monkeypatch):
     assert ocr.ocr_workers() == 1 and ocr.ocr_threads() == 1  # a small PC: FAST stays one job, one thread
     monkeypatch.setenv("OCR_PERFORMANCE_MODE", "TURBO")
     assert ocr.perf_mode() == "NORMAL"
+
+
+def test_parallel_threads_run_one_job_per_nick_never_two_on_one(monkeypatch):
+    """B1 / B2 run on several worker threads (2026-10-21): the nicks in parallel, but two threads claiming at the same
+    moment must never both start a job on the same nick."""
+    import threading
+    import time
+
+    from sqlalchemy.orm import Session
+
+    real_get = Session.get
+
+    def slow_get(self, *a, **kw):  # widen the gap between "nick is free" and "job is running"
+        time.sleep(0.3)
+        return real_get(self, *a, **kw)
+
+    monkeypatch.setattr(Session, "get", slow_get)
+
+    with session_scope() as s:
+        for i in range(4):
+            jobs.enqueue(s, "selftest", f"par-a-{i}", {}, resource="nick:pa")
+        jobs.enqueue(s, "selftest", "par-b", {}, resource="nick:pb")
+    got, gate = [], threading.Barrier(6)
+
+    def grab():
+        gate.wait()
+        with session_scope() as s:
+            j = jobs.claim(s)
+            if j:
+                got.append(j.resource)
+
+    ts = [threading.Thread(target=grab) for _ in range(6)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert sorted(got) == ["nick:pa", "nick:pb"]
+    with session_scope() as s:  # tidy up: no running job left for the other tests
+        for j in s.query(Job).filter(Job.resource.in_(["nick:pa", "nick:pb"])):
+            j.status = "done"

@@ -36,6 +36,20 @@ def _ocr_loop(stop: threading.Event):
 
 
 INBOX_SECONDS = 10
+# Jobs that hold a nick (B1 domain, B2 website): one per hosting at a time (the queue's resource lock), the nicks in
+# parallel — the main loop plus these threads, so the three hostings each run their own row.
+NICK_KINDS = ("web_build", "domain_create")
+NICK_THREADS = 2
+
+
+def _nick_loop(stop: threading.Event):
+    while not stop.is_set():
+        try:
+            if not jobs.run_one(kinds=NICK_KINDS):
+                stop.wait(settings().worker_poll_seconds)
+        except Exception as e:  # noqa: BLE001 — keep the thread alive; the job records its error
+            print(f"nick worker error: {e}", flush=True)
+            stop.wait(5)
 
 
 def _inbox_loop(stop: threading.Event):
@@ -62,6 +76,8 @@ def main():
     print(f"OCR: chế độ {perf_mode()} · {ocr_workers()} việc OCR cùng lúc · {ocr_threads()} luồng CPU mỗi việc", flush=True)
     _recover()
     threading.Thread(target=_inbox_loop, args=(stop,), daemon=True).start()
+    for _ in range(NICK_THREADS):
+        threading.Thread(target=_nick_loop, args=(stop,), daemon=True).start()
     last_recover = time.monotonic()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")

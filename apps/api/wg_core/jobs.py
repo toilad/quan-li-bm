@@ -121,6 +121,9 @@ def claim(session: Session, kinds: tuple[str, ...] | None = None) -> Job | None:
     paused = paused_kinds(session)
     if "*" in paused:
         return None
+    # one claim at a time across worker threads / processes: two threads must never both see a nick free and start
+    # two jobs on it (the lock ends with this transaction, at the commit below)
+    session.execute(text("SELECT pg_advisory_xact_lock(4207)"))
     row = session.execute(text("""
         SELECT id FROM jobs j
         WHERE j.status = 'queued' AND j.run_after <= now() AND NOT (j.kind = ANY(CAST(:paused AS text[])))

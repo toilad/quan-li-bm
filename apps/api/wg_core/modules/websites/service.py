@@ -1,5 +1,7 @@
 """SSL + Website Builder: rows with a domain in B and an empty C → build with the CHOSEN template →
 deploy to the document root cPanel reports → AutoSSL → HTTPS check → write C (only if still empty)."""
+from concurrent.futures import ThreadPoolExecutor
+
 from sqlalchemy import String, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -244,8 +246,9 @@ def _build(ctx: JobContext):
         out.mkdir(parents=True, exist_ok=True)
         try:
             chosen = photos.choose(domain, template.id, design({"domain": domain}, template.id))
-            for p in chosen:
-                (out / p["file"]).write_bytes(photos.download(p))
+            with ThreadPoolExecutor(max_workers=8) as pool:  # the 7 downloads together, not one after another
+                for p, data in zip(chosen, pool.map(photos.download, chosen)):
+                    (out / p["file"]).write_bytes(data)
             names = ", ".join(sorted({p["photographer"] for p in chosen if p["photographer"]}))
             ctx.log(f"{chosen[0]['provider'].capitalize() if chosen else 'Ảnh'}: {len(chosen)} ảnh ({names}) — đã tải về, upload kèm web", "ok")
         except NotConfigured:
